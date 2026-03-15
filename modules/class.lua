@@ -378,7 +378,7 @@ function Module:SetCombatMode(mode)
         self.TempSettings.ResolvingActions = false
 
         if self.ClassConfig.SpellList then
-            self.SpellLoadOut, self.LoadOutName = Rotation.SetSpellLoadOutByPriority(self, self.ClassConfig.SpellList)
+            self.SpellLoadOut, self.LoadOutName = Rotation.SetSpellLoadOutByPriority(self, self.ClassConfig.SpellList, Config:GetSetting('EnabledRotationEntries') or {})
         else
             self.SpellLoadOut = Rotation.SetSpellLoadOutByGem(self, self.ClassConfig.Spells)
             self.LoadOutName = "Default"

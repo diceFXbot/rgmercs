@@ -1786,6 +1786,14 @@ function Ui.RenderRotationTable(name, rotationTable, resolvedActionMap, rotation
         end
 
         for idx, entry in ipairs(rotationTable or {}) do
+            local entryKey = string.format("%s::%s", name, entry.name)
+            local currentEnabled = enabledRotationEntries[entryKey]
+            if currentEnabled == nil then
+                -- Backward compatibility with legacy flat entry-name keys.
+                currentEnabled = enabledRotationEntries[entry.name]
+            end
+            if currentEnabled == nil then currentEnabled = true end
+
             ImGui.TableNextRow()
             ImGui.TableNextColumn()
             ImGui.Text(tostring(idx))
@@ -1801,8 +1809,10 @@ function Ui.RenderRotationTable(name, rotationTable, resolvedActionMap, rotation
             end
             ImGui.TableNextColumn()
             local changed = false
-            enabledRotationEntries[entry.name], changed = Ui.RenderOptionToggle(string.format("tggl_%d", idx), "",
-                enabledRotationEntries[entry.name] == nil and true or enabledRotationEntries[entry.name])
+            enabledRotationEntries[entryKey], changed = Ui.RenderOptionToggle(
+                string.format("tggl_%s_%d_%s", name, idx, entry.name),
+                "",
+                currentEnabled)
             if changed then enabledRotationEntriesChanged = true end
             ImGui.TableNextColumn()
             local pass, active = false, false
@@ -1827,7 +1837,7 @@ function Ui.RenderRotationTable(name, rotationTable, resolvedActionMap, rotation
             end
 
             ImGui.TableNextColumn()
-            if enabledRotationEntries[entry.name] == false then Ui.StrikeThroughText(entry.name) else ImGui.Text(entry.name) end
+            if enabledRotationEntries[entryKey] == false then Ui.StrikeThroughText(entry.name) else ImGui.Text(entry.name) end
             ImGui.TableNextColumn()
             local mappedAction = resolvedActionMap[entry.name]
             if mappedAction then

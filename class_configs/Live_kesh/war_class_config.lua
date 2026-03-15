@@ -396,6 +396,15 @@ local _ClassConfig = {
                 return combat_state == "Combat" and Casting.BurnCheck() and mq.TLO.Me.PctHPs() > Config:GetSetting('EmergencyLockout')
             end,
         },
+        { --Combat-time self/group buff upkeep
+            name = 'CombatBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                return combat_state == "Combat" and mq.TLO.Me.PctHPs() > Config:GetSetting('EmergencyLockout')
+            end,
+        },
         { --DPS and Utility discs
             name = 'Combat',
             state = 1,
@@ -423,26 +432,6 @@ local _ClassConfig = {
                 end,
                 cond = function(self, discSpell)
                     return not mq.TLO.Me.Aura(1).ID()
-                end,
-            },
-            {
-                name = "GroupACBuff",
-                type = "Disc",
-                active_cond = function(self, discSpell)
-                    return Casting.IHaveBuff(discSpell)
-                end,
-                cond = function(self, discSpell)
-                    return Casting.SelfBuffCheck(discSpell)
-                end,
-            },
-            {
-                name = "GroupDodgeBuff",
-                type = "Disc",
-                active_cond = function(self, discSpell)
-                    return Casting.IHaveBuff(discSpell)
-                end,
-                cond = function(self, discSpell)
-                    return Casting.SelfBuffCheck(discSpell)
                 end,
             },
             {
@@ -479,13 +468,6 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "Infused by Rage",
-                type = "AA",
-                cond = function(self, aaName)
-                    return Core.IsTanking() and Casting.SelfBuffAACheck(aaName)
-                end,
-            },
-            {
                 name = "Blade Guardian",
                 type = "AA",
                 cond = function(self, aaName)
@@ -498,6 +480,28 @@ local _ClassConfig = {
                 cond = function(self, itemName, target)
                     if not Config:GetSetting('DoCharmClick') or not Casting.ItemHasClicky(itemName) then return false end
                     return Casting.SelfBuffItemCheck(itemName)
+                end,
+            },
+        },
+        ['CombatBuff'] = {
+            {
+                name = "GroupACBuff",
+                type = "Disc",
+                active_cond = function(self, discSpell)
+                    return Casting.IHaveBuff(discSpell)
+                end,
+                cond = function(self, discSpell)
+                    return Casting.SelfBuffCheck(discSpell)
+                end,
+            },
+            {
+                name = "GroupDodgeBuff",
+                type = "Disc",
+                active_cond = function(self, discSpell)
+                    return Casting.IHaveBuff(discSpell)
+                end,
+                cond = function(self, discSpell)
+                    return Casting.SelfBuffCheck(discSpell)
                 end,
             },
         },

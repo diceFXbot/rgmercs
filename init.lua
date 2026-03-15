@@ -225,7 +225,7 @@ local function RGInit(...)
         "MQ2Nav",
         "MQ2DanNet", })
 
-    unloadedPlugins = Core.UnCheckPlugins({ "MQ2Melee", "MQ2Twist", })
+    unloadedPlugins = Core.UnCheckPlugins({ "MQ2Melee", })
 
     Core.CheckSpawnMasterVersion()
 

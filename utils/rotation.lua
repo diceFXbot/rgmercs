@@ -285,13 +285,21 @@ function Rotation.Run(caller, rotationTable, targetId, resolvedActionMap, steps,
     local stepsThisTime  = 0
     local lastStepIdx    = 0
     local anySuccess     = false
+    local rotationName   = (caller and caller.CurrentRotation and caller.CurrentRotation.name) and caller.CurrentRotation.name or ""
 
     -- This is useful when class config wants to re-check every rotation condition every run
     -- For example, if gem1 meets all condition criteria, it WILL cast repeatedly on every cast
     -- Used for bards to dynamically weave properly
     if bDoFullRotation then start_step = 1 end
     for idx, entry in ipairs(rotationTable) do
-        if enabledRotationEntries[entry.name] ~= false then
+        local entryKey = string.format("%s::%s", rotationName, entry.name)
+        local entryEnabled = enabledRotationEntries[entryKey]
+        if entryEnabled == nil then
+            -- Backward compatibility with legacy flat entry-name keys.
+            entryEnabled = enabledRotationEntries[entry.name]
+        end
+
+        if entryEnabled ~= false then
             if idx >= start_step then
                 local tStart = string.format("%.03f", Globals.GetTimeSeconds() / 1000)
                 caller:SetCurrentRotationState(idx)
@@ -414,12 +422,57 @@ end
 --- Sets the spell gem loadout for a caller.
 --- @param caller any The entity that is calling the function.
 --- @param spellList table An array of spell lists to be checked and have gems loaded from.
-function Rotation.SetSpellLoadOutByPriority(caller, spellList)
+--- @param enabledRotationEntries? table Rotation entry enable map from config.
+function Rotation.SetSpellLoadOutByPriority(caller, spellList, enabledRotationEntries)
     local spellLoadOut = {}
     local spellsToLoad = {}
     local listName = "Error: No Valid List Found!"
 
     Casting.UseGem = mq.TLO.Me.NumGems()
+
+    local validNamespacedEntries = {}
+    local function RegisterValidEntries(rotationMap)
+        for rotationName, entries in pairs(rotationMap or {}) do
+            for _, entry in ipairs(entries or {}) do
+                if entry and entry.name then
+                    validNamespacedEntries[string.format("%s::%s", rotationName, entry.name)] = true
+                end
+            end
+        end
+    end
+
+    if caller and caller.ClassConfig then
+        RegisterValidEntries(caller.ClassConfig.Rotations)
+        RegisterValidEntries(caller.ClassConfig.HealRotations)
+    end
+
+    local function IsLoadoutEntryEnabled(entryName)
+        if not enabledRotationEntries then return true end
+
+        -- Namespaced key support: "<RotationName>::<EntryName>"
+        local hasNamespacedKey = false
+        local anyNamespacedEnabled = false
+        local suffix = string.format("::%s", entryName)
+
+        for key, value in pairs(enabledRotationEntries) do
+            if type(key) == "string" and validNamespacedEntries[key] and key:sub(-#suffix) == suffix then
+                hasNamespacedKey = true
+                if value ~= false then
+                    anyNamespacedEnabled = true
+                    break
+                end
+            end
+        end
+
+        -- Prefer namespaced keys when present (legacy keys may linger from older versions).
+        if hasNamespacedKey then return anyNamespacedEnabled end
+
+        -- Backward-compatible flat key support.
+        local legacyEnabled = enabledRotationEntries[entryName]
+        if legacyEnabled ~= nil then return legacyEnabled ~= false end
+
+        return true
+    end
 
     for _, l in ipairs(spellList or {}) do
         if l ~= nil and (not l.cond or Core.SafeCallFunc(string.format("List Condition Check %s", l.name), l.cond, caller)) then
@@ -432,31 +485,38 @@ function Rotation.SetSpellLoadOutByPriority(caller, spellList)
                             "Error in name_func!"
                     end
                     local spellName = s.name
+                    local entryEnabled = IsLoadoutEntryEnabled(spellName)
                     Logger.log_debug("\aw  ==> Testing \at%s\aw for Gem \am%d", spellName, i)
-                    local bestSpell = Core.GetResolvedActionMapItem(spellName)
-                    if bestSpell then
-                        local bookSpell = mq.TLO.Me.Book(bestSpell.RankName())()
-                        local pass = Core.SafeCallFunc(
-                            string.format("Spell Condition Check: %s", bestSpell() or "None"), s.cond, caller, bestSpell)
-                        local loadedSpell = spellsToLoad[bestSpell.RankName()] or false
+                    if entryEnabled then
+                        local bestSpell = Core.GetResolvedActionMapItem(spellName)
+                        if bestSpell then
+                            local bookSpell = mq.TLO.Me.Book(bestSpell.RankName())()
+                            local pass = Core.SafeCallFunc(
+                                string.format("Spell Condition Check: %s", bestSpell() or "None"), s.cond, caller, bestSpell)
+                            local loadedSpell = spellsToLoad[bestSpell.RankName()] or false
 
-                        if pass and bestSpell and bookSpell and not loadedSpell then
-                            Logger.log_debug("    ==> \ayGem \am%d\ay will load \at%s\ax ==> \ag%s", i, s
-                                .name, bestSpell.RankName())
-                            spellLoadOut[i] = { selectedSpellData = s, spell = bestSpell, }
-                            spellsToLoad[bestSpell.RankName()] = true
-                            i = i + 1
-                            break
+                            if pass and bestSpell and bookSpell and not loadedSpell then
+                                Logger.log_debug("    ==> \ayGem \am%d\ay will load \at%s\ax ==> \ag%s", i, s
+                                    .name, bestSpell.RankName())
+                                spellLoadOut[i] = { selectedSpellData = s, spell = bestSpell, }
+                                spellsToLoad[bestSpell.RankName()] = true
+                                i = i + 1
+                                break
+                            else
+                                Logger.log_debug(
+                                    "    ==> \ayGem \am%d will \arNOT\ay load \at%s (pass=%s, bestSpell=%s, bookSpell=%d, loadedSpell=%s)",
+                                    i, s.name,
+                                    Strings.BoolToColorString(pass), bestSpell and bestSpell.RankName() or "", bookSpell or -1,
+                                    Strings.BoolToColorString(loadedSpell))
+                            end
                         else
                             Logger.log_debug(
-                                "    ==> \ayGem \am%d will \arNOT\ay load \at%s (pass=%s, bestSpell=%s, bookSpell=%d, loadedSpell=%s)",
-                                i, s.name,
-                                Strings.BoolToColorString(pass), bestSpell and bestSpell.RankName() or "", bookSpell or -1,
-                                Strings.BoolToColorString(loadedSpell))
+                                "    ==> \ayGem \am%d\ay will \arNOT\ay load \at%s\ax ==> \arNo Resolved Spell!", i,
+                                s.name)
                         end
                     else
                         Logger.log_debug(
-                            "    ==> \ayGem \am%d\ay will \arNOT\ay load \at%s\ax ==> \arNo Resolved Spell!", i,
+                            "    ==> \ayGem \am%d\ay will \arNOT\ay load \at%s\ax ==> \arDisabled via Rotation Enable toggle.",
                             s.name)
                     end
                 end

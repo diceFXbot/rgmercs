@@ -305,6 +305,8 @@ end
 
 function Core.SetTarget(targetId, ignoreBuffPopulation)
     if targetId == 0 then return end
+    -- Always skip BuffsPopulated wait to reduce target-swap latency globally.
+    ignoreBuffPopulation = true
 
     local maxWaitBuffs = ((mq.TLO.EverQuest.Ping() * 2) + 500)
 
