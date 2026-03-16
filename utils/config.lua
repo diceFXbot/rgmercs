@@ -991,6 +991,23 @@ Config.DefaultConfig                                     = {
         Default = true,
         ConfigType = "Advanced",
     },
+    ['CastMovePriority']           = {
+        DisplayName = "Cast/Move Priority",
+        Group = "Combat",
+        Header = "Positioning",
+        Category = "General Positioning",
+        Index = 9,
+        Tooltip = "Controls behavior when casting while /stick is moving.\n" ..
+            "Cast: Pause stick to complete spell, then resume. (200ms overhead per cast while moving)\n" ..
+            "Move: Cancel spell if movement detected during cast.\n" ..
+            "None: No intervention (current default behavior).",
+        Type = "Combo",
+        ComboOptions = { 'Cast', 'Move', 'None', },
+        Default = 1,
+        Min = 1,
+        Max = 3,
+        ConfigType = "Advanced",
+    },
 
     -- Positioning/Tank
     ['MovebackWhenTank']           = {

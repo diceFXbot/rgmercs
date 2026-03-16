@@ -213,3 +213,74 @@
 - 変更: `Downtime` 内の `Infused by Rage`（AA）エントリを削除。
 - 理由: パッシブ系AAであり、自己バフAAとしての再使用判定対象に含める必要がないため。
 
+## 2026-03-11
+
+### キャスト間遅延の削減（UseSpell / UseSong / WaitGlobalCoolDown）
+
+- 対象: `utils/casting.lua`
+- 背景: MQ2Castの `/casting` と比較してRGMercsの連続詠唱に遅延が発生していた。
+  TLO精度検証（`Me.SpellReady` / `Me.GemTimer` / `Cast.Ready`）で3者同タイミングを確認。
+  ベンチマーク結果: `/cast`+高速ポーリング = 27.089s vs MQ2Cast `/casting` = 27.999s（5回詠唱、同等）。
+  遅延の原因はTLOではなくRGMercsのフロー制御と判明。
+
+#### WaitGlobalCoolDown ポーリング間隔短縮
+
+- 変更: `mq.delay(100)` → `mq.delay(1)` に変更。
+- 効果: GCD待ちループの最大100msの無駄待ちを解消。
+
+#### UseSpell の事前待機スキップと即時キャスト構造
+
+- 変更1: `WaitCastReady` + `WaitGlobalCoolDown` の無条件呼び出しを削除。メモライズ直後（`spellRequiredMem = true`）のみ `WaitCastReady` を呼ぶよう変更。
+- 変更2: `repeat...until` ループ内で `Me.SpellReady(spellName)` または `Me.GemTimer(spellName) == 0` を確認し、条件成立時のみ `/cast` を発行。準備未完了時は `/cast` を送信せずポーリング継続。
+- 変更3: ループ内ポーリング間隔を `mq.delay(10)` に設定。
+- 変更4: リトライ上限をカウント5000回から時間制限5000msへ変更。
+- 変更5: `CAST_NOTREADY` / `CAST_RESULT_NONE` は `retryCount` を消費しない（fizzle/interruptと区別）。
+
+#### UseSong の事前待機スキップ
+
+- 変更: `WaitCastReady` + `WaitGlobalCoolDown` の無条件呼び出しを削除。メモライズ直後（`spellRequiredMem = true`）のみ `WaitCastReady` を呼ぶよう変更。UseSpellと同様の方針。
+
+#### UseSong のgem復帰待ちスキップと即時詠唱構造（MQ2Twist同等化）
+
+- 対象: `utils/rotation.lua`, `utils/casting.lua`
+- 背景: MQ2TwistはGUI上のgem完全復帰を待たずに次のSongを詠唱するが、RGMercsは `SongReady` 内の `Me.SpellReady()` チェックでgem復帰まで曲をスキップしていた。
+- 変更1a: `rotation.lua` の Song エントリで `Casting.SongReady(songSpell, bAllowMem)` → `Casting.SongReady(songSpell, true)` に変更。`skipGemTimer` を常時 `true` にし、gem未復帰でも `UseSong` への到達を許可。
+- 変更1b: `UseSong` 内の戦闘中ガード条件から `Casting.CastReady(spell)`（`Me.SpellReady()` チェック）を除外。gem にメモライズ済みか（`Me.Gem(songName)()`）のみで判定し、gem復帰待ちはポーリングループに委譲。
+- 変更2: `UseSong` 内の `/cast` 発行をgem復帰チェックなしの即時発行に変更。MQ2Twistと同様に、gem状態に関係なく `/cast` を先出しし、EQクライアント側でgem復帰タイミングに合わせて実行させる。`CastingWindow` の開閉で成否を判定。
+- 変更3: リトライ上限を時間制限5000msへ変更。`CAST_NOTREADY` / `CAST_RESULT_NONE` は `retryCount` を消費しない。
+- 効果: Song詠唱間のgem復帰待ち遅延を解消し、MQ2Twist同等の連続ツイスト速度を実現。
+- 備考: Melodyローテーションの `steps` を1より大きく（または `doFullRotation = true` と併用で `steps = 0`）に設定しないと、1サイクルにつき1曲しか処理されず効果が発揮されない。
+
+### CastMovePriority（キャスト/移動優先度設定）追加
+
+- 対象: `utils/config.lua`, `utils/casting.lua`
+- 新設定: `CastMovePriority` (Combo: Cast / Move / None) — Combat > Positioning カテゴリ
+- **Castモード**（デフォルト・推奨）:
+  - `/stick` または `/nav` による移動中に CastTime > 0 のスペル/AA/アイテムを使用する際:
+    1. `/stick pause` または `/nav pause` で移動を一時停止
+    2. `Me.Moving() == false` になるまで最大1秒待機
+    3. 200ms慣性バッファ
+    4. キャスト実行
+    5. キャスト完了後に `/stick unpause` または `/nav pause`（トグル）で移動再開
+  - CastTime = 0（インスタント）のスペル/AA/アイテムは停止せずそのまま実行
+  - `/stick` と `/nav` どちらにも非対応の移動（手動WASDなど）の場合は従来通りスキップ
+  - 静止時はオーバーヘッドなし。移動中のみ200ms追加
+- **Moveモード**:
+  - 詠唱中に `Me.Moving()` を検出した場合、即座に `/stopcast` で詠唱中断し移動を優先する
+  - fizzleを待たずに即中断するため、マナ/時間の無駄を削減
+  - `UseSpell`/`UseAA` は `WaitCastFinish` 内で、`UseItem` は独自待機ループ内で検出
+- **Noneモード**:
+  - 従来動作。MQ2MoveUtils AutoPauseに依存（タイミング上fizzleしやすい）
+- 変更箇所:
+  - `config.lua`: `CastMovePriority` 設定項目を追加
+  - `UseSpell`: 既存の `me.Moving()` ガードに Cast優先（stick/nav pause/unpause）分岐を追加
+  - `UseAA`: `me.Moving()` ガードと Cast優先（stick/nav pause/unpause）を新規追加。インスタントAAはスキップ
+  - `UseItem`: `me.Moving()` ガードと Cast優先（stick/nav pause/unpause）を新規追加。インスタントクリックはスキップ
+  - `WaitCastFinish`: Move優先時のループ内 `Me.Moving()` → `/stopcast` チェックを追加
+  - `UseItem` 独自待機ループ: 同様のMove優先 `/stopcast` チェックを追加
+- 技術的背景:
+  - MQ2MoveUtils `/stick pause` / `/stick unpause` は明示的なコマンド（トグルではない）。`PausedCmd` フラグにタイムリミットなし
+  - MQ2Nav `/nav pause` はトグル式。二重pauseで状態反転するため `Navigation.Paused()` チェックで防御
+  - 戦闘中の `/stick` 再発行は `Stick.Status() == "PAUSED"` により抑制されるため、pause中にstickが上書きされることはない
+  - バードのSongは `UseSpell` 冒頭で `UseSong` にリダイレクトされるため本機能の影響を受けない
+

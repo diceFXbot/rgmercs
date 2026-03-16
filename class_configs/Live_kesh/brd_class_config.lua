@@ -1038,10 +1038,6 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "Kick",
-                type = "Ability",
-            },
-            {
                 name = "Lyrical Prankster",
                 type = "AA",
                 load_cond = function(self) return Casting.CanUseAA('Lyrical Prankster') end,

@@ -157,7 +157,7 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
 
         if not songSpell or not songSpell() then return false end
 
-        if Casting.SongReady(songSpell, bAllowMem) then
+        if Casting.SongReady(songSpell, true) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
             ret = Casting.UseSong(songSpell.RankName(), targetId, bAllowMem, entry.retries)
         end
