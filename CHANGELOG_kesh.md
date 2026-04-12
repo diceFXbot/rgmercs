@@ -219,9 +219,9 @@
 
 - 対象: `utils/casting.lua`
 - 背景: MQ2Castの `/casting` と比較してRGMercsの連続詠唱に遅延が発生していた。
-  TLO精度検証（`Me.SpellReady` / `Me.GemTimer` / `Cast.Ready`）で3者同タイミングを確認。
-  ベンチマーク結果: `/cast`+高速ポーリング = 27.089s vs MQ2Cast `/casting` = 27.999s（5回詠唱、同等）。
-  遅延の原因はTLOではなくRGMercsのフロー制御と判明。
+TLO精度検証（`Me.SpellReady` / `Me.GemTimer` / `Cast.Ready`）で3者同タイミングを確認。
+ベンチマーク結果: `/cast`+高速ポーリング = 27.089s vs MQ2Cast `/casting` = 27.999s（5回詠唱、同等）。
+遅延の原因はTLOではなくRGMercsのフロー制御と判明。
 
 #### WaitGlobalCoolDown ポーリング間隔短縮
 
@@ -283,4 +283,3 @@
   - MQ2Nav `/nav pause` はトグル式。二重pauseで状態反転するため `Navigation.Paused()` チェックで防御
   - 戦闘中の `/stick` 再発行は `Stick.Status() == "PAUSED"` により抑制されるため、pause中にstickが上書きされることはない
   - バードのSongは `UseSpell` 冒頭で `UseSong` にリダイレクトされるため本機能の影響を受けない
-
