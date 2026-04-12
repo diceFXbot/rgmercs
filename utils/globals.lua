@@ -6,6 +6,9 @@ local Set                             = require("mq.set")
 local Globals                         = {}
 Globals.__index                       = Globals
 
+Globals.Logger                        = nil
+Globals.Modules                       = nil
+
 Globals.MainAssist                    = ""
 Globals.ScriptDir                     = ""
 Globals.AutoTargetID                  = 0
@@ -18,6 +21,7 @@ Globals.CurrentState                  = "None"
 Globals.IgnoredTargetIDs              = Set.new({})
 Globals.SubmodulesLoaded              = false
 Globals.PauseMain                     = false
+Globals.StopCast                      = false
 Globals.BackOffFlag                   = false
 Globals.InMedState                    = false
 Globals.LastPetCmd                    = 0
@@ -44,7 +48,7 @@ Globals.CurrentPetBlocked             = nil
 
 Globals.Constants                     = {}
 
-Globals.Constants.SupportedEmuServers = Set.new({ "Project Lazarus", "HiddenForest", "EQ Might", })
+Globals.Constants.SupportedEmuServers = Set.new({ "Project Lazarus", "EQ Might", })
 Globals.Constants.LootModuleTypes     = { 'None', 'LootNScoot', 'SmartLoot', }
 Globals.Constants.RGCasters           = Set.new({ "BRD", "BST", "CLR", "DRU", "ENC", "MAG", "NEC", "PAL", "RNG", "SHD",
     "SHM", "WIZ", })
@@ -57,6 +61,7 @@ Globals.Constants.ModRods             = { "Modulation Shard", "Transvergence", "
 Globals.Constants.ModRodUse           = { "Never", "Combat", "Anytime", }
 Globals.Constants.SpellBookSlots      = 1120
 Globals.Constants.CastCompleted       = Set.new({ "CAST_SUCCESS", "CAST_IMMUNE", "CAST_TAKEHOLD", "CAST_RESISTED", "CAST_RECOVER", })
+Globals.Constants.GroupTargetTypes    = Set.new({ "Group v1", "Group v2", "AE PC v1", "AE PC v2", })
 
 Globals.Constants.CastResults         = {
     ['CAST_RESULT_NONE'] = 0,
@@ -180,10 +185,8 @@ Globals.Constants.DefaultColors       = {
     MainDowntimeColor       = Globals.Constants.BasicColors.Green,
     TooltipTextColor        = Globals.Constants.BasicColors.White,
     HPHighColor             = ImVec4(0.20, 0.88, 0.30, 0.96),
-    HPMidColor              = ImVec4(0.96, 0.72, 0.14, 0.96),
     HPLowColor              = ImVec4(0.95, 0.12, 0.12, 0.96),
     ManaHighColor           = ImVec4(0.15, 0.55, 0.95, 0.96),
-    ManaMidColor            = ImVec4(0.55, 0.25, 0.90, 0.96),
     ManaLowColor            = ImVec4(0.95, 0.12, 0.12, 0.96),
     TogglePulseColor        = ImVec4(1.0, 0.85, 0.2, 1.0),
 }
@@ -244,6 +247,18 @@ Globals.Constants.DebuffChoice      = { "Never", "Based on Con Color", "Always",
 Globals.Constants.ScanNamedPriority = { "Named", "No Preference", "Non-Named", }
 Globals.Constants.ScanHPPriority    = { "Lowest HP%", "No Preference", "Highest HP%", }
 
+Globals.Constants.TankMercStances   = { "aggressive", "assist", }
+Globals.Constants.HealerMercStances = { "balanced", "reactive", "efficient", }
+Globals.Constants.MeleeMercStances  = { "balanced", "burn", }
+Globals.Constants.CasterMercStances = { "balanced", "burn", "burnae", }
+
+Globals.Constants.HPBarStyles       = { "Multi-Color", "Con-Color", }
+
+Globals.Constants.DeprecatedConfigs = {
+    ['NEC'] = { "Alpha (Live)", },
+    ['PAL'] = { "Alpha (Live)", },
+}
+
 function Globals.GetTimeSeconds()
     return mq.gettime() / 1000
 end
@@ -256,6 +271,23 @@ function Globals.GetAlternatingColor(colorA, colorB)
     colorA = colorA or IM_COL32(200, 200, 52, 255)
     colorB = colorB or IM_COL32(200, 52, 52, 255)
     return (math.floor(Globals.GetTimeSeconds() % 2) == 1) and ImGui.GetColorU32(colorA) or ImGui.GetColorU32(colorB)
+end
+
+function Globals.SetForcedTargetId(targetId)
+    if targetId == Globals.ForceTargetID then return end
+
+    local startingId = Globals.ForceTargetID
+    if targetId and targetId > 0 then
+        Globals.ForceTargetID = targetId
+        if Globals.Logger then Globals.Logger.log_debug("SetForcedTargetId(): Force Target set to %d", targetId) end
+    else
+        if Globals.Logger then Globals.Logger.log_debug("SetForcedTargetId(): Force Target cleared from %d", Globals.ForceTargetID) end
+        Globals.ForceTargetID = 0
+    end
+
+    if startingId ~= Globals.ForceTargetID and Globals.Modules then
+        Globals.Modules:ExecAll("OnForceTargetChange", Globals.ForceTargetID)
+    end
 end
 
 return Globals

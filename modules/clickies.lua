@@ -105,6 +105,8 @@ Module.CommandHandlers                  = {
 Module.TempSettings                     = {}
 Module.TempSettings.ClickyState         = {}
 Module.TempSettings.CombatClickiesTimer = 0
+Module.TempSettings.ClickyDropFrame     = {}
+Module.TempSettings.ClickyHeaderOpen    = {}
 
 Module.DefaultServerClickies            = {
     ['Project Lazarus'] = {
@@ -201,63 +203,6 @@ Module.DefaultServerClickies            = {
             ['itemName'] = 'Ring of the Warden',
             ['conditions'] = {},
             ['iconId'] = 6136,
-        },
-    },
-    ['HiddenForest']    = {
-        [1] = {
-            ['itemName'] = 'Orb of Spirits',
-            ['iconId'] = 986,
-            ['combat_state'] = 'Combat',
-            ['target'] = 'Self',
-            ['conditions'] = {
-                [1] = {
-                    ['target'] = 'Self',
-                    ['type'] = 'Mana Threshold',
-                    ['args'] = {
-                        [1] = 0,
-                        [2] = 5,
-                    },
-                },
-            },
-        },
-        [2] = {
-            ['itemName'] = 'Orb of Spirits',
-            ['iconId'] = 986,
-            ['combat_state'] = 'Downtime',
-            ['target'] = 'Self',
-            ['conditions'] = {
-                [1] = {
-                    ['target'] = 'Self',
-                    ['type'] = 'Mana Threshold',
-                    ['args'] = {
-                        [1] = 0,
-                        [2] = 15,
-                    },
-                },
-            },
-        },
-        [3] = {
-            ['itemName'] = 'Staff of Force I',
-            ['iconId'] = 912,
-            ['combat_state'] = 'Combat',
-            ['target'] = 'Auto Target',
-            ['conditions'] = {
-                [1] = {
-                    ['target'] = 'Self',
-                    ['type'] = 'During Burns',
-                    ['args'] = {
-                        [1] = false,
-                    },
-                },
-                [2] = {
-                    ['target'] = 'Auto Target',
-                    ['type'] = 'HP Threshold',
-                    ['args'] = {
-                        [1] = 0,
-                        [2] = 95,
-                    },
-                },
-            },
         },
     },
 }
@@ -492,15 +437,48 @@ Module.LogicBlocks                      = {
 
     {
         name = "I Have a Curable Detrimental Effect",
-        cond = function(self)
+        cond = function(self, target, checkPoi, checkDis, checkCur, checkCor)
             local me = mq.TLO.Me
-            return me.Poisoned() ~= nil or me.Diseased() ~= nil or me.Cursed() ~= nil or me.Corrupted() ~= nil
+            return (checkPoi and me.Poisoned() ~= nil) or
+                (checkDis and me.Diseased() ~= nil) or
+                (checkCur and me.Cursed() ~= nil) or
+                (checkCor and me.Corrupted() ~= nil)
         end,
         tooltip = "Only use when you have a poison, disease, curse or corruption effect on you.",
         render_header_text = function(self, cond)
-            return string.format("You have an effect with counters (poi/dis/cur/cor).")
+            local header = "You have an effect with counters ("
+            local anyChecked = false
+            if cond.args[1] then
+                header = header .. "Poison or "
+                anyChecked = true
+            end
+            if cond.args[2] then
+                header = header .. "Disease or "
+                anyChecked = true
+            end
+            if cond.args[3] then
+                header = header .. "Curse or "
+                anyChecked = true
+            end
+            if cond.args[4] then
+                header = header .. "Corruption or "
+                anyChecked = true
+            end
+            if anyChecked then
+                header = header:sub(0, -5) -- remove the last " or "
+            else
+                header = header .. "None"
+            end
+            header = header .. ")"
+            return header
         end,
         cond_targets = { "Self", },
+        args = {
+            { name = "Poison",     type = "boolean", default = true, },
+            { name = "Disease",    type = "boolean", default = true, },
+            { name = "Curse",      type = "boolean", default = true, },
+            { name = "Corruption", type = "boolean", default = true, },
+        },
     },
 
     {
@@ -1014,6 +992,16 @@ function Module:RenderClickyControls(clickies, clickyIdx, headerCursorPos, heade
                     { text = "This clicky is in use in your current class config rotation. Check for possible conflicts!", color = Globals.Constants.Colors.FAQCmdQuestionColor, },
                 })
             end
+        elseif self.TempSettings.ClickyState[clickies[clickyIdx].itemName] and not self.TempSettings.ClickyState[clickies[clickyIdx].itemName].itemFound then
+            ImGui.SameLine()
+            ImGui.TextColored(Globals.Constants.Colors.ConditionFailColor, Icons.MD_WARNING)
+            if not preRender then
+                Ui.MultilineTooltipWithColors({
+                    { text = "! WARNING !",                                      color = Globals.Constants.Colors.ConditionFailColor, },
+                    { text = "",                                                 color = Globals.Constants.Colors.ConditionFailColor, },
+                    { text = "This clicky item is no longer in your inventory!", color = Globals.Constants.Colors.FAQCmdQuestionColor, },
+                })
+            end
         end
     end
 
@@ -1073,7 +1061,7 @@ function Module:RenderConditionTypesCombo(cond, condIdx)
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 50)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
-        ImGui.Text("Type")
+        Ui.RenderText("Type")
         ImGui.TableNextColumn()
         local selectedNum, changed = ImGui.Combo("##clicky_cond_type_" .. "_" .. condIdx, self.LogicBlockTypeIDs[cond.type or "None"] or 1,
             function(idx)
@@ -1104,7 +1092,7 @@ function Module:RenderConditionTargetCombo(cond, condIdx)
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 50)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
-        ImGui.Text("Target")
+        Ui.RenderText("Target")
         ImGui.TableNextColumn()
         local selectedNum, changed = ImGui.Combo("##clicky_cond_target_" .. "_" .. condIdx, tonumber(condBlock.cond_targetIDs[cond.target or "Self"]) or 1, condBlock.cond_targets,
             #condBlock.cond_targets)
@@ -1123,7 +1111,7 @@ function Module:RenderClickyTargetCombo(clicky, clickyIdx)
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
-        ImGui.Text("Target")
+        Ui.RenderText("Target")
         ImGui.TableNextColumn()
         local targetTypeIDs = self.CombatTargetTypeIDs
         local targetTypes = self.CombatTargetTypes
@@ -1151,7 +1139,7 @@ function Module:RenderClickyNoTargetChangeToggle(clicky, clickyIdx)
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
-        ImGui.Text("Don't Change Target")
+        Ui.RenderText("Don't Change Target")
         ImGui.TableNextColumn()
         local new_no_target_change, clicked = Ui.RenderOptionToggle("##clicky_no_target_change_" .. clickyIdx, "",
             clicky.no_target_change)
@@ -1171,7 +1159,7 @@ function Module:RenderClickyCombatStateCombo(clicky, clickyIdx)
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
-        ImGui.Text("Combat State")
+        Ui.RenderText("Combat State")
         ImGui.TableNextColumn()
         local selectedNum, changed = ImGui.Combo("##clicky_cond_combat_state_" .. "_" .. clickyIdx, tonumber(self.CombatStateIDs[clicky.combat_state or "Any"]) or 1,
             self.CombatStates,
@@ -1219,7 +1207,7 @@ function Module:RenderConditionArgs(cond, condIdx, clickyIdx)
 
         for argIdx = 1, #cond.args do
             ImGui.TableNextColumn()
-            ImGui.Text(self:GetLogicBlockArgByTypeAndIndex(cond.type, argIdx).name or ("Arg " .. tostring(argIdx)))
+            Ui.RenderText(self:GetLogicBlockArgByTypeAndIndex(cond.type, argIdx).name or ("Arg " .. tostring(argIdx)))
             ImGui.TableNextColumn()
 
             if self:GetLogicBlockArgByTypeAndIndex(cond.type, argIdx).type == "setting_value" then
@@ -1283,30 +1271,54 @@ function Module:RenderClickyHeaderIcon(clicky, headerPos)
     draw_list:AddTextureAnimation(animItems, ImVec2(headerPos.x + offset, headerPos.y), ImVec2(20, 20))
 end
 
-function Module:RenderCondition(clickyIdx, condIdx, cond)
+function Module:RenderCondition(clickyIdx, condIdx, cond, conditionsTable)
     if condIdx == 0 then
         ImGui.SetNextItemOpen(false, ImGuiCond.Always);
         ImGui.TreeNodeEx(cond.render_header_text(self, cond) .. "###clicky_cond_tree_" .. clickyIdx .. "_" .. condIdx, ImGuiTreeNodeFlags.NoTreePushOnOpen)
-    elseif ImGui.TreeNode(self:GetLogicBlockByType(cond.type).render_header_text(self, cond) .. "###clicky_cond_tree_" .. clickyIdx .. "_" .. condIdx) then
-        ImGui.PopStyleColor(1)
-        Ui.Tooltip(self:GetLogicBlockByType(cond.type).tooltip or "No Tooltip Available.")
-
-        self:RenderConditionTypesCombo(cond, condIdx)
-
-        ImGui.Indent()
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 5.0)
-        ImGui.BeginChild("##clicky_cond_child_" .. clickyIdx .. "_" .. condIdx, ImVec2(0, 0),
-            bit32.bor(ImGuiChildFlags.AlwaysAutoResize, ImGuiChildFlags.Borders, ImGuiChildFlags.AutoResizeY),
-            bit32.bor(ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoTitleBar))
-        self:RenderConditionTargetCombo(cond, condIdx)
-        self:RenderConditionArgs(cond, condIdx, clickyIdx)
-        ImGui.EndChild()
-        ImGui.PopStyleVar(1)
-        ImGui.Unindent()
-        ImGui.TreePop()
     else
-        ImGui.PopStyleColor(1)
-        Ui.Tooltip(self:GetLogicBlockByType(cond.type).tooltip or "No Tooltip Available.")
+        local nodeOpen = ImGui.TreeNode(self:GetLogicBlockByType(cond.type).render_header_text(self, cond) .. "###clicky_cond_tree_" .. clickyIdx .. "_" .. condIdx)
+
+        if conditionsTable then
+            local payloadType = "CLICKY_COND_REORDER_" .. clickyIdx
+            if ImGui.BeginDragDropSource() then
+                ImGui.SetDragDropPayload(payloadType, condIdx)
+                ImGui.Text(self:GetLogicBlockByType(cond.type).render_header_text(self, cond))
+                ImGui.EndDragDropSource()
+            end
+            if ImGui.BeginDragDropTarget() then
+                local payload = ImGui.AcceptDragDropPayload(payloadType)
+                if payload then
+                    local src = payload.Data
+                    local dst = condIdx
+                    local item = table.remove(conditionsTable, src)
+                    table.insert(conditionsTable, dst, item)
+                    Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+                end
+                ImGui.EndDragDropTarget()
+            end
+        end
+
+        if nodeOpen then
+            ImGui.PopStyleColor(1)
+            Ui.Tooltip(self:GetLogicBlockByType(cond.type).tooltip or "No Tooltip Available.")
+
+            self:RenderConditionTypesCombo(cond, condIdx)
+
+            ImGui.Indent()
+            ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 5.0)
+            ImGui.BeginChild("##clicky_cond_child_" .. clickyIdx .. "_" .. condIdx, ImVec2(0, 0),
+                bit32.bor(ImGuiChildFlags.AlwaysAutoResize, ImGuiChildFlags.Borders, ImGuiChildFlags.AutoResizeY),
+                bit32.bor(ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoTitleBar))
+            self:RenderConditionTargetCombo(cond, condIdx)
+            self:RenderConditionArgs(cond, condIdx, clickyIdx)
+            ImGui.EndChild()
+            ImGui.PopStyleVar(1)
+            ImGui.Unindent()
+            ImGui.TreePop()
+        else
+            ImGui.PopStyleColor(1)
+            Ui.Tooltip(self:GetLogicBlockByType(cond.type).tooltip or "No Tooltip Available.")
+        end
     end
 end
 
@@ -1338,7 +1350,7 @@ function Module:RenderClickiesWithConditions(type, clickies)
     Ui.Tooltip("Add server-specific default clickies to the end of the list.")
 
     ImGui.SameLine()
-    ImGui.Text(Icons.MD_INFO_OUTLINE .. " Special Note on Clickies " .. Icons.MD_INFO_OUTLINE)
+    Ui.RenderText(Icons.MD_INFO_OUTLINE .. " Special Note on Clickies " .. Icons.MD_INFO_OUTLINE)
     Ui.Tooltip(
         "All clickies have inherent presence and stacking checks built in; that is to say, we will only use a clicky if we detect that the effect is absent (and would stack) on its intended target.\n\nAdding conditions to check for the clicky's effect is generally not required or performant, be it buff, debuff or otherwise.")
 
@@ -1354,7 +1366,37 @@ function Module:RenderClickiesWithConditions(type, clickies)
                 ImGui.EndDisabled()
 
                 ImGui.PushID("##clicky_header_" .. clickyIdx)
-                if ImGui.CollapsingHeader("             " .. clicky.itemName) then
+
+                -- if a drop landed on this header this frame, pin the open state to what it
+                -- was last frame so the mouse-release that completed the drop doesn't toggle it
+                if self.TempSettings.ClickyDropFrame[clickyIdx] == ImGui.GetFrameCount() then
+                    ImGui.SetNextItemOpen(self.TempSettings.ClickyHeaderOpen[clickyIdx] or false, ImGuiCond.Always)
+                end
+
+                local headerOpen = ImGui.CollapsingHeader("             " .. clicky.itemName)
+                self.TempSettings.ClickyHeaderOpen[clickyIdx] = headerOpen
+
+                if not filterApplied then
+                    if ImGui.BeginDragDropSource() then
+                        ImGui.SetDragDropPayload("CLICKY_REORDER", clickyIdx)
+                        ImGui.Text(clicky.itemName)
+                        ImGui.EndDragDropSource()
+                    end
+                    if ImGui.BeginDragDropTarget() then
+                        local payload = ImGui.AcceptDragDropPayload("CLICKY_REORDER")
+                        if payload then
+                            local src = payload.Data
+                            local dst = clickyIdx
+                            self.TempSettings.ClickyDropFrame[dst] = ImGui.GetFrameCount()
+                            local item = table.remove(clickies, src)
+                            table.insert(clickies, dst, item)
+                            Config:SetSetting('Clickies', clickies)
+                        end
+                        ImGui.EndDragDropTarget()
+                    end
+                end
+
+                if headerOpen then
                     ImGui.BeginDisabled(clicky.enabled == false)
 
                     ImGui.Indent()
@@ -1396,7 +1438,7 @@ function Module:RenderClickiesWithConditions(type, clickies)
                             else
                                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionMidColor)
                             end
-                            self:RenderCondition(clickyIdx, condIdx, cond)
+                            self:RenderCondition(clickyIdx, condIdx, cond, not filterApplied and clicky.conditions or nil)
                         end
                     end
 
@@ -1428,30 +1470,24 @@ function Module:RenderClickyData(clicky, clickyIdx)
 
         if clicky.itemName:len() > 0 then
             local clickyState = self.TempSettings.ClickyState[clicky.itemName] or {}
-            local item = clickyState.item
-            local itemSpell = item and item.Clicky and item.Clicky.Spell
-            local spellName = itemSpell and itemSpell.Name() or (item and "No Clicky Spell or Missing Item" or "Item Not Found")
+            local spellName = clickyState.spellName or "Unknown Effect"
             local lastUsed = clickyState.lastUsed or 0
 
             ImGui.TableNextColumn()
-            ImGui.Text(lastUsed > 0 and Strings.FormatTime((os.clock() - lastUsed)) or "Never")
+            Ui.RenderText(lastUsed > 0 and Strings.FormatTime((os.clock() - lastUsed)) or "Never")
             ImGui.TableNextColumn()
-            ImGui.Text(clicky.itemName)
+            Ui.RenderText(clicky.itemName)
             ImGui.TableNextColumn()
-            if itemSpell and itemSpell() then
-                ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.LightOrange)
-                ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Globals.Constants.Colors.NearBlack)
-                local _, clicked = ImGui.Selectable(spellName)
-                if clicked then
-                    itemSpell.Inspect()
-                end
-                ImGui.PopStyleColor(2)
-                Ui.Tooltip(string.format("Clicky Spell: %s (click to inspect)", spellName))
-            else
-                ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.Grey)
-                ImGui.Text(spellName)
-                ImGui.PopStyleColor()
+            ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.LightOrange)
+            ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Globals.Constants.Colors.NearBlack)
+            local _, clicked = ImGui.Selectable(spellName)
+            if clicked then
+                local item = mq.TLO.FindItem(clicky.itemName)
+                local itemSpell = item and item.Clicky and item.Clicky.Spell
+                if itemSpell and itemSpell() then itemSpell.Inspect() end
             end
+            ImGui.PopStyleColor(2)
+            Ui.Tooltip(string.format("Clicky Spell: %s (click to inspect)", spellName))
         end
 
         ImGui.EndTable()
@@ -1564,6 +1600,11 @@ function Module:GiveTime()
         return
     end
 
+    if Casting.IAmFeigning() then
+        Logger.log_super_verbose("\ayClicky: \aw\t|->\aw \arSkipping, currently feigned!")
+        return
+    end
+
     -- Main Module logic goes here.
     self:ValidateClickies()
 
@@ -1574,14 +1615,19 @@ function Module:GiveTime()
     local numClickies = #clickies
     local moving = mq.TLO.Me.Moving() or mq.TLO.Navigation.Active() or mq.TLO.MoveTo.Moving()
     for clickyIdx = startingClickyIdx, numClickies do
+        if Globals.PauseMain or Globals.StopCast then
+            break
+        end
         local clicky = clickies[clickyIdx]
         if clicky.itemName:len() > 0 and (clicky.enabled == nil or clicky.enabled == true) then
             self.ClickyRotationIndex = (clickyIdx % numClickies) + 1
             Logger.log_super_verbose("\ayClicky: \awChecking clicky entry: \ay%s\aw[\at%d\aw]", clicky.itemName, clickyIdx)
 
             local item = mq.TLO.FindItem(clicky.itemName)
+            local itemSpell = item and item.Clicky and item.Clicky.Spell
             self.TempSettings.ClickyState[clicky.itemName] = self.TempSettings.ClickyState[clicky.itemName] or {}
-            self.TempSettings.ClickyState[clicky.itemName].item = item
+            self.TempSettings.ClickyState[clicky.itemName].spellName = itemSpell and itemSpell.Name() or (item and "No Clicky Spell or Missing Item" or "Item Not Found")
+            self.TempSettings.ClickyState[clicky.itemName].itemFound = item() ~= nil
 
             Logger.log_verbose("\ayClicky: \awLooking for clicky item: \am%s \awfound: %s", clicky.itemName, Strings.BoolToColorString(item() ~= nil))
             if item and item.Clicky then

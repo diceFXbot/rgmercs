@@ -3,6 +3,7 @@ local Config      = require('utils.config')
 local Globals     = require('utils.globals')
 local Core        = require("utils.core")
 local Comms       = require("utils.comms")
+local Combat      = require("utils.combat")
 local Modules     = require("utils.modules")
 local Targeting   = require("utils.targeting")
 local Strings     = require("utils.strings")
@@ -121,36 +122,14 @@ Binds.Handlers    = {
             Logger.log_info("\awIgnored targets cleared.")
         end,
     },
-    ['forcecombat'] = {
-        usage = "/rgl forcecombat <id?>",
-        about =
-        "Alias for /rgl forcetarget. Will force the current target or <id> to be your autotarget no matter what until it is no longer valid. Can force combat on non-hostiles.",
-        handler = function(targetId)
-            local forcedTarget = targetId and mq.TLO.Spawn(targetId) or mq.TLO.Target
-            if forcedTarget and forcedTarget() and forcedTarget.ID() > 0 and (Targeting.TargetIsType("npc", forcedTarget) or Targeting.TargetIsType("npcpet", forcedTarget) or Targeting.TargetIsType("object", forcedTarget)) then
-                Globals.ForceTargetID = forcedTarget.ID()
-                Logger.log_info("\awForced Target: %s", forcedTarget.CleanName() or "None")
-            end
-            Logger.log_warning("This command has been deprecated! The forcecombat command has been replaced by /rgl forcetarget and is slated for eventual removal.")
-        end,
-    },
-    ['forcecombatclear'] = {
-        usage = "/rgl forcecombatclear",
-        about = "Alias for /rgl forcetargetclear. Will clear the current forced target.",
-        handler = function()
-            Globals.ForceTargetID = 0
-            Logger.log_info("\awForced target cleared.")
-            Logger.log_warning(
-                "This command has been deprecated! The forcecombatclear command has been replaced by /rgl forcetargetclear and is slated for eventual removal.")
-        end,
-    },
     ['forcetarget'] = {
         usage = "/rgl forcetarget <id?>",
-        about = "Will force the current target or <id> to be your autotarget no matter what until it is no longer valid. Can force combat on non-hostiles.",
+        about =
+        "Will force the current target or <id> to be your autotarget no matter what until it is no longer valid. Can force combat on non-hostiles like objects, a special NPC, or a target dummy. If no ID is supplied, uses the current target's ID.",
         handler = function(targetId)
             local forcedTarget = targetId and mq.TLO.Spawn(targetId) or mq.TLO.Target
             if forcedTarget and forcedTarget() and forcedTarget.ID() > 0 and (Targeting.TargetIsType("npc", forcedTarget) or Targeting.TargetIsType("npcpet", forcedTarget) or Targeting.TargetIsType("object", forcedTarget)) then
-                Globals.ForceTargetID = forcedTarget.ID()
+                Globals.SetForcedTargetId(forcedTarget.ID())
                 Logger.log_info("\awForced Target: %s", forcedTarget.CleanName() or "None")
             end
         end,
@@ -159,7 +138,7 @@ Binds.Handlers    = {
         usage = "/rgl forcetargetclear",
         about = "Will clear the current forced target.",
         handler = function()
-            Globals.ForceTargetID = 0
+            Globals.SetForcedTargetId(0)
             Logger.log_info("\awForced target cleared.")
         end,
     },
@@ -187,7 +166,7 @@ Binds.Handlers    = {
                 Logger.log_error("/rgl assistadd - no name given and no valid target exists!")
                 return
             end
-            Config:AssistAdd(name)
+            Config:ListAdd(name, "AssistList")
         end,
     },
     ['assistdelete'] = {
@@ -199,7 +178,7 @@ Binds.Handlers    = {
                 Logger.log_error("/rgl assistdelete - no name given and no valid target exists!")
                 return
             end
-            Config:AssistDelete(name)
+            Config:ListDelete(name, "AssistList")
         end,
     },
     ['assistup'] = {
@@ -211,7 +190,7 @@ Binds.Handlers    = {
                 Logger.log_error("/rgl assistup - no name given and no valid target exists!")
                 return
             end
-            Config:AssistMoveUp(name)
+            Config:ListMoveUp(name, "AssistList")
         end,
     },
     ['assistdown'] = {
@@ -223,14 +202,45 @@ Binds.Handlers    = {
                 Logger.log_error("/rgl assistdown - no name given and no valid target exists!")
                 return
             end
-            Config:AssistMoveDown(name)
+            Config:ListMoveDown(name, "AssistList")
         end,
     },
     ['assistclear'] = {
         usage = "/rgl assistclear",
         about = "Completely clears the Assist List.",
         handler = function()
-            Config:AssistClear()
+            Config:ListClear("AssistList")
+        end,
+    },
+    ['heallistadd'] = {
+        usage = "/rgl heallistadd <Name>",
+        about = "Adds <Name> to the Heal List. If no name is entered, your target's name is used.",
+        handler = function(name)
+            if not name then name = mq.TLO.Target.CleanName() end
+            if not name then
+                Logger.log_error("/rgl heallistadd - no name given and no valid target exists!")
+                return
+            end
+            Config:ListAdd(name, "HealList")
+        end,
+    },
+    ['heallistdelete'] = {
+        usage = "/rgl heallistdelete (<Name> or <List#>)",
+        about = "Deletes (<Name> or <List#>) from the Heal List. If no name is entered, your target's name is used.",
+        handler = function(name)
+            if not name then name = mq.TLO.Target.CleanName() end
+            if not name then
+                Logger.log_error("/rgl heallistdelete - no name given and no valid target exists!")
+                return
+            end
+            Config:ListDelete(name, "HealList")
+        end,
+    },
+    ['heallistclear'] = {
+        usage = "/rgl heallistclear",
+        about = "Completely clears the Heal List.",
+        handler = function()
+            Config:ListClear("HealList")
         end,
     },
     ['backoff'] = {
@@ -314,6 +324,14 @@ Binds.Handlers    = {
         about = "Clear log regex filter.",
         handler = function(...)
             Config:SetSetting('LogFilter', "")
+        end,
+    },
+    ['iamnofun'] = {
+        usage = "/rgl iamnofun",
+        about = "Let the RGMercs devs know you don't like pranks or funny business.",
+        handler = function()
+            Config:SetSetting('EnableAFUI', false)
+            Config:SetSetting('ForceAFUIOff', true)
         end,
     },
     ['togglepause'] = {
@@ -407,9 +425,7 @@ Binds.Handlers    = {
         usage = "/rgl mini",
         about = "Toggle minimizing of the RGMercs window to a small icon.",
         handler = function()
-            if not Config:GetSetting('EnableAFUI') then
-                Globals.Minimized = not Globals.Minimized
-            end
+            Globals.Minimized = not Globals.Minimized
         end,
     },
     ['help'] = {
@@ -466,7 +482,6 @@ Binds.Handlers    = {
             Logger.log_info("\agOptions Window position will be reset on next open.")
         end,
     },
-
 }
 
 return Binds

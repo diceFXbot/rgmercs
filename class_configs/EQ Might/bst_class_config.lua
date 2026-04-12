@@ -200,6 +200,7 @@ return {
         },
         ['ProtDisc'] = {
             "Protective Spirit Discipline",
+            "Skal's Stance Discipline",
         },
         -- ['VigorBuff'] = {
         --     "Feral Vigor",
@@ -215,6 +216,11 @@ return {
         },
         ['BiteNuke'] = {
             "Bite of the Empress",
+        },
+        ["HasteBuff"] = {
+            -- Haste Buff - 26 - 64
+            "Celerity",
+            "Alacrity",
         },
     },
     ['HealRotationOrder'] = {
@@ -290,10 +296,7 @@ return {
             state = 1,
             steps = 1,
             load_cond = function() return Config:GetSetting('DoParagon') and Casting.CanUseAA("Focused Paragon of Spirits") end,
-            targetId = function(self)
-                return { Combat.FindWorstHurtManaGroupMember(Config:GetSetting('FParaPct')),
-                    Combat.FindWorstHurtManaXT(Config:GetSetting('FParaPct')), }
-            end,
+            targetId = function(self) return { Combat.FindWorstHurtMana(Config:GetSetting('FParaPct')), } end,
             cond = function(self, combat_state)
                 local downtime = combat_state == "Downtime" and Config:GetSetting('DowntimeFP') and Casting.OkayToBuff()
                 local combat = combat_state == "Combat"
@@ -363,25 +366,7 @@ return {
                 or Casting.IHaveBuff("Ferociousness")
         end,
         --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities
-        AETargetCheck = function(printDebug)
-            local haters = mq.TLO.SpawnCount("NPC xtarhater radius 80 zradius 50")()
-            local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 80 zradius 50")()
-            local totalHaters = haters + haterPets
-            if totalHaters < Config:GetSetting('AETargetCnt') or totalHaters > Config:GetSetting('MaxAETargetCnt') then return false end
 
-            if Config:GetSetting('SafeAEDamage') then
-                local npcs = mq.TLO.SpawnCount("NPC radius 80 zradius 50")()
-                local npcPets = mq.TLO.SpawnCount("NPCpet radius 80 zradius 50")()
-                if totalHaters < (npcs + npcPets) then
-                    if printDebug then
-                        Logger.log_verbose("AETargetCheck(): %d mobs in range but only %d xtarget haters, blocking AE damage actions.", npcs + npcPets, haters + haterPets)
-                    end
-                    return false
-                end
-            end
-
-            return true
-        end,
     },
     ['Rotations']         = {
         ['Burn']           = {
@@ -475,6 +460,9 @@ return {
             {
                 name = "ProtDisc",
                 type = "Discipline",
+                cond = function(self, discSpell, target)
+                    return Casting.NoDiscActive()
+                end,
             },
         },
         ['PetHealing']     = {
@@ -639,8 +627,8 @@ return {
             {
                 name = "RunSpeedBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoRunSpeed') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoRunSpeed') then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -694,6 +682,14 @@ return {
                 type = "Spell",
                 cond = function(self, spell, target)
                     if not Config:GetSetting('DoAvatar') or not Targeting.TargetIsAMelee(target) then return false end
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
+                name = "HasteBuff",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoHaste') end,
+                cond = function(self, spell, target)
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1057,56 +1053,17 @@ return {
             Tooltip = "Buff Group/Pet with Infusion of Spirit",
             Default = false,
         },
-        --Combat
-        ['DoAEDamage']     = {
-            DisplayName = "Do AE Damage",
+        ['DoHaste']        = {
+            DisplayName = "Use Haste",
             Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 101,
-            Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
-                "This is a top-level setting that governs all AE damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
-            Default = false,
-        },
-        ['AETargetCnt']    = {
-            DisplayName = "AE Target Count",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
+            Header = "Buffs",
+            Category = "Group",
             Index = 103,
-            Tooltip = "Minimum number of valid targets before using AE Disciplines or AA.",
-            Default = 2,
-            Min = 1,
-            Max = 10,
-        },
-        ['MaxAETargetCnt'] = {
-            DisplayName = "Max AE Targets",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 104,
-            Tooltip =
-            "Maximum number of valid targets before using AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
-            Default = 5,
-            Min = 2,
-            Max = 30,
-            FAQ = "How do I take advantage of the Max AE Targets setting?",
-            Answer =
-            "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
-        },
-        ['SafeAEDamage']   = {
-            DisplayName = "AE Proximity Check",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 105,
-            Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
+            Tooltip = "Do Haste Spells",
             Default = false,
-            FAQ = "Can you better explain the AE Proximity Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
-                "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
         },
+        --Combat
+
         ['EmergencyStart'] = {
             DisplayName = "Emergency HP%",
             Group = "Abilities",

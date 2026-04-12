@@ -7,6 +7,7 @@ local Casting     = require("utils.casting")
 local ItemManager = require("utils.item_manager")
 local Logger      = require("utils.logger")
 local Set         = require('mq.set')
+local Combat      = require("utils.combat")
 
 return {
     _version              = "2.1 - EQ Might",
@@ -308,6 +309,7 @@ return {
             "Guard of Righteousness",
             "Guard of Humility",
             "Guard of Piety",
+            "Squire Guard",
         },
         ['ACBuff'] = {
             "Bulwark of Piety",
@@ -321,6 +323,7 @@ return {
         },
         ['Protective'] = {
             "Protective Discipline",
+            "Protective Surge Discipline",
         },
         ['SelfHeal'] = { -- EQM Custom Zero-Casttime Self-heal
             "Blessed Mantle Heal",
@@ -337,7 +340,7 @@ return {
             name = "Default",
             -- cond = function(self) return true end, --Kept here for illustration, this line could be removed in this instance since we aren't using conditions.
             spells = {
-                { name = "TouchHeal",       cond = function(self) return Config:GetSetting('DoTouchHeal') < 3 end, },
+                { name = "TouchHeal",       cond = function(self) return Config:GetSetting('DoTouchHeal') end, },
                 { name = "LightHeal",       cond = function(self) return Config:GetSetting('DoLightHeal') < 3 end, },
                 { name = "LightHeal2",      cond = function(self) return Config:GetSetting('DoLightHeal') == 2 end, },
                 { name = "WaveHeal",        cond = function(self) return Config:GetSetting('DoWaveHeal') < 3 end, },
@@ -386,27 +389,6 @@ return {
 
             return rezAction
         end,
-        --function to determine if we should AE taunt and optionally, if it is safe to do so
-        AETauntCheck = function(printDebug)
-            local mobs = mq.TLO.SpawnCount("NPC radius 50 zradius 50")()
-            local xtCount = mq.TLO.Me.XTarget() or 0
-
-            if (mobs or xtCount) < Config:GetSetting('AETauntCnt') then return false end
-
-            local tauntme = Set.new({})
-            for i = 1, xtCount do
-                local xtarg = mq.TLO.Me.XTarget(i)
-                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and xtarg.PctAggro() < 100 and (xtarg.Distance() or 999) <= 50 then
-                    if printDebug then
-                        Logger.log_verbose("AETauntCheck(): XT(%d) Counting %s(%d) as a hater eligible to AE Taunt.", i, xtarg.CleanName() or "None",
-                            xtarg.ID())
-                    end
-                    tauntme:add(xtarg.ID())
-                end
-                if not Config:GetSetting('SafeAETaunt') and #tauntme:toList() > 0 then return true end --no need to find more than one if we don't care about safe taunt
-            end
-            return #tauntme:toList() > 0 and not (Config:GetSetting('SafeAETaunt') and #tauntme:toList() < mobs)
-        end,
         --function to determine if we have enough mobs in range to use a defensive disc
         DefensiveDiscCheck = function(printDebug)
             local xtCount = mq.TLO.Me.XTarget() or 0
@@ -424,25 +406,7 @@ return {
             end
             return false
         end,
-        AETargetCheck = function(printDebug)
-            local haters = mq.TLO.SpawnCount("NPC xtarhater radius 80 zradius 50")()
-            local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 80 zradius 50")()
-            local totalHaters = haters + haterPets
-            if totalHaters < Config:GetSetting('AETargetCnt') or totalHaters > Config:GetSetting('MaxAETargetCnt') then return false end
 
-            if Config:GetSetting('SafeAEDamage') then
-                local npcs = mq.TLO.SpawnCount("NPC radius 80 zradius 50")()
-                local npcPets = mq.TLO.SpawnCount("NPCpet radius 80 zradius 50")()
-                if totalHaters < (npcs + npcPets) then
-                    if printDebug then
-                        Logger.log_verbose("AETargetCheck(): %d mobs in range but only %d xtarget haters, blocking AE damage actions.", npcs + npcPets, haters + haterPets)
-                    end
-                    return false
-                end
-            end
-
-            return true
-        end,
     },
     ['HealRotationOrder'] = {
         {
@@ -463,7 +427,6 @@ return {
             name = 'MainHeal',
             state = 1,
             steps = 1,
-            load_cond = function(self) return Config:GetSetting('DoCleansing') == 1 or Config:GetSetting("DoTouchHeal") == 2 or Config:GetSetting('WaveHealUse') == 2 end,
             cond = function(self, target)
                 return Targeting.MainHealsNeeded(target)
             end,
@@ -509,7 +472,7 @@ return {
                 name = "Lay on Hands",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return self.CombatState == "Combat" and Targeting.GetTargetPctHPs() < Config:GetSetting('HPCritical')
+                    return self.CombatState == "Combat" and Targeting.GetTargetPctHPs(target) < Config:GetSetting('HPCritical')
                 end,
             },
             {
@@ -524,7 +487,7 @@ return {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Targeting.GroupedWithTarget(target) then return false end
-                    return self.CombatState == "Combat" and (Targeting.TargetIsMyself(target) or Targeting.GetTargetPctHPs() < Config:GetSetting('HPCritical'))
+                    return self.CombatState == "Combat" and (Targeting.TargetIsMyself(target) or Targeting.GetTargetPctHPs(target) < Config:GetSetting('HPCritical'))
                 end,
             },
             {
@@ -532,33 +495,20 @@ return {
                 type = "Spell",
             },
             {
-                name = "Mantle of the Wyrmguard",
+                name = "VampiricBlueBand",
                 type = "Item",
-                load_cond = function(self) return mq.TLO.FindItem("=Mantle of the Wyrmguard")() and Config:GetSetting('WaveHealUse') == 1 end,
+                load_cond = function(self) return Core.GetResolvedActionMapItem("VampiricBlueBand") and mq.TLO.Me.Level() >= 68 end,
                 cond = function(self, itemName, target)
                     return Targeting.GroupedWithTarget(target)
                 end,
             },
             {
-                name = "WaveHeal",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoWaveHeal') < 3 and Config:GetSetting('WaveHealUse') == 1 end,
-                cond = function(self, spell, target)
+                name = "BlueBand",
+                type = "Item",
+                load_cond = function(self) return Core.GetResolvedActionMapItem("BlueBand") and (mq.TLO.Me.Level() < 68 or not Core.GetResolvedActionMapItem("VampiricBlueBand")) end,
+                cond = function(self, itemName, target)
                     return Targeting.GroupedWithTarget(target)
                 end,
-            },
-            {
-                name = "WaveHeal2",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoWaveHeal') == 2 and Config:GetSetting('WaveHealUse') == 1 end,
-                cond = function(self, spell, target)
-                    return Targeting.GroupedWithTarget(target)
-                end,
-            },
-            {
-                name = "TouchHeal",
-                type = "Spell",
-                load_cond = function() return Config:GetSetting("DoTouchHeal") == 1 end,
             },
         },
         ["MainHeal"] = {
@@ -567,37 +517,22 @@ return {
                 type = "Spell",
                 load_cond = function() return Config:GetSetting('DoCleansing') == 1 end,
                 cond = function(self, spell, target)
-                    return Casting.GroupBuffCheck(spell, target)
+                    return not Targeting.BigHealsNeeded(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
-                name = "Mantle of the Wyrmguard",
-                type = "Item",
-                load_cond = function(self) return mq.TLO.FindItem("=Mantle of the Wyrmguard")() and Config:GetSetting('WaveHealUse') == 2 end,
-                cond = function(self, itemName, target)
-                    return Targeting.GroupedWithTarget(target)
-                end,
-            },
-            {
-                name = "WaveHeal",
+                name = "LightHeal",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoWaveHeal') < 3 and Config:GetSetting('WaveHealUse') == 2 end,
-                cond = function(self, spell, target)
-                    return Targeting.GroupedWithTarget(target)
-                end,
+                load_cond = function(self) return Config:GetSetting('DoLightHeal') < 3 end,
             },
             {
-                name = "WaveHeal2",
+                name = "LightHeal2",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoWaveHeal') == 2 and Config:GetSetting('WaveHealUse') == 2 end,
-                cond = function(self, spell, target)
-                    return Targeting.GroupedWithTarget(target)
-                end,
+                load_cond = function(self) return Config:GetSetting('DoLightHeal') == 2 end,
             },
             {
                 name = "TouchHeal",
                 type = "Spell",
-                load_cond = function() return Config:GetSetting("DoTouchHeal") == 2 end,
             },
         },
     },
@@ -623,7 +558,7 @@ return {
             state = 1,
             steps = 1,
             doFullRotation = true,
-            load_cond = function() return Core.IsTanking() and Config:GetSetting('NewAggroScanBeta') end,
+            load_cond = function() return Core.IsTanking() and Config:GetSetting('TankAggroScan') end,
             targetId = function(self) return Targeting.CheckForAggroTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical') then return false end
@@ -657,7 +592,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical') then return false end
-                return combat_state == "Combat" and self.ClassConfig.HelperFunctions.AETauntCheck(true)
+                return combat_state == "Combat" and Combat.AETauntCheck(true)
             end,
         },
         { --Dynamic weapon swapping if UseBandolier is toggled
@@ -687,7 +622,7 @@ return {
             doFullRotation = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and (mq.TLO.Me.TargetOfTarget.PctHPs() or 0) < Config:GetSetting('LightHealPoint')
+                return combat_state == "Combat" and Targeting.LightHealsNeeded(mq.TLO.Me.TargetOfTarget)
             end,
         },
         { --Defensive actions used proactively to prevent emergencies
@@ -727,7 +662,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if not Config:GetSetting('DoAEDamage') or (Core.IsTanking() and mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical')) then return false end
-                return combat_state == "Combat" and self.ClassConfig.HelperFunctions.AETargetCheck(true)
+                return combat_state == "Combat" and Combat.AETargetCheck(true)
             end,
         },
         { --DPS Spells, includes recourse/gift maintenance
@@ -1015,8 +950,8 @@ return {
             {
                 name = "Protective",
                 type = "Disc",
+                load_cond = function(self) return Core.IsTanking() end,
                 cond = function(self, discSpell, target)
-                    if not Core.IsTanking() then return false end
                     return Casting.NoDiscActive()
                 end,
             },
@@ -1025,7 +960,8 @@ return {
                 type = "Disc",
                 load_cond = function(self) return Core.IsTanking() end,
                 cond = function(self, discSpell, target)
-                    return Casting.NoDiscActive()
+                    local protReady = mq.TLO.Me.CombatAbilityReady(Core.GetResolvedActionMapItem('Protective') or "")()
+                    return Casting.NoDiscActive() and not protReady
                 end,
             },
             {
@@ -1061,7 +997,7 @@ return {
                 allowDead = true,
                 cond = function(self, spell, target)
                     if not Config:GetSetting('DoAEDamage') then return false end
-                    return self.ClassConfig.HelperFunctions.AETargetCheck(true)
+                    return Combat.AETargetCheck(true)
                 end,
             },
             {
@@ -1118,9 +1054,7 @@ return {
             {
                 name_func = function(self) return Casting.GetFirstAA({ "Hand of Disruption", "Divine Stun", }) end,
                 type = "AA",
-                cond = function(self, aaName, target)
-                    return not Core.IsTanking() or not Casting.CanUseAA("Force of Disruption")
-                end,
+                load_cond = function(self) return not Core.IsTanking() or not Casting.CanUseAA("Force of Disruption") end,
             },
             {
                 name = "Bash",
@@ -1208,18 +1142,6 @@ return {
         },
 
         --AE(All Modes)
-        ['DoAEDamage']        = {
-            DisplayName = "Do AE Damage",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 101,
-            Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
-                "This is a top-level setting that governs all AE stuns that cause damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
-            Default = false,
-            FAQ = "Why am I using AE damage when there are mezzed mobs around?",
-            Answer = "It is not currently possible to properly determine Mez status without direct Targeting. If you are mezzing, consider turning this option off.",
-        },
         ['AEStunUse']         = {
             DisplayName = "AEStun Spell Use:",
             Group = "Abilities",
@@ -1248,46 +1170,6 @@ return {
             Min = 1,
             Max = 3,
         },
-        ['AETargetCnt']       = {
-            DisplayName = "AE Target Count",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 102,
-            Tooltip = "Minimum number of valid targets before using AE Spells, Disciplines or AA.",
-            Default = 2,
-            Min = 1,
-            Max = 10,
-        },
-        ['MaxAETargetCnt']    = {
-            DisplayName = "Max AE Targets",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 103,
-            Tooltip =
-            "Maximum number of valid targets to use AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
-            Default = 5,
-            Min = 2,
-            Max = 30,
-            FAQ = "How do I take advantage of the Max AE Targets setting?",
-            Answer =
-            "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
-        },
-        ['SafeAEDamage']      = {
-            DisplayName = "AE Proximity Check",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 104,
-            Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
-            Default = false,
-            ConfigType = "Advanced",
-            FAQ = "Can you better explain the AE Proximity Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
-                "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
-        },
 
         --Hate Tools
         ['AETauntAA']         = {
@@ -1299,33 +1181,6 @@ return {
             Tooltip = "Use Beacon of the Righteous to regain AE aggro in Tank Mode.",
             Default = true,
             ConfigType = "Advanced",
-        },
-        ['AETauntCnt']        = {
-            DisplayName = "AE Taunt Count",
-            Group = "Abilities",
-            Header = "Tanking",
-            Category = "Hate Tools",
-            Index = 102,
-            Tooltip = "Minimum number of haters before using AE Taunt AA or Stuns(when used as taunts).",
-            Default = 2,
-            Min = 1,
-            Max = 30,
-            FAQ = "Why don't we use AE taunts on single targets?",
-            Answer =
-            "AE taunts are configured to only be used if a target has less than 100% hate on you, at whatever count you configure, so abilities with similar conditions may be used instead.",
-        },
-        ['SafeAETaunt']       = {
-            DisplayName = "AE Taunt Safety Check",
-            Group = "Abilities",
-            Header = "Tanking",
-            Category = "Hate Tools",
-            Index = 103,
-            Tooltip = "Limit unintended pulls with AE Taunts or Stuns(when used as taunts). May result in non-use due to false positives.",
-            Default = false,
-            ConfigType = "Advanced",
-            FAQ = "Can you better explain the AE Stun Safety Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the taunt.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the taunt not being used when it is safe to do so.",
         },
 
         --Defenses
@@ -1440,18 +1295,14 @@ return {
 
         --Heals/Cures
         ['DoTouchHeal']       = {
-            DisplayName = "Touch Heal Use:",
+            DisplayName = "Use Touch Heal",
             Group = "Abilities",
             Header = "Recovery",
             Category = "General Healing",
             Index = 101,
-            Tooltip = "Choose when the Paladin will use the single-target Touch-line healing spell.",
+            Tooltip = "Choose whether the Paladin will use the single-target Touch-line healing spell.",
             RequiresLoadoutChange = true,
-            Type = "Combo",
-            ComboOptions = { 'Emergency Use(BigHeal)', 'Standard Use(MainHeal)', 'Never', },
-            Default = 1,
-            Min = 1,
-            Max = 3,
+            Default = true,
             ConfigType = "Advanced",
         },
         ['DoLightHeal']       = {
@@ -1479,21 +1330,6 @@ return {
             RequiresLoadoutChange = true,
             Type = "Combo",
             ComboOptions = { 'Current Tier', 'Current Tier + Last Tier', 'Never', },
-            Default = 1,
-            Min = 1,
-            Max = 3,
-            ConfigType = "Advanced",
-        },
-        ['WaveHealUse']       = {
-            DisplayName = "Use Waves for ST:",
-            Group = "Abilities",
-            Header = "Recovery",
-            Category = "General Healing",
-            Index = 104,
-            Tooltip = "Use your Wave Heals as single-target heals as needed.",
-            RequiresLoadoutChange = true,
-            Type = "Combo",
-            ComboOptions = { 'Emergency Use(BigHeal)', 'Standard Use(MainHeal)', 'Never', },
             Default = 1,
             Min = 1,
             Max = 3,

@@ -104,6 +104,12 @@ end
 function Base:OnCombatModeChanged()
 end
 
+function Base:OnForceTargetChange(forceTargetId)
+end
+
+function Base:OnTargetChange(targetId)
+end
+
 function Base:DoGetState()
     return "Running..."
 end

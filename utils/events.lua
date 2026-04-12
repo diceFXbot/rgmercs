@@ -46,14 +46,14 @@ function Events.HandleDeath()
     end
 end
 
-function Events.DoEvents(force)
-    if not force and not Config:GetSetting('RunCoroutinesDuringLoops') then
-        return
-    end
-
-    Comms.SendHeartbeat(Core.GetMainAssistSpawn().DisplayName(), Config:GetSetting('ChaseOn') and Config:GetSetting('ChaseTarget') or "Chase Off")
+function Events.DoEvents()
+    Events.SendHeartbeat(false)
 
     Modules:ExecAll("DoEvents")
+end
+
+function Events.SendHeartbeat(forceSend)
+    Comms.SendHeartbeat(Globals.MainAssist, Config:GetSetting('ChaseOn') and Config:GetSetting('ChaseTarget') or "Chase Off", forceSend)
 end
 
 return Events

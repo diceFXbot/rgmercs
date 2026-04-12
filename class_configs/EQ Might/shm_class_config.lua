@@ -6,7 +6,7 @@ local Core         = require("utils.core")
 local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
 local Logger       = require("utils.logger")
-local Strings      = require("utils.strings")
+local Combat       = require("utils.combat")
 
 local _ClassConfig = {
     _version              = "3.1 - EQ Might",
@@ -159,8 +159,6 @@ local _ClassConfig = {
         },
         ["LowLvlStrBuff"] = {
             -- Low Level Strength Buff -- Below 68 these are only worthwhile on non-live, defiant stat caps too easily. Even then arguable.
-            "Talisman of Might",  -- Level 70, Group
-            "Spirit of Might",    -- Level 68, Single Target
             "Talisman of the Diaku",
             "Infusion of Spirit", -- Level 49, Str/Dex/Sta, can use HP buff
             "Tumultuous Strength",
@@ -407,6 +405,11 @@ local _ClassConfig = {
             "Minionskin",
             "Lesser Minionskin",
         },
+        ['MeleeBuff'] = {
+            "Ancient: Talisman of Might", -- Level 70, Group
+            "Talisman of Might",          -- Level 70, Group
+            "Spirit of Might",            -- Level 68, Single Target
+        },
     },
     ['HelperFunctions']   = {
         DoRez = function(self, corpseId, ownerName)
@@ -432,27 +435,6 @@ local _ClassConfig = {
             end
 
             return rezAction
-        end,
-
-        --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities
-        AETargetCheck = function(minCount, printDebug)
-            local haters = mq.TLO.SpawnCount("NPC xtarhater radius 80 zradius 50")()
-            local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 80 zradius 50")()
-            local totalHaters = haters + haterPets
-            if totalHaters < minCount or totalHaters > Config:GetSetting('MaxAETargetCnt') then return false end
-
-            if Config:GetSetting('SafeAEDamage') then
-                local npcs = mq.TLO.SpawnCount("NPC radius 80 zradius 50")()
-                local npcPets = mq.TLO.SpawnCount("NPCpet radius 80 zradius 50")()
-                if totalHaters < (npcs + npcPets) then
-                    if printDebug then
-                        Logger.log_verbose("AETargetCheck(): %d mobs in range but only %d xtarget haters, blocking AE damage actions.", npcs + npcPets, haters + haterPets)
-                    end
-                    return false
-                end
-            end
-
-            return true
         end,
 
         ProcBuffChoice = function()
@@ -574,9 +556,9 @@ local _ClassConfig = {
             {
                 name = "SingleHot",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoSingleHot') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoSingleHot') then return false end
-                    return Casting.GroupBuffCheck(spell, target)
+                    return not Targeting.BigHealsNeeded(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
@@ -707,8 +689,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if not Config:GetSetting('DoAEDamage') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal() and Targeting.AggroCheckOkay() and
-                    self.ClassConfig.HelperFunctions.AETargetCheck(Config:GetSetting('AETargetCnt'), true)
+                return combat_state == "Combat" and Core.OkayToNotHeal() and Targeting.AggroCheckOkay() and Combat.AETargetCheck(true)
             end,
         },
 
@@ -1094,8 +1075,15 @@ local _ClassConfig = {
                 load_cond = function(self) return mq.TLO.FindItem("=Artifact of the Champion")() and mq.TLO.Me.Level() >= 68 end,
                 cond = function(self, itemName, target)
                     return Casting.GroupBuffItemCheck(itemName, target)
-                        -- Don't try to overwrite Champion with Ferine Avatar
-                        and Casting.AddedBuffCheck(5417, target)
+                end,
+            },
+            {
+                name = "MeleeBuff",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoMeleeBuff') end,
+                active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
+                cond = function(self, spell, target)
+                    return Targeting.TargetIsAMelee(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             { --Fix this, some priests will want this, adjust options
@@ -1155,6 +1143,7 @@ local _ClassConfig = {
             {
                 name = "Group Shrink",
                 type = "AA",
+                load_cond = function(self) return Config:GetSetting('DoGroupShrink') end,
                 active_cond = function(self) return mq.TLO.Me.Height() < 2 end,
                 cond = function(self, aaName, target)
                     if not Config:GetSetting('DoGroupShrink') then return false end
@@ -1164,42 +1153,42 @@ local _ClassConfig = {
             {
                 name = "ShrinkSpell",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoGroupShrink') and not Casting.CanUseAA("Group Shrink") end,
                 active_cond = function(self) return mq.TLO.Me.Height() < 2 end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoGroupShrink') or Casting.CanUseAA("Group Shrink") then return false end
                     return Targeting.GetTargetHeight(target) > 2.2
                 end,
             },
             {
                 name = "LowLvlHPBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoLLHPBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoLLHPBuff') then return false end
-                    return (mq.TLO.Me.Level() or 0) < 71 and Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
+                    return Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "LowLvlAgiBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoLLAgiBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoLLAgiBuff') then return false end
-                    return (mq.TLO.Me.Level() or 0) < 71 and Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
+                    return Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "LowLvlStaBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoLLStaBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoLLStaBuff') then return false end
-                    return (mq.TLO.Me.Level() or 0) < 71 and Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
+                    return Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "LowLvlStrBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoLLStrBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoLLStrBuff') then return false end
-                    return (mq.TLO.Me.Level() or 0) < 71 and Targeting.TargetIsAMelee(target) and Casting.GroupBuffCheck(spell, target)
+                    return Targeting.TargetIsAMelee(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
         },
@@ -1548,6 +1537,7 @@ local _ClassConfig = {
             Header = "Buffs",
             Category = "Group",
             Index = 102,
+            RequiresLoadoutChange = true,
             Tooltip = "Use Group Shrink Buff",
             Default = true,
             FAQ = "Group Shrink is enabled, why are my dudes still big?",
@@ -1574,6 +1564,16 @@ local _ClassConfig = {
             Tooltip = "Do Haste Spells/AAs",
             Default = true,
             ConfigType = "Advanced",
+        },
+        ['DoMeleeBuff']         = {
+            DisplayName = "Use Melee Skill Buff",
+            Group = "Abilities",
+            Header = "Buffs",
+            Category = "Group",
+            Index = 105,
+            Tooltip = "Use your 'All (melee) Skills Damage Modifier' line of buffs. May conflict with druid buffs.",
+            RequiresLoadoutChange = true,
+            Default = true,
         },
 
         -- Debuffs
@@ -1696,8 +1696,9 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Buffs",
             Category = "Group",
-            Index = 105,
+            Index = 106,
             Tooltip = "Use Low Level (<= 70) HP Buffs",
+            RequiresLoadoutChange = true,
             Default = false,
             ConfigType = "Advanced",
         },
@@ -1706,8 +1707,9 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Buffs",
             Category = "Group",
-            Index = 106,
+            Index = 107,
             Tooltip = "Use Low Level (<= 70) HP Buffs",
+            RequiresLoadoutChange = true,
             Default = false,
             ConfigType = "Advanced",
         },
@@ -1716,8 +1718,9 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Buffs",
             Category = "Group",
-            Index = 107,
+            Index = 108,
             Tooltip = "Use Low Level (<= 70) HP Buffs",
+            RequiresLoadoutChange = true,
             Default = false,
             ConfigType = "Advanced",
         },
@@ -1726,25 +1729,14 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Buffs",
             Category = "Group",
-            Index = 108,
+            Index = 109,
             Tooltip = "Use Low Level (<= 70) HP Buffs",
+            RequiresLoadoutChange = true,
             Default = false,
             ConfigType = "Advanced",
         },
 
         --Damage(AE)
-        ['DoAEDamage']          = {
-            DisplayName = "Do AE Damage",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 101,
-            Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
-                "This is a top-level setting that governs all AE damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
-            Default = false,
-            FAQ = "Why am I using AE damage when there are mezzed mobs around?",
-            Answer = "It is not currently possible to properly determine Mez status without direct Targeting. If you are mezzing, consider turning this option off.",
-        },
         ['DoPBAE']              = {
             DisplayName = "Use PBAE Spells",
             Group = "Abilities",
@@ -1756,45 +1748,7 @@ local _ClassConfig = {
             "**WILL BREAK MEZ** Use your Poison PB AE Spells . **WILL BREAK MEZ**",
             Default = false,
         },
-        ['AETargetCnt']         = {
-            DisplayName = "AE Tgt Cnt",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 103,
-            Tooltip = "Minimum number of valid targets before using PB Spells like the of Flame line.",
-            Default = 4,
-            Min = 1,
-            Max = 10,
-        },
-        ['MaxAETargetCnt']      = {
-            DisplayName = "Max AE Targets",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 104,
-            Tooltip =
-            "Maximum number of valid targets before using AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
-            Default = 6,
-            Min = 2,
-            Max = 30,
-            FAQ = "How do I take advantage of the Max AE Targets setting?",
-            Answer =
-            "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
-        },
-        ['SafeAEDamage']        = {
-            DisplayName = "AE Proximity Check",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 107,
-            Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
-            Default = false,
-            FAQ = "Can you better explain the AE Proximity Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
-                "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
-        },
+
         ['UseDonorPet']         = {
             DisplayName = "Summon Nature Spirit",
             Group = "Abilities",

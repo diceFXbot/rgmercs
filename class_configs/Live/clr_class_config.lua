@@ -902,7 +902,7 @@ local _ClassConfig = {
                 name = "DichoHeal",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -910,7 +910,7 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Targeting.GroupedWithTarget(target) then return false end
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -922,7 +922,7 @@ local _ClassConfig = {
                 type = "Item",
                 cond = function(self, itemName, target)
                     if not Targeting.GroupedWithTarget(target) then return false end
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -965,7 +965,7 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Targeting.GroupedWithTarget(target) then return false end
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -973,7 +973,7 @@ local _ClassConfig = {
                 type = "Item",
                 cond = function(self, itemName, target)
                     if not Targeting.GroupedWithTarget(target) then return false end
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -991,7 +991,7 @@ local _ClassConfig = {
                 name = "Focused Celestial Regeneration",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -1019,7 +1019,7 @@ local _ClassConfig = {
                 name = "Focused Celestial Regeneration",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -1065,7 +1065,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoHealOverTime') end,
                 cond = function(self, spell, target)
-                    return Casting.GroupBuffCheck(spell, target)
+                    return not Targeting.BigHealsNeeded(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
@@ -1079,7 +1079,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoHealOverTime') end,
                 cond = function(self, spell, target)
-                    return Casting.GroupBuffCheck(spell, target)
+                    return not Targeting.BigHealsNeeded(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
@@ -1087,7 +1087,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoCompleteHeal') end,
                 cond = function(self, spell, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return (target.PctHPs() or 999) <= Config:GetSetting('CompleteHealPct')
                 end,
             },
@@ -1095,7 +1095,7 @@ local _ClassConfig = {
                 name = "HealingLight",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return not (Config:GetSetting("DoCompleteHeal") and Targeting.TargetIsMA(target))
+                    return not (Config:GetSetting("DoCompleteHeal") and Targeting.TargetIsATank(target))
                 end,
             },
         },
@@ -1133,10 +1133,7 @@ local _ClassConfig = {
             state = 1,
             steps = 1,
             load_cond = function() return Config:GetSetting('DoManaRestore') and (Casting.CanUseAA("Veturika's Perseverance") or Casting.CanUseAA("Quiet Prayer")) end,
-            targetId = function(self)
-                return { Combat.FindWorstHurtManaGroupMember(Config:GetSetting('ManaRestorePct')),
-                    Combat.FindWorstHurtManaXT(Config:GetSetting('ManaRestorePct')), }
-            end,
+            targetId = function(self) return { Combat.FindWorstHurtMana(Config:GetSetting('ManaRestorePct')), } end,
             cond = function(self, combat_state)
                 local downtime = combat_state == "Downtime" and Casting.OkayToBuff()
                 local combat = combat_state == "Combat"
@@ -1422,15 +1419,15 @@ local _ClassConfig = {
                 name = "Divine Guardian",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffAACheck(aaName, target)
                 end,
             },
             {
                 name = "AegoBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('AegoSymbol') <= 2 end,
                 cond = function(self, spell, target)
-                    if Config:GetSetting('AegoSymbol') > 2 then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1445,16 +1442,17 @@ local _ClassConfig = {
             {
                 name = "SpellBlessing",
                 type = "Spell",
+                load_cond = function(self) return mq.TLO.Me.Level() <= 95 end, -- could check to make sure we know a unified. This is cheaper.
                 cond = function(self, spell, target)
-                    if mq.TLO.Me.Level() > 94 then return false end -- could check to make sure we know a unified. This is cheaper.
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "ACBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoACBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoACBuff') or ((spell.TargetType() or ""):lower() == "single" and target.ID() ~= Core.GetMainAssistId()) then return false end
+                    if (spell.TargetType() or ""):lower() == "single" and not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1463,7 +1461,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoVieBuff') and self:GetResolvedActionMapItem('GroupVieBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoVieBuff') or (Targeting.TargetIsMA(target) and self:GetResolvedActionMapItem('ShiningBuff')) then return false end
+                    if Targeting.TargetIsATank(target) and self:GetResolvedActionMapItem('ShiningBuff') then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1472,7 +1470,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoVieBuff') and not self:GetResolvedActionMapItem('GroupVieBuff') end,
                 cond = function(self, spell, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1480,7 +1478,7 @@ local _ClassConfig = {
                 name = "ShiningBuff",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1489,7 +1487,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoDivineBuff') end,
                 cond = function(self, spell, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target) and Casting.ReagentCheck(spell)
                 end,
             },

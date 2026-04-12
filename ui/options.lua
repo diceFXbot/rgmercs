@@ -144,11 +144,11 @@ OptionsUI.Groups                = { --- Add a default of the same name for any k
         Headers = {
         },
         HiddenOnSearch = function(self)
-            return not Modules:ExecModule("FAQ", "SearchMatches", self.configFilter)
+            return not Modules:ExecModule("FAQ", "SearchMatches", self.configFilter:lower())
         end,
 
         HeaderRender = function(self)
-            return Modules:ExecModule("FAQ", "RenderConfig", self.configFilter)
+            return Modules:ExecModule("FAQ", "RenderConfig", self.configFilter:lower())
         end,
     },
     {
@@ -278,7 +278,7 @@ function OptionsUI:ApplySearchFilter()
                     local customSetting           = (settingDefaults.Type == "Custom")
                     local showAdv                 = Config:GetSetting('ShowAdvancedOpts') or (settingDefaults.ConfigType == nil or settingDefaults.ConfigType:lower() == "normal")
 
-                    if showAdv and not customSetting and (headerMatches or categoryMatches or settingDisplayNameLower:find(filter, 1, true) ~= nil or
+                    if showAdv and not customSetting and (headerMatches or categoryMatches or settingName:lower():find(filter, 1, true) ~= nil or settingDisplayNameLower:find(filter, 1, true) ~= nil or
                             settingTooltipLower:find(filter, 1, true) ~= nil) then
                         self.FilteredSettingsByCat[category] = self.FilteredSettingsByCat[category] or {}
                         table.insert(self.FilteredSettingsByCat[category], settingName)
@@ -350,7 +350,7 @@ function OptionsUI:RenderGroupPanel(groupLabel, groupName)
         self:SetSelectedGroup(groupName)
     end
     ImGui.SameLine()
-    ImGui.Text(groupLabel)
+    Ui.RenderText(groupLabel)
 end
 
 function OptionsUI:RenderGroupPanelWithImage(group)

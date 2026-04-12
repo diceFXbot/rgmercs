@@ -5,6 +5,7 @@ local Config      = require('utils.config')
 local Globals     = require('utils.globals')
 local Core        = require("utils.core")
 local Modules     = require("utils.modules")
+local Events      = require("utils.events")
 local Movement    = require("utils.movement")
 local Targeting   = require("utils.targeting")
 local Rotation    = require("utils.rotation")
@@ -278,6 +279,15 @@ Module.CommandHandlers                       = {
             return true
         end,
     },
+    stopcast = {
+        usage = "/rgl stopcast",
+        about =
+        "Stops the current cast, removes all retry attempts, and prevents any other rotations or clickies from running until after queued actions have processed.\nMost useful in hotkeys before priority abilities, gate, throne, etc.",
+        handler = function(config, value)
+            Globals.StopCast = true
+            return true
+        end,
+    },
 }
 
 function Module:New()
@@ -417,13 +427,13 @@ function Module:RenderQueuedAbilities()
 
                 for _, queueData in pairs(self.TempSettings.QueuedAbilities) do
                     ImGui.TableNextColumn()
-                    ImGui.Text(Strings.FormatTime((Globals.GetTimeSeconds() - queueData.queuedTime)))
+                    Ui.RenderText(Strings.FormatTime((Globals.GetTimeSeconds() - queueData.queuedTime)))
                     ImGui.TableNextColumn()
-                    ImGui.Text(queueData.type)
+                    Ui.RenderText(queueData.type)
                     ImGui.TableNextColumn()
-                    ImGui.Text(queueData.target and queueData.target.CleanName() or "None")
+                    Ui.RenderText(queueData.target and queueData.target.CleanName() or "None")
                     ImGui.TableNextColumn()
-                    ImGui.Text(queueData.name)
+                    Ui.RenderText(queueData.name)
                 end
 
                 ImGui.EndTable()
@@ -481,7 +491,7 @@ function Module:RenderRotationWithToggle(r, rotationTable)
     if Config:GetSetting('ShowDebugTiming') then
         -- Draw Timing Data
         ImGui.SetCursorPos(ImGui.GetWindowWidth() - timingOffset, cursorScreenPos.y)
-        ImGui.Text(r.lastTimeSpent and ("<" .. Strings.FormatTimeMS(r.lastTimeSpent * 1000) .. ">") or "")
+        Ui.RenderText(r.lastTimeSpent and ("<" .. Strings.FormatTimeMS(r.lastTimeSpent * 1000) .. ">") or "")
     end
     -- Now set the rendering cursor back to where we were after the Header / Tables were rendered
     ImGui.SetCursorPos(cursorScreenPosAfterRender)
@@ -490,14 +500,28 @@ end
 function Module:Render()
     Base.Render(self)
 
-    ImGui.Text("Combat State: %s", self.CombatState)
-    ImGui.Text("Current Rotation: %s [%d]", self.CurrentRotation.name, self.CurrentRotation.state)
+    ImGui.BeginTable("##ClassInfoTable", 2, bit32.bor(ImGuiTableFlags.BordersInner, ImGuiTableFlags.SizingFixedFit))
+    ImGui.TableNextColumn()
+    Ui.RenderText("Combat State")
+    ImGui.TableNextColumn()
+    Ui.RenderColoredText(Combat.GetCachedCombatState() == "Combat" and Globals.Constants.Colors.MainCombatColor or Globals.Constants.Colors.MainDowntimeColor,
+        "%s", Combat.GetCachedCombatState() or "N/A")
+    ImGui.TableNextColumn()
+    Ui.RenderText("Rotation")
+    ImGui.TableNextColumn()
+    Ui.RenderColoredText(Globals.Constants.BasicColors.Cyan, self.CurrentRotation.name)
+    ImGui.TableNextColumn()
+    Ui.RenderText("State")
+    ImGui.TableNextColumn()
+    Ui.RenderColoredText(Globals.Constants.BasicColors.LightYellow, self.CurrentRotation.state)
+    ImGui.TableNextColumn()
+    ImGui.EndTable()
 
     ---@type boolean|nil
     local pressed = false
 
     if self.ClassConfig and self.ModuleLoaded then
-        ImGui.Text("Active Mode:")
+        Ui.RenderText("Active Mode:")
         ImGui.SameLine()
         ImGui.SetNextItemWidth(150)
         Ui.Tooltip(self.ClassConfig.DefaultConfig.Mode.Tooltip)
@@ -512,7 +536,7 @@ function Module:Render()
         Ui.RenderConfigSelector()
 
         ImGui.SeparatorText("Config Actions")
-        --ImGui.Text("Actions:")
+        --Ui.RenderText("Actions:")
         if ImGui.SmallButton(Icons.FA_EYE .. " Rescan Loadout") then
             self:RescanLoadout()
             Logger.log_info("\awManual loadout scan initiated.")
@@ -572,8 +596,8 @@ function Module:Render()
         if not self.TempSettings.ResolvingActions then
             if ImGui.CollapsingHeader("Rotations") then
                 ImGui.Indent()
-                ImGui.Text("Combat State: %s", self.CombatState)
-                ImGui.Text("Current Rotation: %s [%d]", self.CurrentRotation.name, self.CurrentRotation.state)
+                Ui.RenderText("Combat State: %s", self.CombatState)
+                Ui.RenderText("Current Rotation: %s [%d]", self.CurrentRotation.name, self.CurrentRotation.state)
 
                 for _, r in ipairs(self.TempSettings.RotationStates) do
                     self:RenderRotationWithToggle(r, self.TempSettings.RotationTable)
@@ -858,7 +882,8 @@ function Module:IGCheckAndRez(combat_state)
         if rezSpawn() and ownerName ~= mq.TLO.Me.CleanName() then -- don't try to rez ourselves in the group checks
             if self.ClassConfig.HelperFunctions.DoRez then
                 Logger.log_debug("\atIGCheckAndRez(): Found corpse of %s :: %s", rezSpawn.CleanName() or "Unknown", rezSpawn.Name() or "Unknown")
-                if not Config:GetSetting('RezInZonePC') and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
+                -- don't rez someone nearby during combat or any time if we have it set that way
+                if (combat_state == "Combat" or not Config:GetSetting('RezInZonePC')) and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
                     Logger.log_debug("\atIGCheckAndRez(): Found corpse of %s(ID:%d), but the player appears to be in-zone.", ownerName or "Unknown",
                         rezSpawn.ID() or 0)
                 elseif Config:GetSetting('ConCorpseForRez') and Tables.TableContains(Globals.RezzedCorpses, rezSpawn.ID()) then
@@ -893,7 +918,8 @@ function Module:OOGCheckAndRez(combat_state)
         -- don't try to rez in group, we just checked those PCs... we will check them again with IGCheckAndRez next loop.
         if rezSpawn() and not mq.TLO.Group.Member(ownerName)() and (Targeting.IsSafeName("pc", rezSpawn.DisplayName())) then
             if self.ClassConfig.HelperFunctions.DoRez then
-                if not Config:GetSetting('RezInZonePC') and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
+                -- don't rez someone nearby during combat or any time if we have it set that way
+                if (combat_state == "Combat" or not Config:GetSetting('RezInZonePC')) and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
                     Logger.log_debug("\atIGCheckAndRez(): Found corpse of %s(ID:%d), but the player appears to be in-zone.", ownerName or "Unknown",
                         rezSpawn.ID() or 0)
                 elseif Config:GetSetting('ConCorpseForRez') and Tables.TableContains(Globals.RezzedCorpses, rezSpawn.ID()) then
@@ -941,6 +967,9 @@ function Module:HealById(id)
     local selectedRotation = nil
 
     for idx, rotation in ipairs(self.TempSettings.HealRotationStates or {}) do
+        if Globals.PauseMain or Globals.StopCast then
+            break
+        end
         self.TempSettings.CurrentRotationStateType = 2
         self.TempSettings.CurrentRotationStateId = idx
 
@@ -955,30 +984,31 @@ function Module:HealById(id)
                     rotation.name)
                 -- since these are ordered by prioirty we can assume we are the best option.
                 selectedRotation = rotation
+                if selectedRotation then
+                    self.CurrentRotation = { name = selectedRotation.name, state = selectedRotation.state or 0, }
 
-                self.CurrentRotation = { name = selectedRotation.name, state = selectedRotation.state or 0, }
+                    -- If we need to heal others we should wait on the cooldown.
+                    Casting.WaitGlobalCoolDown("Healing: ")
 
-                -- If we need to heal others we should wait on the cooldown.
-                Casting.WaitGlobalCoolDown("Healing: ")
+                    local newState, wasRun = Rotation.Run(self, self:GetHealRotationTable(selectedRotation.name), { id, },
+                        self.ResolvedActionMap, selectedRotation.steps or 0, selectedRotation.state or 0,
+                        self.CombatState == "Downtime", selectedRotation.doFullRotation or false, nil, Config:GetSetting('EnabledRotationEntries') or {})
+                    if selectedRotation.state then selectedRotation.state = newState end
 
-                local newState, wasRun = Rotation.Run(self, self:GetHealRotationTable(selectedRotation.name), id,
-                    self.ResolvedActionMap, selectedRotation.steps or 0, selectedRotation.state or 0,
-                    self.CombatState == "Downtime", selectedRotation.doFullRotation or false, nil, Config:GetSetting('EnabledRotationEntries') or {})
-                if selectedRotation.state then selectedRotation.state = newState end
-
-                if wasRun and Casting.GetLastCastResultName() == "CAST_SUCCESS" then
-                    Logger.log_verbose(
-                        "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \agSuccessful\aw!", id,
-                        rotation.name)
-                    Comms.HandleAnnounce(Comms.FormatChatEvent("Heal", healTarget.CleanName(), Casting.GetLastUsedSpell()),
-                        Config:GetSetting('HealAnnounceGroup'),
-                        Config:GetSetting('HealAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-                    break
-                else
-                    Logger.log_verbose(
-                        "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \arNOT \awSuccessful! Conditions: wasRun(%s) castResult(%s) \ayGoing to keep trying!",
-                        id,
-                        rotation.name, Strings.BoolToColorString(wasRun), Casting.GetLastCastResultName())
+                    if wasRun and Casting.GetLastCastResultName() == "CAST_SUCCESS" then
+                        Logger.log_verbose(
+                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \agSuccessful\aw!", id,
+                            rotation.name)
+                        Comms.HandleAnnounce(Comms.FormatChatEvent("Heal", healTarget.CleanName(), Casting.GetLastUsedSpell()),
+                            Config:GetSetting('HealAnnounceGroup'),
+                            Config:GetSetting('HealAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+                        break
+                    else
+                        Logger.log_verbose(
+                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \arNOT \awSuccessful! Conditions: wasRun(%s) castResult(%s) \ayGoing to keep trying!",
+                            id,
+                            rotation.name, Strings.BoolToColorString(wasRun), Casting.GetLastCastResultName())
+                    end
                 end
             else
                 Logger.log_verbose("\awHealById(%d):: Heal Rotation: \at%s\aw \aris NOT\aw appropriate to use.", id,
@@ -991,31 +1021,19 @@ function Module:HealById(id)
     self.TempSettings.CurrentRotationStateType = 0
 
     if selectedRotation == nil then
-        Logger.log_verbose("\ayHealById(%d):: No appropriate heal rotation found. Bailling.", id)
+        Logger.log_verbose("\ayHealById(%d):: No appropriate heal rotation found. Bailing.", id)
         return
     end
 end
 
 function Module:RunHealRotation()
-    Logger.log_verbose("\ao[Heals] Checking MA (HPs = %d)...", Core.GetMainAssistPctHPs())
-    if Core.GetMainAssistPctHPs() < Config:GetSetting('MaxHealPoint') then
-        self:HealById(Core.GetMainAssistId())
-        Logger.log_verbose("\ao[Heals] Checked MA...")
-    end
-
     Logger.log_verbose("\ao[Heals] Checking for injured friends...")
     self:HealById(Combat.FindWorstHurtGroupMember(Config:GetSetting('MaxHealPoint')))
 
-    if Config:GetSetting('HealOutside') then
+    if Config:GetSetting('UseHealList') then
+        self:HealById(Combat.FindWorstHurtHealList(Config:GetSetting('MaxHealPoint')))
+    else
         self:HealById(Combat.FindWorstHurtXT(Config:GetSetting('MaxHealPoint')))
-    end
-
-    if mq.TLO.Me.PctHPs() < Config:GetSetting('MaxHealPoint') then
-        self:HealById(mq.TLO.Me.ID())
-    end
-
-    if Config:GetSetting('DoPetHeals') and mq.TLO.Me.Pet.ID() > 0 and (mq.TLO.Me.Pet.PctHPs() or 101) < Config:GetSetting('PetHealPoint') then
-        self:HealById(mq.TLO.Me.Pet.ID())
     end
 end
 
@@ -1436,6 +1454,8 @@ function Module:GiveTime()
         return
     end
 
+    Globals.StopCast = false
+
     if self:ProcessQueuedEvents() then
         -- more to do next frame.
         return
@@ -1517,6 +1537,9 @@ function Module:GiveTime()
 
     -- Downtime rotation will just run a full rotation to completion
     for idx, r in ipairs(self.TempSettings.RotationStates) do
+        if Globals.PauseMain or Globals.StopCast then
+            break
+        end
         Logger.log_verbose("\ay:::TEST ROTATION::: => \at%s", r.name)
         self.TempSettings.CurrentRotationStateType = 1
         self.TempSettings.CurrentRotationStateId = idx
@@ -1533,29 +1556,24 @@ function Module:GiveTime()
             end
 
             if timeCheckPassed then
-                local start = string.format("%.03f", Globals.GetTimeSeconds() / 1000)
+                local start = string.format("%.03f", Globals.GetTimeMS())
                 local targetTable = Core.SafeCallFunc("Rotation Target Table", r.targetId)
-                if targetTable ~= false then
-                    for _, targetId in ipairs(targetTable) do
-                        -- only do combat with a target.
-                        if targetId and targetId > 0 then
-                            if Core.SafeCallFunc(string.format("Rotation Condition Check for %s", r.name), r.cond, self, combat_state) then
-                                r.lastCondCheck = true
-                                Logger.log_verbose("\aw:::RUN ROTATION::: \at%d\aw => \am%s", targetId, r.name)
-                                self.CurrentRotation = { name = r.name, state = r.state or 0, }
-                                local newState = Rotation.Run(self, self:GetRotationTable(r.name), targetId,
-                                    self.ResolvedActionMap, r.steps or 0, r.state or 0, self.CombatState == "Downtime", r.doFullRotation or false, r.cond,
-                                    Config:GetSetting('EnabledRotationEntries') or {})
+                if targetTable and #targetTable > 0 then
+                    if Core.SafeCallFunc(string.format("Rotation Condition Check for %s", r.name), r.cond, self, combat_state) then
+                        r.lastCondCheck = true
+                        Logger.log_verbose("\aw:::RUN ROTATION::: \am%s", r.name)
+                        self.CurrentRotation = { name = r.name, state = r.state or 0, }
+                        local newState = Rotation.Run(self, self:GetRotationTable(r.name), targetTable,
+                            self.ResolvedActionMap, r.steps or 0, r.state or 0, self.CombatState == "Downtime", r.doFullRotation or false, r.cond,
+                            Config:GetSetting('EnabledRotationEntries') or {})
 
-                                if r.state then r.state = newState end
-                                self.TempSettings.RotationTimers[r.name] = Globals.GetTimeSeconds()
-                            else
-                                r.lastCondCheck = false
-                            end
-                        end
+                        if r.state then r.state = newState end
+                        self.TempSettings.RotationTimers[r.name] = Globals.GetTimeSeconds()
+                    else
+                        r.lastCondCheck = false
                     end
                 end
-                local stop = string.format("%.03f", Globals.GetTimeSeconds() / 1000)
+                local stop = string.format("%.03f", Globals.GetTimeMS())
 
                 r.lastTimeSpent = stop - start
             else
@@ -1599,7 +1617,8 @@ function Module:OnZone()
         mq.delay(addDelay)
         self:SetPetHold()
     end
-    Module.TempSettings.ImmuneTargets = {} -- clear list of slow/snare/stun immune mobs
+    Module.TempSettings.ImmuneTargets = {}   -- clear list of slow/snare/stun immune mobs
+    Module.TempSettings.QueuedAbilities = {} -- clear queued actions
 end
 
 function Module:DoGetState()
@@ -1818,6 +1837,21 @@ end
 
 function Module:GetLastCombatModeChangeTime()
     return self.TempSettings.CombatModeChangeTime
+end
+
+function Module:OnTargetChange(targetId)
+    Logger.log_debug("OnTargetChange(): TargetID changed to %d", targetId)
+    if Core.IAmMA() then
+        Events.SendHeartbeat(true)
+    end
+end
+
+function Module:OnForceTargetChange(forceTargetId)
+    Logger.log_debug("OnForceTargetChange(): ForceTargetID changed to %d", Globals.ForceTargetID)
+
+    if Core.IAmMA() then
+        Events.SendHeartbeat(true)
+    end
 end
 
 return Module

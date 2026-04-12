@@ -8,6 +8,7 @@ local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
 local Logger       = require("utils.logger")
 local Set          = require('mq.set')
+local Combat       = require("utils.combat")
 
 --todo: add a LOT of tooltips or scrap them entirely. Hopefully the former.
 local Tooltips     = {
@@ -131,6 +132,7 @@ local _ClassConfig = {
             "Soul Shield",
             "Soul Guard",
             "Ichor Guard", -- Level 56, Timer 5
+            "Squire Guard",
         },
         ['BlockDisc'] = {
             "Deflection Discipline",
@@ -340,6 +342,7 @@ local _ClassConfig = {
         },
         ['Protective'] = {
             "Protective Discipline",
+            "Protective Surge Discipline",
         },
         ['ForPower'] = {
             "Challenge for Power",
@@ -357,27 +360,6 @@ local _ClassConfig = {
             end
 
             return false
-        end,
-        --function to determine if we should AE taunt and optionally, if it is safe to do so
-        AETauntCheck = function(printDebug)
-            local mobs = mq.TLO.SpawnCount("NPC radius 50 zradius 50")()
-            local xtCount = mq.TLO.Me.XTarget() or 0
-
-            if (mobs or xtCount) < Config:GetSetting('AETauntCnt') then return false end
-
-            local tauntme = Set.new({})
-            for i = 1, xtCount do
-                local xtarg = mq.TLO.Me.XTarget(i)
-                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and xtarg.PctAggro() < 100 and (xtarg.Distance() or 999) <= 50 then
-                    if printDebug then
-                        Logger.log_verbose("AETauntCheck(): XT(%d) Counting %s(%d) as a hater eligible to AE Taunt.", i, xtarg.CleanName() or "None",
-                            xtarg.ID())
-                    end
-                    tauntme:add(xtarg.ID())
-                end
-                if not Config:GetSetting('SafeAETaunt') and #tauntme:toList() > 0 then return true end --no need to find more than one if we don't care about safe taunt
-            end
-            return #tauntme:toList() > 0 and not (Config:GetSetting('SafeAETaunt') and #tauntme:toList() < mobs)
         end,
         --function to determine if we have enough mobs in range to use a defensive disc
         DefensiveDiscCheck = function(printDebug)
@@ -404,25 +386,7 @@ local _ClassConfig = {
             end
             return true
         end,
-        AETargetCheck = function(printDebug)
-            local haters = mq.TLO.SpawnCount("NPC xtarhater radius 80 zradius 50")()
-            local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 80 zradius 50")()
-            local totalHaters = haters + haterPets
-            if totalHaters < Config:GetSetting('AETargetCnt') or totalHaters > Config:GetSetting('MaxAETargetCnt') then return false end
 
-            if Config:GetSetting('SafeAEDamage') then
-                local npcs = mq.TLO.SpawnCount("NPC radius 80 zradius 50")()
-                local npcPets = mq.TLO.SpawnCount("NPCpet radius 80 zradius 50")()
-                if totalHaters < (npcs + npcPets) then
-                    if printDebug then
-                        Logger.log_verbose("AETargetCheck(): %d mobs in range but only %d xtarget haters, blocking AE damage actions.", npcs + npcPets, haters + haterPets)
-                    end
-                    return false
-                end
-            end
-
-            return true
-        end,
     },
     ['RotationOrder']   = {
         { --Self Buffs
@@ -454,7 +418,7 @@ local _ClassConfig = {
             state = 1,
             steps = 1,
             doFullRotation = true,
-            load_cond = function() return Core.IsTanking() and Config:GetSetting('NewAggroScanBeta') end,
+            load_cond = function() return Core.IsTanking() and Config:GetSetting('TankAggroScan') end,
             targetId = function(self) return Targeting.CheckForAggroTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical') then return false end
@@ -488,7 +452,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical') then return false end
-                return combat_state == "Combat" and self.ClassConfig.HelperFunctions.AETauntCheck(true)
+                return combat_state == "Combat" and Combat.AETauntCheck(true)
             end,
         },
         { --Dynamic weapon swapping if UseBandolier is toggled
@@ -937,7 +901,8 @@ local _ClassConfig = {
                 tooltip = Tooltips.Mantle,
                 cond = function(self, discSpell, target)
                     if not Core.IsTanking() then return false end
-                    return Casting.NoDiscActive()
+                    local protReady = mq.TLO.Me.CombatAbilityReady(Core.GetResolvedActionMapItem('Protective') or "")()
+                    return Casting.NoDiscActive() and not protReady
                 end,
             },
             {
@@ -945,6 +910,7 @@ local _ClassConfig = {
                 type = "Item",
                 tooltip = Tooltips.Epic,
                 cond = function(self, itemName, target)
+                    if Config:GetSetting('HoldEpicForNoDisc') and not Casting.NoDiscActive() then return false end
                     return self.ClassConfig.HelperFunctions.LeechCheck(self) or Globals.AutoTargetIsNamed
                 end,
             },
@@ -1224,7 +1190,7 @@ local _ClassConfig = {
     },
     ['DefaultConfig']   = {
         --Mode
-        ['Mode']            = {
+        ['Mode']              = {
             DisplayName = "Mode",
             Category = "Mode",
             Tooltip = "Select the active Combat Mode for this PC.",
@@ -1238,7 +1204,7 @@ local _ClassConfig = {
         },
 
         --Buffs and Debuffs
-        ['DoSnare']         = {
+        ['DoSnare']           = {
             DisplayName = "Use Snares",
             Group = "Abilities",
             Header = "Debuffs",
@@ -1248,7 +1214,7 @@ local _ClassConfig = {
             Default = false,
             RequiresLoadoutChange = true,
         },
-        ['SnareCount']      = {
+        ['SnareCount']        = {
             DisplayName = "Snare Max Mob Count",
             Group = "Abilities",
             Header = "Debuffs",
@@ -1259,7 +1225,7 @@ local _ClassConfig = {
             Min = 1,
             Max = 99,
         },
-        ['ProcChoice']      = {
+        ['ProcChoice']        = {
             DisplayName = "Proc Self-Buff Choice:",
             Group = "Abilities",
             Header = "Buffs",
@@ -1273,7 +1239,7 @@ local _ClassConfig = {
             Max = 3,
             RequiresLoadoutChange = true,
         },
-        ['DoCallBuff']      = {
+        ['DoCallBuff']        = {
             DisplayName = "Use Call of Darkness",
             Group = "Abilities",
             Header = "Buffs",
@@ -1283,7 +1249,7 @@ local _ClassConfig = {
             Default = false,
             RequiresLoadoutChange = true,
         },
-        ['DoVisage']        = {
+        ['DoVisage']          = {
             DisplayName = "Use Visage of Death",
             Group = "Abilities",
             Header = "Buffs",
@@ -1297,7 +1263,7 @@ local _ClassConfig = {
         },
 
         --Taps
-        ['StartLifeTap']    = {
+        ['StartLifeTap']      = {
             DisplayName = "HP % for LifeTaps",
             Group = "Abilities",
             Header = "Damage",
@@ -1308,7 +1274,7 @@ local _ClassConfig = {
             Min = 1,
             Max = 100,
         },
-        ['DoACTap']         = {
+        ['DoACTap']           = {
             DisplayName = "Use AC Tap",
             Group = "Abilities",
             Header = "Damage",
@@ -1319,7 +1285,7 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
-        ['DoAtkTap']        = {
+        ['DoAtkTap']          = {
             DisplayName = "Use Attack Tap",
             Group = "Abilities",
             Header = "Damage",
@@ -1330,7 +1296,7 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
-        ['DoLeechTouch']    = {
+        ['DoLeechTouch']      = {
             DisplayName = "Leech Touch Use:",
             Group = "Abilities",
             Header = "Damage",
@@ -1346,7 +1312,7 @@ local _ClassConfig = {
         },
 
         --DoT Spells
-        ['DoBondTap']       = {
+        ['DoBondTap']         = {
             DisplayName = "Use Bond Dot",
             Group = "Abilities",
             Header = "Damage",
@@ -1356,7 +1322,7 @@ local _ClassConfig = {
             RequiresLoadoutChange = true,
             Default = false,
         },
-        ['DoPoisonDot']     = {
+        ['DoPoisonDot']       = {
             DisplayName = "Use Poison Dot",
             Group = "Abilities",
             Header = "Damage",
@@ -1366,7 +1332,7 @@ local _ClassConfig = {
             RequiresLoadoutChange = false,
             Default = true,
         },
-        ['DoDireDot']       = {
+        ['DoDireDot']         = {
             DisplayName = "Use Dire Dot",
             Group = "Abilities",
             Header = "Damage",
@@ -1376,7 +1342,7 @@ local _ClassConfig = {
             RequiresLoadoutChange = true,
             Default = false,
         },
-        ['DotNamedOnly']    = {
+        ['DotNamedOnly']      = {
             DisplayName = "Only Dot Named",
             Group = "Abilities",
             Header = "Damage",
@@ -1387,24 +1353,12 @@ local _ClassConfig = {
         },
 
         -- AE Damage
-        ['DoAEDamage']      = {
-            DisplayName = "Do AE Damage",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 101,
-            Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
-                "This is a top-level setting that governs all AE damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
-            Default = false,
-            FAQ = "Why am I using AE damage when there are mezzed mobs around?",
-            Answer = "It is not currently possible to properly determine Mez status without direct Targeting. If you are mezzing, consider turning this option off.",
-        },
-        ['BladeDiscUse']    = {
+        ['BladeDiscUse']      = {
             DisplayName = "Blade Disc Use:",
             Group = "Abilities",
             Header = "Damage",
             Category = "AE",
-            Index = 102,
+            Index = 101,
             Tooltip = "When to use your AE Blade Disc Line (DPS mode will not attempt to regain hate).",
             RequiresLoadoutChange = true,
             Type = "Combo",
@@ -1413,48 +1367,9 @@ local _ClassConfig = {
             Min = 1,
             Max = 3,
         },
-        ['AETargetCnt']     = {
-            DisplayName = "AE Target Count",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 104,
-            Tooltip = "Minimum number of valid targets before using AE Spells, Disciplines or AA.",
-            Default = 2,
-            Min = 1,
-            Max = 10,
-        },
-        ['MaxAETargetCnt']  = {
-            DisplayName = "Max AE Targets",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 105,
-            Tooltip =
-            "Maximum number of valid targets before using AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
-            Default = 5,
-            Min = 2,
-            Max = 30,
-            FAQ = "How do I take advantage of the Max AE Targets setting?",
-            Answer =
-            "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
-        },
-        ['SafeAEDamage']    = {
-            DisplayName = "AE Proximity Check",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 106,
-            Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
-            Default = false,
-            FAQ = "Can you better explain the AE Proximity Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
-                "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
-        },
 
         --Hate Tools
-        ['DoHateBuff']      = {
+        ['DoHateBuff']        = {
             DisplayName = "Use Hate Buff",
             Group = "Abilities",
             Header = "Buffs",
@@ -1466,7 +1381,7 @@ local _ClassConfig = {
             ConfigType = "Advanced",
             RequiresLoadoutChange = true,
         },
-        ['DoTerror']        = {
+        ['DoTerror']          = {
             DisplayName = "Use Terror Taunts",
             Group = "Abilities",
             Header = "Tanking",
@@ -1477,7 +1392,7 @@ local _ClassConfig = {
             ConfigType = "Advanced",
             RequiresLoadoutChange = true,
         },
-        ['AETauntAA']       = {
+        ['AETauntAA']         = {
             DisplayName = "Use AE Taunt AA",
             Group = "Abilities",
             Header = "Tanking",
@@ -1489,7 +1404,7 @@ local _ClassConfig = {
             FAQ = "Why do we treat the Explosions the same? One is targeted, one is PBAE",
             Answer = "There are currently no scripted conditions where Hatred would be used at long range, thus, for ease of use, we can treat them similarly.",
         },
-        ['AETauntSpell']    = {
+        ['AETauntSpell']      = {
             DisplayName = "Use AE Taunt Spell",
             Group = "Abilities",
             Header = "Tanking",
@@ -1499,35 +1414,9 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
-        ['AETauntCnt']      = {
-            DisplayName = "AE Taunt Count",
-            Group = "Abilities",
-            Header = "Tanking",
-            Category = "Hate Tools",
-            Index = 104,
-            Tooltip = "Minimum number of haters before using AE Taunt Spells or AA.",
-            Default = 2,
-            Min = 1,
-            Max = 30,
-            FAQ = "Why don't we use AE taunts on single targets?",
-            Answer =
-            "AE taunts are configured to only be used if a target has less than 100% hate on you, at whatever count you configure, so abilities with similar conditions may be used instead.",
-        },
-        ['SafeAETaunt']     = {
-            DisplayName = "AE Taunt Safety Check",
-            Group = "Abilities",
-            Header = "Tanking",
-            Category = "Hate Tools",
-            Index = 105,
-            Tooltip = "Limit unintended pulls with AE Taunt Spells or AA. May result in non-use due to false positives.",
-            Default = false,
-            FAQ = "Can you better explain the AE Taunt Safety Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the taunt.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the taunt not being used when it is safe to do so.",
-        },
 
         --Defenses
-        ['DiscCount']       = {
+        ['DiscCount']         = {
             DisplayName = "Def. Disc. Count",
             Group = "Abilities",
             Header = "Tanking",
@@ -1539,7 +1428,7 @@ local _ClassConfig = {
             Max = 10,
             ConfigType = "Advanced",
         },
-        ['DefenseStart']    = {
+        ['DefenseStart']      = {
             DisplayName = "Defense HP",
             Group = "Abilities",
             Header = "Tanking",
@@ -1551,7 +1440,7 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
-        ['EmergencyStart']  = {
+        ['EmergencyStart']    = {
             DisplayName = "Emergency Start",
             Group = "Abilities",
             Header = "Tanking",
@@ -1563,7 +1452,7 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
-        ['HPCritical']      = {
+        ['HPCritical']        = {
             DisplayName = "HP Critical",
             Group = "Abilities",
             Header = "Tanking",
@@ -1576,9 +1465,18 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
+        ['HoldEpicForNoDisc'] = {
+            DisplayName = "Epic",
+            Group = "Abilities",
+            Header = "Tanking",
+            Category = "Defenses",
+            Index = 105,
+            Tooltip = "Only use your epic if you have no defensive disc active.\nNote: Epic already has a check to not be used when other leech effects are active.",
+            Default = true,
+        },
 
         --Equipment
-        ['UseBandolier']    = {
+        ['UseBandolier']      = {
             DisplayName = "Dynamic Weapon Swap",
             Group = "Items",
             Header = "Bandolier",
@@ -1588,7 +1486,7 @@ local _ClassConfig = {
             Default = false,
             RequiresLoadoutChange = true,
         },
-        ['EquipShield']     = {
+        ['EquipShield']       = {
             DisplayName = "Equip Shield",
             Group = "Items",
             Header = "Bandolier",
@@ -1600,7 +1498,7 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
-        ['Equip2Hand']      = {
+        ['Equip2Hand']        = {
             DisplayName = "Equip 2Hand",
             Group = "Items",
             Header = "Bandolier",
@@ -1612,7 +1510,7 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
-        ['NamedShieldLock'] = {
+        ['NamedShieldLock']   = {
             DisplayName = "Shield on Named",
             Group = "Items",
             Header = "Bandolier",

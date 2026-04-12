@@ -339,27 +339,8 @@ local _ClassConfig = {
 
             return rezAction
         end,
-        --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities
-        AETargetCheck = function(minCount, printDebug)
-            local haters = mq.TLO.SpawnCount("NPC xtarhater radius 80 zradius 50")()
-            local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 80 zradius 50")()
-            local totalHaters = haters + haterPets
-            if totalHaters < minCount or totalHaters > Config:GetSetting('MaxAETargetCnt') then return false end
-
-            if Config:GetSetting('SafeAEDamage') then
-                local npcs = mq.TLO.SpawnCount("NPC radius 80 zradius 50")()
-                local npcPets = mq.TLO.SpawnCount("NPCpet radius 80 zradius 50")()
-                if totalHaters < (npcs + npcPets) then
-                    if printDebug then
-                        Logger.log_verbose("AETargetCheck(): %d mobs in range but only %d xtarget haters, blocking AE damage actions.", npcs + npcPets, haters + haterPets)
-                    end
-                    return false
-                end
-            end
-
-            return true
-        end,
     },
+
     -- These are handled differently from normal rotations in that we try to make some intelligent desicions about which spells to use instead
     -- of just slamming through the base ordered list.
     -- These will run in order and exit after the first valid spell to cast
@@ -485,9 +466,9 @@ local _ClassConfig = {
             {
                 name = "SingleElixir",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoSingleElixir') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoSingleElixir') then return false end
-                    return Casting.GroupBuffCheck(spell, target)
+                    return not Targeting.BigHealsNeeded(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
@@ -540,10 +521,7 @@ local _ClassConfig = {
             state = 1,
             steps = 1,
             load_cond = function() return Config:GetSetting('DoManaRestore') and (Casting.CanUseAA("Veturika's Perseverance") or Casting.CanUseAA("Quiet Miracle")) end,
-            targetId = function(self)
-                return { Combat.FindWorstHurtManaGroupMember(Config:GetSetting('ManaRestorePct')),
-                    Combat.FindWorstHurtManaXT(Config:GetSetting('ManaRestorePct')), }
-            end,
+            targetId = function(self) return { Combat.FindWorstHurtMana(Config:GetSetting('ManaRestorePct')), } end,
             cond = function(self, combat_state)
                 local downtime = combat_state == "Downtime" and Casting.OkayToBuff()
                 local combat = combat_state == "Combat"
@@ -562,7 +540,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat" and Core.OkayToNotHeal() and Config:GetSetting('DoAEDamage') and
-                    self.ClassConfig.HelperFunctions.AETargetCheck(Config:GetSetting('AETargetCnt'), true)
+                    Combat.AETargetCheck(true)
             end,
         },
         {
@@ -818,8 +796,8 @@ local _ClassConfig = {
             {
                 name = "AegoBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('AegoSymbol') <= 2 end,
                 cond = function(self, spell, target)
-                    if Config:GetSetting('AegoSymbol') > 2 then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -835,31 +813,33 @@ local _ClassConfig = {
                 name = "SpellBlessing",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    if mq.TLO.Me.Level() > 91 then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "ACBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoACBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoACBuff') or ((spell.TargetType() or ""):lower() == "single" and target.ID() ~= Core.GetMainAssistId()) then return false end
+                    if (spell.TargetType() or ""):lower() == "single" and not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "SingleVieBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoVieBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoVieBuff') or self:GetResolvedActionMapItem('GroupVieBuff') or not Targeting.TargetIsATank(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
             {
                 name = "DivineBuff",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoDivineBuff') end,
                 cond = function(self, spell, target)
-                    if not Config:GetSetting('DoDivineBuff') or not Targeting.TargetIsATank(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target) and Casting.ReagentCheck(spell)
                 end,
             },
@@ -1156,18 +1136,6 @@ local _ClassConfig = {
         },
 
         --Damage(AE)
-        ['DoAEDamage']        = {
-            DisplayName = "Do AE Damage",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 101,
-            Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
-                "This is a top-level setting that governs all AE damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
-            Default = false,
-            FAQ = "Why am I using AE damage when there are mezzed mobs around?",
-            Answer = "It is not currently possible to properly determine Mez status without direct Targeting. If you are mezzing, consider turning this option off.",
-        },
         ['DoPBAENuke']        = {
             DisplayName = "Use PBAE Nuke",
             Group = "Abilities",
@@ -1189,45 +1157,6 @@ local _ClassConfig = {
             Tooltip =
             "**WILL BREAK MEZ** Use your Magic PB AE Stun Spells . **WILL BREAK MEZ**",
             Default = false,
-        },
-        ['AETargetCnt']       = {
-            DisplayName = "AE Tgt Cnt",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 105,
-            Tooltip = "Minimum number of valid targets before using PB Spells like the of Flame line.",
-            Default = 4,
-            Min = 1,
-            Max = 10,
-        },
-        ['MaxAETargetCnt']    = {
-            DisplayName = "Max AE Targets",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 106,
-            Tooltip =
-            "Maximum number of valid targets before using AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
-            Default = 6,
-            Min = 2,
-            Max = 30,
-            FAQ = "How do I take advantage of the Max AE Targets setting?",
-            Answer =
-            "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
-        },
-        ['SafeAEDamage']      = {
-            DisplayName = "AE Proximity Check",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 107,
-            Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
-            Default = false,
-            FAQ = "Can you better explain the AE Proximity Check?",
-            Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
-                "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
-                "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
         },
 
         --Utility

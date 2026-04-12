@@ -52,7 +52,7 @@ function Targeting.ClearTarget()
         Globals.AutoTargetID = 0
         Globals.AutoTargetIsNamed = false
         Globals.AggroTargetID = 0
-        if Globals.ForceTargetID > 0 and not Targeting.IsSpawnXTHater(Globals.ForceTargetID) then Globals.ForceTargetID = 0 end
+        if Globals.ForceTargetID > 0 and not Targeting.IsSpawnXTHater(Globals.ForceTargetID) then Globals.SetForcedTargetId(0) end
         Globals.ForceCombatID = 0
         if mq.TLO.Stick.Status():lower() == "on" then Movement:DoStickCmd("off") end
         if mq.TLO.Me.Combat() then Core.DoCmd("/attack off") end
@@ -330,7 +330,7 @@ function Targeting.GetXTHaterIDsSet(printDebug)
 
     for i = 1, xtCount do
         local xtarg = mq.TLO.Me.XTarget(i)
-        if xtarg and xtarg.ID() > 0 and not xtarg.Dead() and (math.ceil(xtarg.PctHPs() or 0)) > 0 and (xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater" or xtarg.ID() == Globals.ForceTargetID) then
+        if xtarg and xtarg.ID() > 0 and not xtarg.Dead() and (xtarg.Type() or "Corpse") ~= "Corpse" and (xtarg.Aggressive() or (xtarg.TargetType() or ""):lower() == "auto hater" or xtarg.ID() == Globals.ForceTargetID) then
             if printDebug then
                 Logger.log_verbose("GetXTHaters(): XT(%d) Counting %s(%d) as a hater.", i, xtarg.CleanName() or "None", xtarg.ID())
             end
@@ -548,6 +548,11 @@ function Targeting.GroupedWithTarget(target)
 end
 
 function Targeting.SetForceBurn(targetId)
+    if Targeting.ForceBurnTargetID == tonumber(targetId) then
+        Logger.log_info("Force Burn already set to %d. Ignoring request.", Targeting.ForceBurnTargetID)
+        return
+    end
+
     Targeting.ForceBurnTargetID = tonumber(targetId) or mq.TLO.Target.ID()
     local burnNowSpawn = mq.TLO.Spawn(Targeting.ForceBurnTargetID)
     local burnName = burnNowSpawn and (burnNowSpawn() and burnNowSpawn.CleanName() or "None") or "None"

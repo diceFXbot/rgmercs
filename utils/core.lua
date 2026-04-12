@@ -236,24 +236,21 @@ function Core.GetMainAssistTargetID()
                 Globals.AutoTargetIsNamed = true
                 assistTargetIsNamed = true
             end
-        else -- reset force combat ID if the MA is no longer forcing that target
+        else
+            -- reset force combat ID if the MA is no longer forcing that target
             Globals.ForceCombatID = 0
-        end
-    end
-
-    -- check if the MA is an actor peer
-    if heartbeat and heartbeat.Data then
-        local paused = heartbeat.Data.State == "Paused"
-        local rawTarget = paused and heartbeat.Data.TargetID or heartbeat.Data.AutoTargetID
-        local targetID = tonumber(rawTarget) or 0
-        if targetID > 0 then
-            assistId = targetID
-            assistTarget = mq.TLO.Spawn(targetID)
-            Logger.log_verbose("\atGetMainAssistTargetID\aw() \ayFindAutoTarget Assist's Target via Actors :: %s (%s)",
-                assistTarget.CleanName() or "None", targetID)
-            if heartbeat.Data.TargetIsNamed then
-                Globals.AutoTargetIsNamed = true
-                assistTargetIsNamed = true
+            local paused = heartbeat.Data.State == "Paused"
+            local rawTarget = paused and heartbeat.Data.TargetID or heartbeat.Data.AutoTargetID
+            local targetID = tonumber(rawTarget) or 0
+            if targetID > 0 then
+                assistId = targetID
+                assistTarget = mq.TLO.Spawn(targetID)
+                Logger.log_verbose("\atGetMainAssistTargetID\aw() \ayFindAutoTarget Assist's Target via Actors :: %s (%s)",
+                    assistTarget.CleanName() or "None", targetID)
+                if heartbeat.Data.TargetIsNamed then
+                    Globals.AutoTargetIsNamed = true
+                    assistTargetIsNamed = true
+                end
             end
         end
         -- check if the MA is a dannet peer
@@ -319,6 +316,8 @@ function Core.SetTarget(targetId, ignoreBuffPopulation)
         mq.delay(maxWaitBuffs, function() return (ignoreBuffPopulation or targetBuffsPopulated) end)
     end
     Logger.log_debug("SetTarget(): Set Target to: %d (buffsPopulated: %s)", targetId, Strings.BoolToColorString(mq.TLO.Target.BuffsPopulated() ~= nil))
+
+    Modules:ExecAll("OnTargetChange", targetId)
 end
 
 --- Sets the AutoTarget to that of your group or raid MA.
@@ -468,8 +467,7 @@ function Core.OkayToNotHeal()
         Logger.log_verbose("OkayToNotHeal: We have a queued cure to process! Skipping.")
         return false
     end
-
-    return Core.GetMainAssistPctHPs() > Config:GetSetting('BigHealPoint') and (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) < Config:GetSetting('GroupInjureCnt')
+    return (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) == 0
 end
 
 --- Retrieves the resolved action map item for a given action.

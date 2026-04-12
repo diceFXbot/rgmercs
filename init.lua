@@ -43,6 +43,10 @@ local Globals     = require("utils.globals")
 local Modules     = require("utils.modules")
 Modules:load(Globals.Constants.LootModuleTypes[Config:GetSetting('LootModuleType')])
 
+-- pass through to avoid include loop
+Globals.Modules = Modules
+Globals.Logger  = Logger
+
 require('utils.datatypes')
 
 -- ImGui Variables
@@ -69,7 +73,7 @@ local function GetTheme()
     local classTheme = Modules:ExecModule("Class", "GetTheme") or {}
     local userTheme = Config:GetSetting('UserTheme') or {}
 
-    if #classTheme == 0 or Config:GetSetting('UserThemeOverrideClassTheme') then
+    if #classTheme == 0 or (Config:GetSetting('UserThemeOverrideClassTheme') and #userTheme > 0) then
         return userTheme
     end
 
@@ -90,7 +94,7 @@ local function RGMercsGUI()
 
     if openGUI and Alive() and Config:SettingsLoaded() then
         ImGui.PushFont(ImGui.GetFont(), ImGui.GetFontSize() * (1 + (Config:GetSetting('FontScale') / 100)))
-        if initPctComplete < 100 then
+        if initPctComplete < 100 or not LoaderUI:IsDone() then
             LoaderUI:RenderLoader(initPctComplete, initMsg)
         else
             if theme ~= nil then
@@ -321,10 +325,9 @@ local function RGInit(...)
     printf("\aw\awBy \ag%s", Config._author)
     printf("\aw****************************")
     -- keep these for easy editing/addition later
-    printf("\agBuff handling has been revamped to rely on actors! See our recent forum post or commit messages.")
-    printf("\agYou may wish to take a moment to peruse the new options in Abilities > Buffs> Buff Rules.")
+    printf("\agRGMercs! Where even fun has an option and a command attached.")
     printf("\awPlease visit us on the RG forums for the most recent news and updates.")
-    printf("\aw Use \ag /rgl \aw or check our options panel for a list of commands.")
+    printf("\awFAQs, Commands and Settings are searchable from the options panel!")
 
     -- store initial positioning data.
     initPctComplete = 90
@@ -338,17 +341,18 @@ local function RGInit(...)
 end
 
 local function Main()
+    Logger.log_verbose("Starting Main loop.")
     if mq.TLO.Zone.ID() ~= Globals.CurZoneId or mq.TLO.Me.Instance() ~= Globals.CurInstance then
         if notifyZoning then
             Modules:ExecAll("OnZone")
             notifyZoning = false
             Config.TempSettings.NoLevZone = false
-            Globals.ForceTargetID = 0
             Globals.ForceCombatID = 0
             Globals.IgnoredTargetIDs = Set.new({})
             Globals.AutoTargetID = 0
             Globals.AutoTargetIsNamed = false
             Globals.AggroTargetID = 0
+            Globals.SetForcedTargetId(0)
         end
         mq.delay(100)
         Globals.CurZoneId = mq.TLO.Zone.ID()
@@ -358,7 +362,7 @@ local function Main()
 
     Core.UpdateBuffs()
 
-    Events.DoEvents(true)
+    Events.DoEvents()
 
     Config:ValidatePeers()
 
@@ -439,7 +443,7 @@ local function Main()
         -- This will find a valid target and set it to : Globals.AutoTargetID
         Combat.FindBestAutoTarget(Combat.OkToEngagePreValidateId)
         -- finds the AggroTarget for a tank mode character
-        if Core.IsTanking() and Config:GetSetting('NewAggroScanBeta') then
+        if Core.IsTanking() and Config:GetSetting('TankAggroScan') then
             Combat.TankAggroScan()
         end
     end
@@ -477,14 +481,27 @@ local function Main()
 
             if merc() and merc.ID() then
                 if Combat.MercEngage() then
-                    if merc.Class.ShortName():lower() == "war" and merc.Stance():lower() ~= "aggressive" then
-                        Core.DoCmd("/squelch /stance aggressive")
+                    local class = merc.Class.ShortName():lower()
+                    local stanceGroups = {
+                        war = Globals.Constants.TankMercStances,
+                        clr = Globals.Constants.HealerMercStances,
+                        rog = Globals.Constants.MeleeMercStances,
+                        wiz = Globals.Constants.CasterMercStances,
+                    }
+                    local stances = stanceGroups[class]
+                    if stances and merc.Stance() then
+                        local desiredStance = stances[Config:GetSetting("MercStance")]
+                        if desiredStance then
+                            if merc.Stance():lower() ~= desiredStance then
+                                Core.DoCmd("/squelch /stance %s", desiredStance)
+                            end
+                        else
+                            local fallbackStance = stances[1]
+                            if merc.Stance():lower() ~= fallbackStance then
+                                Core.DoCmd("/squelch /stance %s", fallbackStance)
+                            end
+                        end
                     end
-
-                    if merc.Class.ShortName():lower() ~= "war" and merc.Stance():lower() ~= "balanced" then
-                        Core.DoCmd("/squelch /stance balanced")
-                    end
-
                     Combat.MercAssist()
                 else
                     if merc.Class.ShortName():lower() ~= "clr" and merc.Stance():lower() ~= "passive" then
@@ -527,6 +544,7 @@ local function Main()
     Modules:ExecAll("WriteSettings")
 
     mq.doevents()
+    Logger.log_verbose("Completed Main loop.")
     mq.delay(10)
 end
 
@@ -544,6 +562,12 @@ local script_actor = Comms.Actors.register(function(message)
     -- This is a core event so handle it here.
     if msg.Event == "Heartbeat" then
         --Logger.log_debug("Received Heartbeat from \am%s\aw: \ag%s", msg.From, Strings.TableToString(msg.Data))
+        if Config:GetSetting('HeartbeatAnnounceGroup') and msg.Data.Forced then
+            Comms.HandleAnnounce(
+                Comms.FormatChatEvent("Heartbeat", msg.From, string.format("AutoTarget: %d, ForceTarget: %d", msg.Data.AutoTargetID, msg.Data.ForceTargetID)),
+                true, false, true)
+        end
+
         Comms.UpdatePeerHeartbeat(msg.From, msg.Data)
         return
     end

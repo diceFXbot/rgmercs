@@ -9,7 +9,7 @@ local Files                                              = require("utils.files"
 local Globals                                            = require("utils.globals")
 
 local Config                                             = {
-    _version = '1.6.0',
+    _version = '2.1.0',
     _subVersion = "Shattering of Ro",
     _name = "Config",
     _AppName = "RGMercs Lua Edition",
@@ -66,7 +66,7 @@ Config.FAQ                                               = {
         Settings_Used = "",
     },
     {
-        Question = "How do I force auto combat on a target that isn't aggressive or isn't hostile?",
+        Question = "How do I force auto combat on a target that isn't aggressive or isn't hostile, like a target dummy, object, or special NPC?",
         Answer = "This is accomplished with the /rgl forcetarget <id?> command:\n\n" ..
             "The command accepts a target ID, and will fall back to your current target's ID if one is not supplied.\n\n" ..
             "When commanded, the PC will add the target to the first XT slot and immediately force target.\n\n" ..
@@ -101,6 +101,16 @@ Config.DefaultConfig                                     = {
     },
     ['AssistList']                 = {
         DisplayName = "List of User-Defined Assists",
+        Type = "Custom",
+        Default = {},
+    },
+    ['UseHealList']                = {
+        DisplayName = "Heal Outside of Group",
+        Type = "Custom",
+        Default = false,
+    },
+    ['HealList']                   = {
+        DisplayName = "List of User-Defined Heal Targets",
         Type = "Custom",
         Default = {},
     },
@@ -320,6 +330,17 @@ Config.DefaultConfig                                     = {
         Index = 17,
         Default = false,
         Tooltip = "Announces when a character flag is received.",
+        ConfigType = "Advanced",
+    },
+    ['HeartbeatAnnounceGroup']     = {
+        DisplayName = "Heartbeat Announce to Group",
+        Group = "General",
+        Header = "Announcements",
+        Category = "Announcements",
+        Type = "Custom",
+        Index = 18,
+        Default = false,
+        Tooltip = "Announces received heartbeats in /gsay. (Warning: spammy.)",
         ConfigType = "Advanced",
     },
 
@@ -712,28 +733,27 @@ Config.DefaultConfig                                     = {
         Max = 200,
         ConfigType = "Advanced",
     },
-    -- Add the word legacy and change default to false when New scan beta is finished, or remove. Can decide later
-    ['MAScanAggro']                = {
-        DisplayName = "Legacy MA Aggro Scan",
+    ['MAAggroScan']                = {
+        DisplayName = "MA Aggro Scan",
         Group = "Combat",
         Header = "Targeting",
         Category = "MA Target Selection",
         Index = 5,
         Tooltip =
-        "Scan hate levels of XT haters and set the AutoTarget to those who aren't aggroed on this PC.\nThis is legacy behavior that will be removed, kept as a grace period for custom configs.",
-        Default = true,
+        "Scan hate levels of XT haters and set the AutoTarget to those who aren't aggroed on this PC. This may be necessary for MAs in Tank Mode who lack snap aggro abilities, but can also lead to further aggro issues on other targets. Use with caution.",
+        Default = false,
         ConfigType = "Advanced",
         Warning = function()
-            if Config:GetSetting('MAScanAggro') and Config:GetSetting('NewAggroScanBeta') then
+            if Config:GetSetting('MAAggroScan') and Config:GetSetting('TankAggroScan') then
                 return true,
-                    "Warning: Legacy MA Aggro Scan and Tank Aggro scan are both enabled, legacy checks could choose a target better suited to being designated an AggroTarget."
+                    "Warning: MA Aggro Scan and Tank Aggro Scan are both enabled, this may be inefficient (it is possible for them to both find the same target Id)."
             end
             return false, ""
         end,
     },
     --Remove the word "Beta" and change the default to true when the beta period is finished.
-    ['NewAggroScanBeta']           = {
-        DisplayName = "Tank Aggro Scan (Beta)",
+    ['TankAggroScan']              = {
+        DisplayName = "Tank Aggro Scan",
         Group = "Combat",
         Header = "Targeting",
         Category = "Tank Target Selection",
@@ -742,12 +762,12 @@ Config.DefaultConfig                                     = {
             "Allow a PC in Tank Mode to independently select an xtarget to attempt to reclaim aggro, without affecting or changing the AutoTarget, even if they are also the MA.\n" ..
             "The tank will continue to engage the AutoTarget, but will periodically change to the Aggro Target to use abilities found in the HateTools(AggroTarget) rotation.\n" ..
             "If this tank is the MA, they will continue to broadcast the AutoTarget to any assisting RGMercs peer.",
-        Default = false,
+        Default = true,
         ConfigType = "Advanced",
         Warning = function()
-            if Config:GetSetting('MAScanAggro') and Config:GetSetting('NewAggroScanBeta') then
+            if Config:GetSetting('MAAggroScan') and Config:GetSetting('TankAggroScan') then
                 return true,
-                    "Warning: Legacy MA Aggro Scan and Tank Aggro scan are both enabled, legacy checks could choose a target better suited to being designated an AggroTarget."
+                    "Warning: MA Aggro Scan and Tank Aggro Scan are both enabled, this may be inefficient (it is possible for them to both find the same target Id)."
             end
             return false, ""
         end,
@@ -855,12 +875,27 @@ Config.DefaultConfig                                     = {
         Default = (Globals.BuildType ~= 'Emu'),
         ConfigType = "Normal",
     },
+    ['MercStance']                 = {
+        DisplayName = "Merc Stance",
+        Group = "Combat",
+        Header = "Assisting",
+        Category = "Assisting",
+        Index = 9,
+        Tooltip =
+        "The stance to use for your merc. Since mercs have different stances, find the one for your current mercenary type.\nNote: an invalid stance selection will default to the first listed.",
+        Type = "Combo",
+        ComboOptions = { 'Aggressive or Balanced', 'Assist or Reactive or Burn', 'Efficient or BurnAE', },
+        Default = 2,
+        Min = 1,
+        Max = 3,
+        ConfigType = "Normal",
+    },
     ['FollowMarkTarget']           = {
         DisplayName = "Follow Mark Target",
         Group = "Combat",
         Header = "Assisting",
         Category = "Assisting",
-        Index = 9,
+        Index = 10,
         Tooltip = "Prioritize the Marked target as the combat target.",
         Default = false,
         ConfigType = "Advanced",
@@ -870,7 +905,7 @@ Config.DefaultConfig                                     = {
         Group = "Combat",
         Header = "Assisting",
         Category = "Assisting",
-        Index = 10,
+        Index = 11,
         Tooltip = "Which Raid Assist target to follow. Please note that we will not fallback if this is not set properly.",
         Type = "Combo",
         ComboOptions = { 'First', 'Second', 'Third', },
@@ -884,11 +919,11 @@ Config.DefaultConfig                                     = {
         Group = "Combat",
         Header = "Assisting",
         Category = "Assisting",
-        Index = 11,
+        Index = 12,
         Tooltip = "If no other valid MA is found, fallback to ourselves.\nPlease note that when solo (and not using the Assist List), we are always our own MA.",
         Type = "Combo",
         ComboOptions = { 'Never', 'Only in Groups', 'Only in Raids', 'Always', },
-        Default = 2,
+        Default = 4,
         Min = 1,
         Max = 4,
         ConfigType = "Normal",
@@ -1182,6 +1217,56 @@ Config.DefaultConfig                                     = {
         Max = 100,
         ConfigType = "Advanced",
     },
+    -- Damage/AE
+    ['DoAEDamage']                 = {
+        DisplayName = "Do AE Damage",
+        Group = "Abilities",
+        Header = "Damage",
+        Category = "AE",
+        Index = 1,
+        Tooltip = "**WILL BREAK MEZ** Use AE damage Spells and AA. **WILL BREAK MEZ**\n" ..
+            "This is a top-level setting that governs all AE damage, and can be used as a quick-toggle to enable/disable abilities without reloading spells.",
+        Default = false,
+    },
+    ['AETargetCnt']                = {
+        DisplayName = "AE Target Count",
+        Group = "Abilities",
+        Header = "Damage",
+        Category = "AE",
+        Index = 2,
+        Tooltip = "Minimum number of valid targets before using AE Disciplines or AA.",
+        Default = 2,
+        Min = 1,
+        Max = 10,
+    },
+    ['MaxAETargetCnt']             = {
+        DisplayName = "Max AE Targets",
+        Group = "Abilities",
+        Header = "Damage",
+        Category = "AE",
+        Index = 3,
+        Tooltip =
+        "Maximum number of valid targets before using AE Spells, Disciplines or AA.\nUseful for setting up AE Mez at a higher threshold on another character in case you are overwhelmed.",
+        Default = 5,
+        Min = 2,
+        Max = 30,
+        FAQ = "How do I take advantage of the Max AE Targets setting?",
+        Answer =
+        "By limiting your max AE targets, you can set an AE Mez count that is slightly higher, to allow for the possiblity of mezzing if you are being overwhelmed.",
+    },
+    ['SafeAEDamage']               = {
+        DisplayName = "AE Proximity Check",
+        Group = "Abilities",
+        Header = "Damage",
+        Category = "AE",
+        Index = 4,
+        Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE damage is used. May result in non-use due to false positives.",
+        Default = false,
+        FAQ = "Can you better explain the AE Proximity Check?",
+        Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the AE action.\n" ..
+            "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the action not being used when it is safe to do so.\n" ..
+            "PLEASE NOTE THAT THIS OPTION HAS NOTHING TO DO WITH MEZ!",
+    },
 
     -- Debuffs
     ['ManaToDebuff']               = {
@@ -1364,7 +1449,7 @@ Config.DefaultConfig                                     = {
         Header = "Recovery",
         Category = "General Healing",
         Index = 1,
-        Tooltip = "Allow pets to be targeted in PC healing rotations.\n" ..
+        Tooltip = "Allow pets of your groupmates to be targeted in PC healing rotations.\n" ..
             "Note that CLR/DRU/PAL/SHM will reserve \"Big Heal\" rotations for PCs.\n" ..
             "Further note that many abilities that heal the PC's own pet do not check this setting and are handled seperately.",
         Default = true,
@@ -1378,16 +1463,6 @@ Config.DefaultConfig                                     = {
         Index = 2,
         Tooltip = "Break invis to heal, cure and rez when out of combat (Does not affect combat actions).",
         Default = false,
-        ConfigType = "Advanced",
-    },
-    ['HealOutside']                = {
-        DisplayName = "Heal Outside",
-        Group = "Abilities",
-        Header = "Recovery",
-        Category = "General Healing",
-        Index = 3,
-        Tooltip = "Heal PCs that have been added to your xtarget list (and their pets, if pet healing is enabled).",
-        Default = true,
         ConfigType = "Advanced",
     },
     -- Recovery/Thresholds
@@ -1569,7 +1644,7 @@ Config.DefaultConfig                                     = {
         Header = "Recovery",
         Category = "Rezzing",
         Index = 5,
-        Tooltip = "Rez corpses of live PCs in the zone (If disabled, we will only rez corpses of PCs not in our current zone).",
+        Tooltip = "Rez corpses of live PCs in the zone (If disabled, we will only rez corpses of PCs not in our current zone).Note that we will not rez in-zone PCs during combat.",
         Default = true,
         ConfigType = "Advanced",
         FAQ = "Why would I want (or not want) to rez corpses of PCs that are in-zone with us already?",
@@ -1675,6 +1750,31 @@ Config.DefaultConfig                                     = {
         Index = 1,
         Tooltip = "If you have no auto target, enabling this will show information about your current manual target in the UI.",
         Default = false,
+    },
+    ['HPBarStyle']                       = {
+        DisplayName = "Target HP Bar Style",
+        Group = "General",
+        Header = "Interface",
+        Category = "Main Panel",
+        Index = 2,
+        Tooltip = "The method for coloring the HP display of your manual target (if enabled).",
+        Default = 2,
+        Min = 1,
+        Max = #Globals.Constants.HPBarStyles,
+        Type = "Combo",
+        ComboOptions = Globals.Constants.HPBarStyles,
+    },
+    ['OverrideHP']                       = {
+        DisplayName = "Override HP Display",
+        Group = "General",
+        Header = "Interface",
+        Category = "Main Panel",
+        Type = "Custom",
+        Index = 0,
+        Tooltip = "If you have no auto target, enabling this will show information about your current manual target in the UI.",
+        Default = 0,
+        Min = 0,
+        Max = 100,
     },
     ['AlwaysShowMiniButton']             = {
         DisplayName = "Always Show Mini Button",
@@ -1936,19 +2036,6 @@ Config.DefaultConfig                                     = {
             Config.CacheCustomColors()
         end,
     },
-    ['HPMidColor']                       = {
-        DisplayName = "HP Mid",
-        Group = "General",
-        Header = "Interface",
-        Category = "Default Colors",
-        Index = 14,
-        Tooltip = "Color used to display mid HP values.",
-        Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.HPMidColor),
-        Type = "Color",
-        OnChange = function(_, _)
-            Config.CacheCustomColors()
-        end,
-    },
     ['HPLowColor']                       = {
         DisplayName = "HP Low",
         Group = "General",
@@ -1970,19 +2057,6 @@ Config.DefaultConfig                                     = {
         Index = 16,
         Tooltip = "Color used to display high Mana values.",
         Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.ManaHighColor),
-        Type = "Color",
-        OnChange = function(_, _)
-            Config.CacheCustomColors()
-        end,
-    },
-    ['ManaMidColor']                     = {
-        DisplayName = "Mana Mid",
-        Group = "General",
-        Header = "Interface",
-        Category = "Default Colors",
-        Index = 17,
-        Tooltip = "Color used to display mid Mana values.",
-        Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.ManaMidColor),
         Type = "Color",
         OnChange = function(_, _)
             Config.CacheCustomColors()
@@ -2313,15 +2387,6 @@ Config.DefaultConfig                                     = {
         ConfigType = "Advanced",
     },
 
-    ['RunCoroutinesDuringLoops']         = {
-        DisplayName = "Run Coroutines During Loops",
-        Category = "Internals",
-        Index = 1,
-        Tooltip = "Allow coroutines to run during blocking loops (such as casting, pulling, combat, etc.)",
-        Default = true,
-        ConfigType = "Advanced",
-    },
-
     ['DrawTooltipDebugBox']              = {
         DisplayName = "Draw Tooltip Debug Box",
         Category = "Internals",
@@ -2363,6 +2428,31 @@ Config.DefaultConfig                                     = {
         end,
     },
 
+    --Tanking
+    ['AETauntCnt']                       = {
+        DisplayName = "AE Taunt Count",
+        Group = "Abilities",
+        Header = "Tanking",
+        Category = "Hate Tools",
+        Index = 111,
+        Tooltip = "Minimum number of haters before using AE Taunt Spells or AA when we have less than 100% aggro on one or more of them in range.",
+        Default = 2,
+        Min = 1,
+        Max = 30,
+    },
+    ['SafeAETaunt']                      = {
+        DisplayName = "AE Taunt Safety Check",
+        Group = "Abilities",
+        Header = "Tanking",
+        Category = "Hate Tools",
+        Index = 112,
+        Tooltip = "Check to ensure there aren't neutral mobs in range we could aggro if AE taunts are used. May result in non-use due to false positives.",
+        Default = false,
+        FAQ = "Can you better explain the AE Taunt Safety Check?",
+        Answer = "If the option is enabled, the script will use various checks to determine if a non-hostile or not-aggroed NPC is present and avoid use of the taunt.\n" ..
+            "Unfortunately, the script currently does not discern whether an NPC is (un)attackable, so at times this may lead to the taunt not being used when it is safe to do so.",
+    },
+
     --Deprecated/Need Adjusted to Custom/Etc
     ['FullUI']                           = {
         DisplayName = "Use Full UI",
@@ -2382,12 +2472,28 @@ Config.DefaultConfig                                     = {
         Default = false,
     },
     ['EnableAFUI']                       = {
-        DisplayName = "Enable Very Special UI",
-        Type = "Custom",
+        DisplayName = "Enable Very Fun UI",
         Group = "General",
         Header = "Interface",
         Category = "Interface",
         Tooltip = "???",
+        Default = false,
+    },
+    ['ForceAFUIOff']                     = {
+        DisplayName = "Force Very Fun UI Off",
+        Group = "General",
+        Header = "Interface",
+        Category = "Interface",
+        Tooltip = "???",
+        Type = "Custom",
+        Default = false,
+    },
+    ['123EyesOnMe']                      = {
+        DisplayName = "1,2,3 Eyes On Me",
+        Group = "General",
+        Header = "Interface",
+        Category = "Interface",
+        Tooltip = "Derple Dog Watches You While You Sleep",
         Default = false,
     },
 }
@@ -3236,100 +3342,105 @@ function Config:GetPeerLastConfigReceivedTime(peer)
 end
 
 --- Adds the given name to the Assist List.
---- @param name string: The name of the assist to be added.
-function Config:AssistAdd(name)
-    local assistList = self:GetSetting('AssistList')
+--- @param name string: The name of the PC to be added.
+--- @param listName string: The list of PCs to add to.
+function Config:ListAdd(name, listName)
+    local addList = Config:GetSetting(listName)
 
-    for _, cur_name in ipairs(assistList or {}) do
+    for _, cur_name in ipairs(addList or {}) do
         if cur_name == name then
             return
         end
     end
 
-    table.insert(assistList, name)
-    self:SetSetting('AssistList', assistList)
-    Logger.log_info("\axAssist List: \ag%s\ax has been\ag added\ax to the list at position \at%d\ax!", name,
-        #self:GetSetting('AssistList'))
+    table.insert(addList, name)
+    self:SetSetting(listName, addList)
+    Logger.log_info("\ax%s: \ag%s\ax has been\ag added\ax to the list at position \at%d\ax!", listName, name,
+        #self:GetSetting(listName))
 end
 
-function Config:AssistDelete(arg1)
+function Config:ListDelete(arg1, listName)
     if not arg1 then
-        Logger.log_error("\arAssist Delete: this command requires a valid argument!")
+        Logger.log_error("\ar%s Delete: this command requires a valid argument!", listName or "")
         return
     end
 
-    local assistList = self:GetSetting('AssistList')
+    local list = self:GetSetting(listName)
 
     if type(arg1) == 'string' then
-        arg1 = self:ConvertAssistNameToID(arg1)
+        arg1 = self:ConvertListNameToID(arg1, listName)
     end
 
     if type(arg1) == 'number' and arg1 > 0 then
-        if arg1 <= #assistList then
-            Logger.log_info("\axAssist List: \ag%s\ax has been \ardeleted\ax from the list!", assistList[arg1])
-            table.remove(assistList, arg1)
-            self:SetSetting('AssistList', assistList)
+        if arg1 <= #list then
+            Logger.log_info("\ax%s: \ag%s\ax has been \ardeleted\ax from the list!", listName, list[arg1])
+            table.remove(list, arg1)
+            self:SetSetting(listName, list)
         else
-            Logger.log_error("\arAssist Delete: %d is not a valid assist list ID!", arg1)
+            Logger.log_error("\ar%s Delete: %d is not a valid assist list ID!", listName, arg1)
         end
         return
     end
-    Logger.log_error("\arAssist Delete: %s was not on the list or is not a valid argument!", arg1)
+    Logger.log_error("\ar%s Delete: %s was not on the list or is not a valid argument!", listName, arg1)
 end
 
-function Config:AssistClear()
-    Logger.log_info("Assist List: \ayThe Assist List has been cleared!")
-    Config:SetSetting('AssistList', {})
+function Config:ListClear(listName)
+    Logger.log_info("%s: \ayThe list has been cleared!", listName)
+    Config:SetSetting(listName, {})
 end
 
---- Moves the OA with the given ID up.
---- @param id number The ID of the OA to move up.
-function Config:AssistMoveUp(id)
+--- Moves the PC at the given index up.
+--- @param id number The index of the PC to move.
+--- @param listName string: The list to adjust.
+function Config:ListMoveUp(id, listName)
     if type(id) == 'string' then
-        id = self:ConvertAssistNameToID(id)
+        id = self:ConvertListNameToID(id, listName)
     end
 
     local newId = id - 1
 
     if newId < 1 then return end
-    local assistList = self:GetSetting('AssistList')
+    local list = self:GetSetting(listName)
 
-    if id > #assistList then return end
+    if id > #list then return end
 
-    assistList[newId], assistList[id] = assistList[id], assistList[newId]
-    Logger.log_info("\axAssist List: \ag%s\ax has been\ag moved up\ax to position \at%d", self:GetSetting('AssistList')[newId], newId)
-    self:SetSetting('AssistList', assistList)
+    list[newId], list[id] = list[id], list[newId]
+    Logger.log_info("\ax%s: \ag%s\ax has been\ag moved up\ax to position \at%d", listName, self:GetSetting(listName)[newId], newId)
+    self:SetSetting(listName, list)
 end
 
-function Config:AssistMoveDown(id)
+--- Moves the PC at the given index down.
+--- @param id number The index of the PC to move.
+--- @param listName string: The list to adjust.
+function Config:AssistMoveDown(id, listName)
     if not id then
-        Logger.log_error("\arAssist Move Down: this command requires a valid argument!")
+        Logger.log_error("\ar%s Move Down: this command requires a valid argument!", listName)
         return
     end
 
     if type(id) == 'string' then
-        id = self:ConvertAssistNameToID(id)
+        id = self:ConvertListNameToID(id, listName)
     end
 
     if id < 1 then return end
     local newId = id + 1
-    local assistList = self:GetSetting('AssistList')
+    local list = self:GetSetting(listName)
 
-    if newId > #assistList then return end
+    if newId > #list then return end
 
-    assistList[newId], assistList[id] = assistList[id], assistList[newId]
+    list[newId], list[id] = list[id], list[newId]
 
-    Logger.log_info("\axAssist List: \ag%s\ax has been\ar moved down\ax to position \at%d", self:GetSetting('AssistList')[newId], newId)
+    Logger.log_info("\ax%s: \ag%s\ax has been\ar moved down\ax to position \at%d", listName, self:GetSetting(listName)[newId], newId)
 
-    self:SetSetting('AssistList', assistList)
+    self:SetSetting(listName, list)
 end
 
-function Config:ConvertAssistNameToID(arg1)
+function Config:ConvertListNameToID(arg1, listName)
     if arg1:match("^%d$") then
         arg1 = tonumber(arg1)
         return arg1
     else
-        for idx, cur_name in ipairs(Config:GetSetting('AssistList') or {}) do
+        for idx, cur_name in ipairs(Config:GetSetting(listName) or {}) do
             if cur_name:lower() == arg1:lower() then
                 arg1 = tonumber(idx)
                 return arg1
@@ -3488,7 +3599,7 @@ end
 function Config.ShouldMount()
     if Config:GetSetting('DoMount') == 1 then return false end
 
-    local passBasicChecks = Config:GetSetting('MountItem'):len() > 0 and mq.TLO.Zone.Outdoor()
+    local passBasicChecks = Config:GetSetting('MountItem'):len() > 0 and mq.TLO.Me.CanMount()
 
     local passCheckMountOne = (not Config:GetSetting('DoMelee') and (Config:GetSetting('DoMount') == 2 and (mq.TLO.Me.Mount.ID() or 0) == 0))
     local passCheckMountTwo = ((Config:GetSetting('DoMount') == 3 and (mq.TLO.Me.Buff("Mount Blessing").ID() or 0) == 0))

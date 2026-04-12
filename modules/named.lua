@@ -50,7 +50,7 @@ function Module:Render()
     Base.Render(self)
 
     ImGui.SameLine()
-    ImGui.Text("Make any mob \"named\" for burns by adding it to your MQ2SpawnMaster or Alert Master list! See burn settings.")
+    Ui.RenderText("Make any mob \"named\" for burns by adding it to your MQ2SpawnMaster or Alert Master list! See burn settings.")
     ImGui.NewLine()
     Ui.RenderZoneNamed()
 end
@@ -127,10 +127,10 @@ function Module:IsNamed(spawn)
     local cleanNameFixed = spawn.CleanName()
     if cleanNameFixed then
         -- if first or last character is a space then remove it.
-        if cleanNameFixed:sub(1, 1) == " " then
+        while cleanNameFixed:sub(1, 1) == " " do
             cleanNameFixed = cleanNameFixed:sub(2)
         end
-        if cleanNameFixed:sub(-1) == " " then
+        while cleanNameFixed:sub(-1) == " " do
             cleanNameFixed = cleanNameFixed:sub(1, -2)
         end
     end

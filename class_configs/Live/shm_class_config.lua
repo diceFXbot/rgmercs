@@ -108,14 +108,6 @@ local _ClassConfig = {
             "Talisman of the Usurper",    -- Level 120 - Group
             "Talisman of the Heroic",     -- Level 125 - Group
         },
-        ["SingleFocusSpell"] = {
-            -- Focus Spell - Single Spells will only be used on the Tank if they are better than the Group Version to cut incredibly long buff cycles.
-            "Unity of the Doomscale", -- Level 101 - Single
-            "Unity of the Wulthan",   -- Level 106 - Single
-            "Unity of the Kromrif",   -- Level 111 - Single
-            "Unity of the Vampyre",   -- Level 116 - Single
-            "Celeritous Unity",       -- Level 121 - Single
-        },
         ["RunSpeedBuff"] = {
             -- Run Speed Buff - 9 - 74
             "Spirit of Tala'Tak",
@@ -758,6 +750,7 @@ local _ClassConfig = {
             "Regeneration", -- Level 22
         },
         ["ShrinkSpell"] = {
+            "Tiny Terror",
             "Shrink",
         },
     },
@@ -930,7 +923,7 @@ local _ClassConfig = {
                 name = "AESpiritualHeal",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Targeting.TargetIsMA(target)
+                    return Targeting.TargetIsATank(target)
                 end,
             },
             {
@@ -1441,7 +1434,7 @@ local _ClassConfig = {
                 name = "Spirit Guardian",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    if not Targeting.TargetIsMA(target) then return false end
+                    if not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffAACheck(aaName, target)
                 end,
             },
@@ -1465,13 +1458,6 @@ local _ClassConfig = {
                 type = "Spell",
                 cond = function(self, spell, target)
                     return Casting.GroupBuffCheck(spell, target)
-                end,
-            },
-            { --If our single target is better than the group spell above, we will use it on the Tank
-                name = "SingleFocusSpell",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    return Targeting.TargetIsATank(target) and Casting.GroupBuffCheck(spell, target)
                 end,
             },
             { --Only cast below 86 because past that our focus spells take over. Could check which unity we have, but expensive.
@@ -1540,12 +1526,10 @@ local _ClassConfig = {
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
-            { --Shrink AA, will use first(best) available
-                name_func = function(self)
-                    return Casting.GetFirstAA({ "Group Shrink", "Shrink", })
-                end,
+            {
+                name = "Group Shrink",
                 type = "AA",
-                load_cond = function(self) return Config:GetSetting('DoGroupShrink') end,
+                load_cond = function(self) return Config:GetSetting('DoGroupShrink') and Casting.CanUseAA("Group Shrink") end,
                 active_cond = function(self) return mq.TLO.Me.Height() < 2 end,
                 cond = function(self, aaName, target)
                     return Targeting.GetTargetHeight(target) > 2.2
@@ -1554,7 +1538,7 @@ local _ClassConfig = {
             {
                 name = "ShrinkSpell",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoGroupShrink') and not (Casting.CanUseAA("Group Shrink") or Casting.CanUseAA("Shrink")) end,
+                load_cond = function(self) return Config:GetSetting('DoGroupShrink') and not Casting.CanUseAA("Group Shrink") end,
                 active_cond = function(self) return mq.TLO.Me.Height() < 2 end,
                 cond = function(self, spell, target)
                     return Targeting.GetTargetHeight(target) > 2.2
@@ -1951,6 +1935,7 @@ local _ClassConfig = {
             Header = "Buffs",
             Category = "Group",
             Index = 102,
+            RequiresLoadoutChange = true,
             Tooltip = "Use Group Shrink Buff",
             Default = true,
             FAQ = "Group Shrink is enabled, why are my dudes still big?",
@@ -2039,7 +2024,7 @@ local _ClassConfig = {
             Index = 102,
             Tooltip = "Do AE Malo Spells/AAs",
             RequiresLoadoutChange = true,
-            Default = false,
+            Default = true,
         },
         ['DoSTSlow']            = {
             DisplayName = "Do ST Slow",
@@ -2059,7 +2044,7 @@ local _ClassConfig = {
             Index = 102,
             Tooltip = "Do AE Slow Spells/AAs",
             RequiresLoadoutChange = true,
-            Default = false,
+            Default = true,
         },
         ['AESlowCount']         = {
             DisplayName = "AE Slow Count",

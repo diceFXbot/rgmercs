@@ -139,7 +139,7 @@ return {
         "Timeless Assassin Z`Jrix",
         "Timeless Avatar of Abhorrence",
         "Timeless Dread Lord M`Noxin",
-        "Timeless Deathrot Knight",
+        "The Timeless Deathrot Knight",
         "Timeless Hand of the Maestro",
         "Timeless Innoruuk",
         "Timeless Mistress of Malevolence",
@@ -1267,7 +1267,7 @@ return {
 
     ["taka"] = { -- space intentional
         "Avatar of Dust ",
-        "The Desert Treant ",
+        "Petrified Desert Treant ",
         "Dunebreaker ",
         "Flowkeeper Berta ",
         "Gravitus Gargantua ",

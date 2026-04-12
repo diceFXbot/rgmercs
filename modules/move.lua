@@ -77,17 +77,18 @@ Module.FAQ             = {
         Question = "How do I move my PCs or have them follow my driver?",
         Answer =
             "Enable \"Chase\" on the Movement tab (or via Command-Line, refer to the command list) and adjust settings in the Following category (Movement Options) to your liking.\n" ..
-            "  There are two commonly used forms of following in MQ currently: \"Nav\" and \"A(dvanced)Follow\".\n\n" ..
-            "  Nav uses the MQ2Nav plugin to check zone geometry to move from point-to-point. This is the type of movement that RGMercs uses by default.\n\n" ..
-            "  Afollow, which is a feature of MQ2AdvPath, uses recording and playback of player movement to mimic the PC being followed. This is the type of nav typically seen on \"Follow Me\" buttons in the group window.\n\n" ..
-            "  There are times when Chase(Nav) and Afollow both have advantages, so situationally using both is common. Please note that using Afollow may interfere with RGMercs movement, meditation, or casting while it is enabled!",
+            "There are two commonly used forms of following in MQ currently: \"Nav\" and \"A(dvanced)Follow\".\n\n" ..
+            "Nav uses the MQ2Nav plugin to check zone geometry to move from point-to-point. This is the type of movement that RGMercs uses by default.\n\n" ..
+            "Afollow, which is a feature of MQ2AdvPath, uses recording and playback of player movement to mimic the PC being followed. This is the type of nav typically seen on \"Follow Me\" buttons in the group window.\n\n" ..
+            "There are times when Chase(Nav) and Afollow both have advantages, so situationally using both is common. Please note that using Afollow may interfere with RGMercs movement, meditation, or casting while it is enabled!",
         Settings_Used = "",
     },
     {
         Question = "What is a camp in RGMercs? How do I use one?",
         Answer = "Camping is setting a tether to a particular location.\n\n" ..
-            "  Rather than chasing/following another PC, you will continually return to the vicinity of the camp location you've set.\n\n" ..
-            "  This mode is mutually-exclusive with Chase, i.e, you cannot Chase and Camp at the same time. Enabling one disables the other." ..
+            "Rather than chasing/following another PC, you will continually return to the vicinity of the camp location you've set.\n\n" ..
+            "This mode is mutually-exclusive with Chase, i.e, you cannot Chase and Camp at the same time.\n" ..
+            "Enabling one disables the other.\n" ..
             "Camp settings can be adjusted in the Following category (Movement Options).",
         Settings_Used = "",
     },
@@ -505,12 +506,38 @@ function Module:Render()
     Base.Render(self)
 
     if self.ModuleLoaded and Globals.SubmodulesLoaded then
-        ImGui.Text("Chase Distance: %d", Config:GetSetting('ChaseDistance'))
-        ImGui.Text("Chase Stop Distance: %d", Config:GetSetting('ChaseStopDistance'))
-        ImGui.Text("Chase LOS Required: %s", Config:GetSetting('RequireLoS') == true and "On" or "Off")
-        ImGui.Text("Last Movement Command: %s", self.TempSettings.LastCmd)
-
         local chaseSpawn = mq.TLO.Spawn("pc =" .. self:GetChaseTarget())
+        local chaseDist = Config:GetSetting('ChaseDistance')
+        local chaseStopDist = Config:GetSetting('ChaseStopDistance')
+        local requireLOS = Config:GetSetting('RequireLoS')
+        local chaseSpawnDist = chaseSpawn() and (chaseSpawn.Distance() or 999) or 999
+
+        ImGui.BeginTable("##MoveInfoTable", 2, bit32.bor(ImGuiTableFlags.BordersInner, ImGuiTableFlags.SizingFixedFit))
+        ImGui.TableNextColumn()
+        Ui.RenderText("Chase Distance")
+        ImGui.TableNextColumn()
+        if not chaseSpawn() or chaseSpawn.ID() == 0 then
+            Ui.RenderColoredText(Globals.Constants.BasicColors.Grey, "N/A")
+        else
+            Ui.RenderColoredText(chaseDist > chaseSpawnDist and Globals.Constants.BasicColors.Green or Globals.Constants.BasicColors.Red, "%d", chaseDist)
+        end
+        ImGui.TableNextColumn()
+        Ui.RenderText("Chase Stop Distance")
+        ImGui.TableNextColumn()
+        if not chaseSpawn() or chaseSpawn.ID() == 0 then
+            Ui.RenderColoredText(Globals.Constants.BasicColors.Grey, "N/A")
+        else
+            Ui.RenderColoredText(chaseStopDist < chaseSpawnDist and Globals.Constants.BasicColors.Green or Globals.Constants.BasicColors.Red, "%d", chaseStopDist)
+        end
+        ImGui.TableNextColumn()
+        Ui.RenderText("Chase LOS Required")
+        ImGui.TableNextColumn()
+        Ui.RenderColoredText(requireLOS and Globals.Constants.BasicColors.Green or Globals.Constants.BasicColors.Red, requireLOS and "Yes" or "No")
+        ImGui.TableNextColumn()
+        Ui.RenderText("Last Movement Command")
+        ImGui.TableNextColumn()
+        Ui.RenderText(self.TempSettings.LastCmd)
+        ImGui.EndTable()
 
         ImGui.Separator()
 
@@ -541,29 +568,29 @@ function Module:Render()
 
         if ImGui.BeginTable("ChaseInfoTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
             ImGui.TableNextColumn()
-            ImGui.Text("Chase Target")
+            Ui.RenderText("Chase Target")
             ImGui.TableNextColumn()
-            ImGui.Text(self:GetChaseTarget())
+            Ui.RenderText(self:GetChaseTarget())
             ImGui.TableNextColumn()
-            ImGui.Text("Distance")
+            Ui.RenderText("Distance")
             ImGui.TableNextColumn()
-            ImGui.Text("%d", haveChaseTarget and chaseSpawn.Distance() or 0)
+            Ui.RenderText("%d", haveChaseTarget and chaseSpawn.Distance() or 0)
             ImGui.TableNextColumn()
-            ImGui.Text("ID")
+            Ui.RenderText("ID")
             ImGui.TableNextColumn()
-            ImGui.Text("%d", haveChaseTarget and chaseSpawn.ID() or 0)
+            Ui.RenderText("%d", haveChaseTarget and chaseSpawn.ID() or 0)
             ImGui.TableNextColumn()
-            ImGui.Text("Line of Sight")
+            Ui.RenderText("Line of Sight")
             ImGui.TableNextColumn()
             if chaseSpawn.LineOfSight() then
                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionPassColor)
             else
                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionFailColor)
             end
-            ImGui.Text(haveChaseTarget and (chaseSpawn.LineOfSight() and Icons.FA_EYE or Icons.FA_EYE_SLASH) or "N/A")
+            Ui.RenderText(haveChaseTarget and (chaseSpawn.LineOfSight() and Icons.FA_EYE or Icons.FA_EYE_SLASH) or "N/A")
             ImGui.PopStyleColor(1)
             ImGui.TableNextColumn()
-            ImGui.Text("Loc")
+            Ui.RenderText("Loc")
             ImGui.TableNextColumn()
             Ui.NavEnabledLoc(haveChaseTarget and chaseSpawn.LocYXZ() or "0,0,0")
             ImGui.EndTable()
@@ -590,30 +617,30 @@ function Module:Render()
         local distanceToCamp = Math.GetDistance(me.Y(), me.X(), self.TempSettings.AutoCampY or 0, self.TempSettings.AutoCampX or 0)
         if ImGui.BeginTable("CampInfoTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
             ImGui.TableNextColumn()
-            ImGui.Text("Camp Set")
+            Ui.RenderText("Camp Set")
 
             ImGui.TableNextColumn()
             if Config:GetSetting('ReturnToCamp') then
                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionPassColor)
-                ImGui.Text(Icons.FA_FREE_CODE_CAMP)
+                Ui.RenderText(Icons.FA_FREE_CODE_CAMP)
             else
                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionFailColor)
-                ImGui.Text(Icons.MD_NOT_INTERESTED)
+                Ui.RenderText(Icons.MD_NOT_INTERESTED)
             end
             ImGui.PopStyleColor(1)
 
             ImGui.TableNextColumn()
-            ImGui.Text("Camp Location")
+            Ui.RenderText("Camp Location")
             ImGui.TableNextColumn()
             Ui.NavEnabledLoc(string.format("%d,%d,%d", self.TempSettings.AutoCampY or 0, self.TempSettings.AutoCampX or 0, self.TempSettings.AutoCampZ or 0))
             ImGui.TableNextColumn()
-            ImGui.Text("Distance to Camp")
+            Ui.RenderText("Distance to Camp")
             ImGui.TableNextColumn()
-            ImGui.Text("%d", self.TempSettings.CampZoneId == mq.TLO.Zone.ID() and distanceToCamp or 0)
+            Ui.RenderText("%d", self.TempSettings.CampZoneId == mq.TLO.Zone.ID() and distanceToCamp or 0)
             ImGui.TableNextColumn()
-            ImGui.Text("Camp Radius")
+            Ui.RenderText("Camp Radius")
             ImGui.TableNextColumn()
-            ImGui.Text("%d", self.TempSettings.CampZoneId == mq.TLO.Zone.ID() and Config:GetSetting("AutoCampRadius") or 0)
+            Ui.RenderText("%d", self.TempSettings.CampZoneId == mq.TLO.Zone.ID() and Config:GetSetting("AutoCampRadius") or 0)
             ImGui.EndTable()
         end
     end
@@ -645,8 +672,6 @@ function Module:DoCombatCampCheck()
 end
 
 function Module:GiveTime()
-    local combat_state = Combat.GetCachedCombatState()
-
     if mq.TLO.Me.Hovering() and Config:GetSetting('ChaseOn') then
         if Config:GetSetting('BreakOnDeath') then
             Logger.log_warn("\awNOTICE:\ax You're dead. I'm not chasing \am%s\ax anymore.",
@@ -657,11 +682,17 @@ function Module:GiveTime()
         return
     end
 
+    if Globals.PauseMain and not Config:GetSetting('RunMovePaused') then
+        return
+    end
+
     self:CheckStuck()
 
     if not self:InCampZone() and Config:GetSetting("ReturnToCamp") then
         Config:SetSetting("ReturnToCamp", false)
     end
+
+    local combat_state = Combat.GetCachedCombatState()
 
     if combat_state == "Downtime" then
         if Casting.ShouldShrink() then
@@ -732,7 +763,7 @@ function Module:GiveTime()
         if Config:GetSetting('UseActorNav') then
             local heartbeat = Comms.GetPeerHeartbeatByName(chaseTarg)
             local data = heartbeat and heartbeat.Data
-            if data and data.X and data.Y and data.Z then
+            if data and data.Zone == mq.TLO.Zone.Name() and data.X and data.Y and data.Z then
                 local peerLoc = string.format("%d, %d, %d", data.Y, data.X, data.Z)
                 chaseSpawnDist = math.floor(mq.TLO.Math.Distance(peerLoc)()) -- math.distance returns 0 on invalid string
                 -- Algar note: Emu server code seems to give constant updates up to 300, and periodic updates up to 600. Over 600, stops updating. Tested on EQMight 11/2025

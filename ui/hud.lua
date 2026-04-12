@@ -30,10 +30,11 @@ function HudUI:LoadAllOptions()
         end
     end
 
-    if tonumber(os.date("%m%d")) == 401 then
+    if tonumber(os.date("%m%d")) == 401 and not Config:GetSetting('ForceAFUIOff') then
         self:AFPopUp(self.InitMsg, 1)
         Config:SetSetting('EnableAFUI', true)
-        Globals.Minimized = true
+    elseif Config:GetSetting('EnableAFUI') then
+        Config:SetSetting('EnableAFUI', false)
     end
 end
 
@@ -133,6 +134,7 @@ function HudUI:RenderToggleHud()
         end
 
         if enableAFUI then
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 25)
             ImGui.Separator()
             for k, displayName in pairs(self.Settings) do
                 ImGui.SetCursorPosX(toggleXPos)
@@ -141,7 +143,7 @@ function HudUI:RenderToggleHud()
                     Globals.Constants.Colors.MainButtonUnpausedColor, Globals.Constants.Colors.MainButtonPausedColor, nil, true)
 
                 if changeTog then
-                    Config:SetSetting(k, not newTog)
+                    Config:SetSetting(k, newTog)
                 end
             end
         end

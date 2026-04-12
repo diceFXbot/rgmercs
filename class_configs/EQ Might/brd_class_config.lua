@@ -246,6 +246,12 @@ local _ClassConfig = {
             "Verse of Vesagran",
             "Verse of Huell",
         },
+        ['Protective'] = {
+            "Protective Surge Discipline",
+        },
+        ['Skals'] = {
+            "Skal's Stance Discipline",
+        },
     },
     ['HelperFunctions'] = {
         DoRez = function(self, corpseId)
@@ -426,6 +432,10 @@ local _ClassConfig = {
         ['Burn'] = { --Order is heavy WIP
             {
                 name = "Quick Time",
+                type = "AA",
+            },
+            {
+                name = "Fierce Eye",
                 type = "AA",
             },
             {
@@ -662,7 +672,8 @@ local _ClassConfig = {
                 cond = function(self, songSpell)
                     local pct = Config:GetSetting('GroupManaPct')
                     return self.ClassConfig.HelperFunctions.RefreshBuffSong(songSpell) and
-                        not (mq.TLO.Me.Combat() and (mq.TLO.Group.LowMana(pct)() or 999) < Config:GetSetting('GroupManaCt'))
+                        ((Config:GetSetting('UseRegen') == 1 and (mq.TLO.Group.LowMana(pct)() or 999) >= Config:GetSetting('GroupManaCt'))
+                            or (Config:GetSetting('UseRegen') > 1 and self.ClassConfig.HelperFunctions.CheckSongStateUse(self, "UseRegen")))
                 end,
             },
             {
@@ -731,6 +742,20 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName)
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart')
+                end,
+            },
+            {
+                name = "Protective",
+                type = "Disc",
+                cond = function(self, discSpell, target)
+                    return Casting.NoDiscActive()
+                end,
+            },
+            {
+                name = "Skals",
+                type = "Disc",
+                cond = function(self, discSpell, target)
+                    return Casting.NoDiscActive()
                 end,
             },
         },
