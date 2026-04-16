@@ -260,6 +260,20 @@ function Casting.ResolveBuffCheck(spellId, target, skipBlockCheck, skipTriggerCh
         return Casting.LocalPetBuffCheck(spellId, skipBlockCheck, skipTriggerCheck)
     else
         local targetName = target.DisplayName() or ""
+        local isPet = Targeting.TargetIsType("Pet", target)
+
+        -- For pets, check directly via TargetBuffCheck first.
+        -- This intentionally targets the pet in downtime to read buff state reliably.
+        if isPet then
+            if not Config:GetSetting("DoActorPetBuffs") then
+                Logger.log_verbose("ResolveBuffCheck: Skipping non-local pet check because DoActorPetBuffs is disabled.")
+                return false
+            end
+            local allowTargetChange = mq.TLO.Me.CombatState():lower() ~= "combat"
+            Logger.log_verbose("ResolveBuffCheck: Target is a pet, using TargetBuffCheck.")
+            return Casting.TargetBuffCheck(spellId, target, allowTargetChange, false, skipTriggerCheck)
+        end
+
         --Let's check spell range in case our group/OA starts moving while we are trying to buff (common in hunt/farm modes).
         local spellRange = spell.MyRange() > 0 and spell.MyRange() or (spell.AERange() > 0 and spell.AERange() or 250)
         if Targeting.GetTargetDistance(target) > spellRange then
@@ -268,7 +282,6 @@ function Casting.ResolveBuffCheck(spellId, target, skipBlockCheck, skipTriggerCh
             return false
         end
 
-        local isPet = Targeting.TargetIsType("Pet", target)
         local heartbeatName = (isPet and target.Master()) and target.Master.DisplayName() or targetName
         local heartbeat = Comms.GetPeerHeartbeatByName(heartbeatName)
 
@@ -283,7 +296,7 @@ function Casting.ResolveBuffCheck(spellId, target, skipBlockCheck, skipTriggerCh
                 Logger.log_verbose("ResolveBuffCheck: Target is an actor peer, using ActorBuffCheck.")
                 return Casting.ActorPetBuffCheck(spellId, target, skipBlockCheck, skipTriggerCheck)
             end
-            if buffList and songList and (skipBlockCheck or blockedList) then
+            if not isPet and buffList and songList and (skipBlockCheck or blockedList) then
                 Logger.log_verbose("ResolveBuffCheck: Target is an actor peer, using ActorBuffCheck.")
                 return Casting.ActorBuffCheck(spellId, target, skipBlockCheck, skipTriggerCheck)
             end
@@ -321,6 +334,51 @@ function Casting.GroupBuffItemCheck(itemName, target, skipBlockCheck, skipTrigge
     local clickySpell = Casting.GetClickySpell(itemName)
     if not (clickySpell and clickySpell()) then return false end
     return Casting.ResolveBuffCheck(clickySpell.ID(), target, skipBlockCheck, skipTriggerCheck)
+end
+
+--- Pet-only buff check that never changes current target.
+--- @param spellId integer
+--- @param target MQTarget|MQSpawn|MQCharacter?
+--- @param skipTriggerCheck boolean|nil
+--- @return boolean
+function Casting.PetTargetBuffCheck(spellId, target, skipTriggerCheck)
+    if not spellId then return false end
+    if not (target and target()) then return false end
+
+    local buffSpell = mq.TLO.Spell(spellId)
+    local spellName = buffSpell.Name() or buffSpell()
+    if not spellName then return false end
+
+    if target.FindBuff(string.format("id %d", spellId))() then
+        Logger.log_verbose("PetTargetBuffCheck: %s(ID:%d) found on %s(ID:%d), ending check.", spellName, spellId, target.CleanName(), target.ID())
+        return false
+    end
+
+    if not skipTriggerCheck then
+        local numEffects = buffSpell.NumEffects()
+        local triggerCount = 0
+        local triggerFound = 0
+
+        for i = 1, numEffects do
+            local triggerSpell = buffSpell.Trigger(i)
+            if not (triggerSpell and triggerSpell() and triggerSpell.ID() > 0) then break end
+
+            local triggerId = triggerSpell.ID()
+            triggerCount = triggerCount + 1
+
+            if target.FindBuff(string.format("id %d", triggerId))() then
+                triggerFound = triggerFound + 1
+            else
+                return true
+            end
+        end
+
+        if triggerCount > 0 and triggerFound >= triggerCount then
+            return false
+        end
+    end
+
+    return true
 end
 
 --- Complex buff check that will check for presence and stacking of the buff (and any triggers) on a target.
@@ -808,8 +866,7 @@ end
 --- Determines whether the pet should be shrunk.
 --- @return boolean True if the pet should be shrunk, false otherwise.
 function Casting.ShouldShrinkPet()
-    return Config:GetSetting('DoShrinkPet') and mq.TLO.Me.Pet.ID() > 0 and mq.TLO.Me.Pet.Height() >= 1.9 and
-        (Config:GetSetting('ShrinkPetItem'):len() > 0) and Casting.OkayToPetBuff()
+    return Config:GetSetting('DoShrinkPet') and mq.TLO.Me.Pet.ID() > 0 and mq.TLO.Me.Pet.Height() >= 1.9 and Casting.OkayToPetBuff()
 end
 
 --- Checks if the burn condition is met for RGMercs.
@@ -1547,10 +1604,23 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
                 Core.DoCmd("/nav pause")
                 navWasPaused = true
             end
+            if not (stickWasPaused or navWasPaused) then
+                -- Grace window for transient stick/nav states right after movement commands.
+                mq.delay(200, function()
+                    return not me.Moving() or mq.TLO.Stick.Active() or (mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused())
+                end)
+                if mq.TLO.Stick.Active() then
+                    Core.DoCmd("/stick pause")
+                    stickWasPaused = true
+                elseif mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused() then
+                    Core.DoCmd("/nav pause")
+                    navWasPaused = true
+                end
+            end
             if stickWasPaused or navWasPaused then
-                mq.delay(1000, function() return not me.Moving() end)
+                mq.delay(300, function() return not me.Moving() end)
                 mq.delay(200)
-            else
+            elseif me.Moving() then
                 Logger.log_debug("\ayUseSpell(%s, %d, %s) -- Failed because I am moving (no stick/nav to pause)", spellName, targetId,
                     Strings.BoolToColorString(bAllowMem))
                 return false
@@ -2046,10 +2116,22 @@ function Casting.UseAA(aaName, targetId, bAllowDead, retryCount)
                 Core.DoCmd("/nav pause")
                 navWasPaused = true
             end
+            if not (stickWasPaused or navWasPaused) then
+                mq.delay(200, function()
+                    return not me.Moving() or mq.TLO.Stick.Active() or (mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused())
+                end)
+                if mq.TLO.Stick.Active() then
+                    Core.DoCmd("/stick pause")
+                    stickWasPaused = true
+                elseif mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused() then
+                    Core.DoCmd("/nav pause")
+                    navWasPaused = true
+                end
+            end
             if stickWasPaused or navWasPaused then
-                mq.delay(1000, function() return not me.Moving() end)
+                mq.delay(300, function() return not me.Moving() end)
                 mq.delay(200)
-            else
+            elseif me.Moving() then
                 Logger.log_debug("\ayUseAA(): Skipping AA %s because moving and no stick/nav to pause.", aaName)
                 return false
             end
@@ -2212,10 +2294,22 @@ function Casting.UseItem(itemName, targetId)
                 Core.DoCmd("/nav pause")
                 navWasPaused = true
             end
+            if not (stickWasPaused or navWasPaused) then
+                mq.delay(200, function()
+                    return not me.Moving() or mq.TLO.Stick.Active() or (mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused())
+                end)
+                if mq.TLO.Stick.Active() then
+                    Core.DoCmd("/stick pause")
+                    stickWasPaused = true
+                elseif mq.TLO.Navigation.Active() and not mq.TLO.Navigation.Paused() then
+                    Core.DoCmd("/nav pause")
+                    navWasPaused = true
+                end
+            end
             if stickWasPaused or navWasPaused then
-                mq.delay(1000, function() return not me.Moving() end)
+                mq.delay(300, function() return not me.Moving() end)
                 mq.delay(200)
-            else
+            elseif me.Moving() then
                 Logger.log_debug("\awUseItem(): Skipping item %s because moving and no stick/nav to pause.", itemName)
                 return false
             end

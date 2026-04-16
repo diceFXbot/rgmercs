@@ -700,7 +700,12 @@ function Module:GiveTime()
         end
 
         if Casting.ShouldShrinkPet() then
-            Casting.UseItem(Config:GetSetting('ShrinkPetItem'), mq.TLO.Me.Pet.ID())
+            local shrinkPetItem = Config:GetSetting('ShrinkPetItem')
+            if shrinkPetItem and shrinkPetItem:len() > 0 then
+                Casting.UseItem(shrinkPetItem, mq.TLO.Me.Pet.ID())
+            elseif mq.TLO.Me.Book("Tiny Companion")() ~= nil then
+                Casting.UseSpell("Tiny Companion", mq.TLO.Me.Pet.ID(), true)
+            end
         end
 
         if Config.ShouldMount() then

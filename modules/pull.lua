@@ -2489,7 +2489,18 @@ function Module:GiveTime()
                 end
             elseif pullAbility then -- AA/Spell/Ability pull
                 self.TempSettings.PullAttemptStarted = Globals.GetTimeSeconds()
-                while not successFn() do
+                local successStreak = 0
+                while true do
+                    if successFn() then
+                        successStreak = successStreak + 1
+                        Globals.LastPulledID = self.TempSettings.PullID
+                        if successStreak >= 2 then
+                            break
+                        end
+                    else
+                        successStreak = 0
+                    end
+
                     Logger.log_super_verbose("Waiting on ability pull to finish...%s", Strings.BoolToColorString(successFn()))
                     Targeting.SetTarget(self.TempSettings.PullID, true)
 
@@ -2499,7 +2510,10 @@ function Module:GiveTime()
                     end
 
                     if Targeting.GetTargetDistance() > self:GetPullAbilityRange() then
-                        Movement:DoNav(false, "id %d distance=%d lineofsight=%s log=off", self.TempSettings.PullID, self:GetPullAbilityRange() / 2, requireLOS)
+                        local pullRange = self:GetPullAbilityRange()
+                        -- Stay near max range for all pull ability types instead of over-closing.
+                        local desiredDistance = math.max(30, pullRange - 5)
+                        Movement:DoNav(false, "id %d distance=%d lineofsight=%s log=off", self.TempSettings.PullID, desiredDistance, requireLOS)
                         mq.delay(500, function() return mq.TLO.Navigation.Active() end)
                         mq.delay(maxMove, function()
                             Modules:ExecModule("Movement", "CheckStuck")
@@ -2507,30 +2521,31 @@ function Module:GiveTime()
                         end)
                     end
 
-                    if pullAbility.Type:lower() == "ability" then
-                        if mq.TLO.Me.AbilityReady(pullAbility.id)() then
+                    if successStreak == 0 then
+                        if pullAbility.Type:lower() == "ability" then
+                            if mq.TLO.Me.AbilityReady(pullAbility.id)() then
+                                local abilityName = pullAbility.AbilityName
+                                if type(abilityName) == 'function' then abilityName = abilityName() end
+                                Casting.UseAbility(abilityName)
+                            end
+                        elseif pullAbility.Type:lower() == "spell" then
                             local abilityName = pullAbility.AbilityName
                             if type(abilityName) == 'function' then abilityName = abilityName() end
-                            Casting.UseAbility(abilityName)
+                            mq.delay(200)
+                            Casting.UseSpell(abilityName, self.TempSettings.PullID, false, false, 0)
+                        elseif pullAbility.Type:lower() == "aa" then
+                            local aaName = pullAbility.AbilityName
+                            if type(aaName) == 'function' then aaName = aaName() end
+                            Casting.UseAA(aaName, self.TempSettings.PullID, false, 0)
+                        elseif pullAbility.Type:lower() == "item" then
+                            local itemName = pullAbility.ItemName
+                            if type(itemName) == 'function' then itemName = itemName() end
+                            Logger.log_debug("Attempting to pull with Item: %s", itemName)
+                            Casting.UseItem(itemName, self.TempSettings.PullID)
+                        else
+                            Logger.log_error("\arInvalid PullAbilityType: %s :: %s", pullAbility.Type, pullAbility.id)
                         end
-                    elseif pullAbility.Type:lower() == "spell" then
-                        local abilityName = pullAbility.AbilityName
-                        if type(abilityName) == 'function' then abilityName = abilityName() end
-                        Casting.UseSpell(abilityName, self.TempSettings.PullID, false, false, 0)
-                    elseif pullAbility.Type:lower() == "aa" then
-                        local aaName = pullAbility.AbilityName
-                        if type(aaName) == 'function' then aaName = aaName() end
-                        Casting.UseAA(aaName, self.TempSettings.PullID, false, 0)
-                    elseif pullAbility.Type:lower() == "item" then
-                        local itemName = pullAbility.ItemName
-                        if type(itemName) == 'function' then itemName = itemName() end
-                        Logger.log_debug("Attempting to pull with Item: %s", itemName)
-                        Casting.UseItem(itemName, self.TempSettings.PullID)
-                    else
-                        Logger.log_error("\arInvalid PullAbilityType: %s :: %s", pullAbility.Type, pullAbility.id)
                     end
-
-                    if successFn() then Globals.LastPulledID = self.TempSettings.PullID end
 
                     if self:IsPullMode("Chain") and Targeting.DiffXTHaterIDs(startingXTargs) then
                         break

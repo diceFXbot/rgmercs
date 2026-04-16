@@ -16,6 +16,7 @@ local Modules   = require("utils.modules")
 local Targeting = require("utils.targeting")
 local Movement  = require("utils.movement")
 local Casting   = require("utils.casting")
+local Comms     = require("utils.comms")
 local Strings   = require("utils.strings")
 local Logger    = require("utils.logger")
 
@@ -107,6 +108,40 @@ local function castWSU()
     return res
 end
 
+-- Build GroupBuff targets like normal PCs and optionally include in-group pets.
+local function getRngGroupBuffTargetIDs()
+    local ids = {}
+    local seen = {}
+
+    for _, id in ipairs(Casting.GetBuffableIDs() or {}) do
+        if id and id > 0 and not seen[id] then
+            seen[id] = true
+            ids[#ids + 1] = id
+        end
+    end
+
+    if not Config:GetSetting("DoActorPetBuffs") then
+        return ids
+    end
+
+    local count = mq.TLO.Group.Members() or 0
+    for i = 1, count do
+        local member = mq.TLO.Group.Member(i)
+        if member and member() and member.Pet.ID() > 0 then
+            local petName = (member.Pet.CleanName() or "familiar"):lower()
+            if not petName:find("familiar") then
+                local petId = member.Pet.ID()
+                if petId > 0 and not seen[petId] then
+                    seen[petId] = true
+                    ids[#ids + 1] = petId
+                end
+            end
+        end
+    end
+
+    return ids
+end
+
 local _ClassConfig = {
     _version              = "1.0 - Live",
     _author               = "MrInfernal",
@@ -189,7 +224,123 @@ local _ClassConfig = {
     },
     ['ModeChecks']        = {
         IsTanking = function() return Core.IsModeActive("Tank") end,
-        IsHealing = function() return Core.IsModeActive("Healer") or Core.IsModeActive("Hybrid") end,
+        IsHealing = function() return Core.IsModeActive("Tank") or Core.IsModeActive("Healer") or Core.IsModeActive("Hybrid") or Core.IsModeActive("DPS") end,
+        IsCuring = function() return Config:GetSetting('DoCureSpells') end,
+    },
+    ['Cures']             = {
+        GetCureSpells = function(self)
+            self.TempSettings.CureSpells = {}
+            local diseaseSpell = Core.GetResolvedActionMapItem("CureDisease") or mq.TLO.Spell("Cure Disease")
+            if diseaseSpell then
+                self.TempSettings.CureSpells.Disease = diseaseSpell
+            else
+                Logger.log_debug("GetCureSpells: Could not resolve CureDisease/Cure Disease (not mapped or not scribed).")
+            end
+            local poisonSpell = Core.GetResolvedActionMapItem("CurePoison") or mq.TLO.Spell("Cure Poison")
+            if poisonSpell then
+                self.TempSettings.CureSpells.Poison = poisonSpell
+            else
+                Logger.log_debug("GetCureSpells: Could not resolve CurePoison/Cure Poison (not mapped or not scribed).")
+            end
+        end,
+        CureNow = function(self, type, targetId)
+            if (mq.TLO.Me.CombatState() or ""):lower() == "combat" then
+                -- Request was to only cure out of combat.
+                return false, true
+            end
+            if not Config:GetSetting('DoCureSpells') then return false, false end
+            local cureType = (type or ""):lower()
+            if cureType ~= "disease" and cureType ~= "poison" then return false, true end
+
+            local targetSpawn = mq.TLO.Spawn(targetId)
+            if not (targetSpawn and targetSpawn()) then return false, true end
+
+            local hasCounter = false
+            local counterReadable = false
+
+            -- Prefer Actor heartbeat data for peer cures when available/recent.
+            if targetId ~= mq.TLO.Me.ID() then
+                local actorPeers = Comms.GetAllPeerHeartbeats(false) or {}
+                for _, heartbeat in pairs(actorPeers) do
+                    local data = heartbeat and heartbeat.Data
+                    local recentHeartbeat = (Globals.GetTimeSeconds() - (heartbeat.LastHeartbeat or 0)) <= 3
+                    if data and recentHeartbeat and tonumber(data.ID or 0) == tonumber(targetId or 0) then
+                        local actorCounter = cureType == "poison" and tonumber(data.Poison or "0") or tonumber(data.Disease or "0")
+                        if actorCounter ~= nil then
+                            counterReadable = true
+                            hasCounter = actorCounter > 0
+                        end
+                        break
+                    end
+                end
+            end
+
+            local ok, counterValue = pcall(function()
+                if targetId == mq.TLO.Me.ID() then
+                    if cureType == "poison" then
+                        return mq.TLO.Me.Poisoned.ID() or 0
+                    end
+                    return mq.TLO.Me.Diseased.ID() or 0
+                end
+                if cureType == "poison" then
+                    return targetSpawn.Poisoned.ID() or 0
+                end
+                return targetSpawn.Diseased.ID() or 0
+            end)
+            if ok then
+                counterReadable = true
+                if not hasCounter and (counterValue or 0) > 0 then
+                    hasCounter = true
+                elseif hasCounter and (counterValue or 0) <= 0 then
+                    -- If either source can read "no typed counter", treat it as no-match.
+                    hasCounter = false
+                end
+            end
+
+            -- If available, use TotalCounters as a stronger signal to avoid curing non-counter detrimentals (e.g. some snares).
+            local okTotal, totalCounters = pcall(function()
+                if targetId == mq.TLO.Me.ID() then
+                    return mq.TLO.Me.TotalCounters() or 0
+                end
+                return targetSpawn.TotalCounters() or 0
+            end)
+            if okTotal then
+                counterReadable = true
+                if (totalCounters or 0) <= 0 then
+                    hasCounter = false
+                elseif not hasCounter then
+                    -- We have counters present but couldn't read typed counter reliably; allow by requested type.
+                    hasCounter = true
+                end
+            end
+            if not hasCounter then
+                -- Some client builds do not expose disease/poison counters reliably on other PCs.
+                -- For Disease specifically, fail closed to avoid curing non-counter detrimentals (ex: some snares).
+                -- Poison keeps fallback behavior for compatibility with peers where counters are opaque.
+                if targetId ~= mq.TLO.Me.ID() and not counterReadable and cureType == "poison" then
+                    Logger.log_debug("CureNow: %s counter not readable on %s; trusting requested type for poison.", cureType, targetSpawn.CleanName() or "Unknown")
+                else
+                    Logger.log_debug("CureNow: Skipping cure on %s - no %s counters found.", targetSpawn.CleanName() or "Unknown", cureType)
+                    return false, true
+                end
+            end
+
+            local cureKey = cureType == "poison" and "Poison" or "Disease"
+            local defaultSpellName = cureType == "poison" and "Cure Poison" or "Cure Disease"
+            local cureSpell = self.TempSettings.CureSpells and self.TempSettings.CureSpells[cureKey]
+            local spellName = defaultSpellName
+            if cureSpell and cureSpell() and cureSpell.RankName then
+                spellName = cureSpell.RankName() or spellName
+            end
+
+            if not mq.TLO.Me.Book(spellName)() and not mq.TLO.Me.Book(defaultSpellName)() then
+                Logger.log_debug("CureNow: %s is not in spell book.", defaultSpellName)
+                return false, false
+            end
+
+            Logger.log_debug("CureNow: Using %s for %s on %s.", spellName, cureType, targetSpawn.CleanName() or "Unknown")
+            return Casting.UseSpell(spellName, targetId, true), true
+        end,
     },
     ['Modes']             = {
         'DPS',
@@ -293,6 +444,15 @@ local _ClassConfig = {
             "Heartrend",
             "Heartrip",
             "Heartspike",
+        },
+        ["PullFlameLick"] = {
+            "Flame Lick",
+        },
+        ["CureDisease"] = {
+            "Cure Disease",
+        },
+        ["CurePoison"] = {
+            "Cure Poison",
         },
         ["CalledShotsArrow"] = {
             "Called Shots IX",
@@ -462,6 +622,7 @@ local _ClassConfig = {
         ["GroupStrengthBuff"] = {
             "Strength of the Grovestalker",
             "Nature's Precision",
+            "Strength of Earth",
             "Strength of Nature",
             "Strength of Tunare",
             "Strength of the Hunter",
@@ -546,7 +707,6 @@ local _ClassConfig = {
         ["Firenuke"] = {
             "Volcanic Ash XVIII",
             "Flame Lick",
-            "Burst of Fire",
             "Ignite",
             "Flaming Arrow",
             "Burning Arrow",
@@ -878,7 +1038,7 @@ local _ClassConfig = {
             name = 'GroupBuff',
             state = 1,
             steps = 1,
-            targetId = function(self) return Casting.GetBuffableIDs() end,
+            targetId = function(self) return getRngGroupBuffTargetIDs() end,
             cond = function(self, combat_state)
                 return combat_state == "Downtime" and Casting.OkayToBuff()
             end,
@@ -897,7 +1057,6 @@ local _ClassConfig = {
             name = 'Circle Nav',
             state = 1,
             steps = 1,
-            load_cond = function(self) return Config:GetSetting('NavCircle') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat" and not Config:GetSetting('DoMelee') and not Core.IsModeActive("Healer")
@@ -1028,15 +1187,6 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "SkinLike",
-                type = "Spell",
-                tooltip = Tooltips.SkinLike,
-                active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
-                cond = function(self, spell)
-                    return Casting.SelfBuffCheck(spell)
-                end,
-            },
-            {
                 name = "Cloak",
                 type = "Spell",
                 tooltip = Tooltips.Cloak,
@@ -1095,11 +1245,26 @@ local _ClassConfig = {
         },
         ['GroupBuff'] = {
             {
+                name = "SkinLike",
+                type = "Spell",
+                tooltip = Tooltips.SkinLike,
+                active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
+                cond = function(self, spell, target)
+                    if target and target() and target.ID() == mq.TLO.Me.ID() then
+                        return Casting.GroupBuffCheck(spell, target, true)
+                    end
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
                 name = "Rathe",
                 type = "Spell",
                 tooltip = Tooltips.Rathe,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell, target)
+                    if target and target() and Targeting.TargetIsType("pc", target) and not Globals.Constants.RGMelee:contains(target.Class.ShortName()) then
+                        return false
+                    end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1109,6 +1274,9 @@ local _ClassConfig = {
                 tooltip = Tooltips.GroupStrengthBuff,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell, target)
+                    if target and target() and Targeting.TargetIsType("pc", target) and not Globals.Constants.RGMelee:contains(target.Class.ShortName()) then
+                        return false
+                    end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1226,6 +1394,14 @@ local _ClassConfig = {
                     return Casting.NoDiscActive() and Config:GetSetting('DoMelee')
                 end,
             },
+            {
+                name = "Firenuke",
+                type = "Spell",
+                tooltip = Tooltips.Firenuke,
+                cond = function(self, spell, target)
+                    return true
+                end,
+            },
         },
         ['Tank'] = {
             {
@@ -1267,32 +1443,34 @@ local _ClassConfig = {
                 name = "ArrowOpener",
                 type = "Spell",
                 tooltip = Tooltips.ArrowOpener,
-                cond = function(self, spell)
+                cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell) and Config:GetSetting('DoOpener') and Config:GetSetting('DoReagentArrow')
+                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
                 name = "PullOpener",
                 type = "Spell",
                 tooltip = Tooltips.PullOpener,
-                cond = function(self, spell)
+                cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell) and Config:GetSetting('DoReagentArrow')
+                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
                 name = "CalledShotsArrow",
                 type = "Spell",
                 tooltip = Tooltips.CalledShotsArrow,
-                cond = function(self, spell)
-                    return Casting.OkayToNuke()
+                cond = function(self, spell, target)
+                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
                 name = "FocusedArrows",
                 type = "Spell",
                 tooltip = Tooltips.FocusedArrows,
-                cond = function(self, spell)
-                    return Casting.OkayToNuke()
+                cond = function(self, spell, target)
+                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
@@ -1307,8 +1485,8 @@ local _ClassConfig = {
                 name = "Heartshot",
                 type = "Spell",
                 tooltip = Tooltips.Heartshot,
-                cond = function(self, spell)
-                    return Casting.OkayToNuke()
+                cond = function(self, spell, target)
+                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
@@ -1340,15 +1518,20 @@ local _ClassConfig = {
                 type = "Spell",
                 tooltip = Tooltips.SnareSpells,
                 cond = function(self, spell, target)
-                    return Config:GetSetting('DoSnare') and Casting.DetSpellCheck(spell) and not Casting.SnareImmuneTarget(target)
+                    return Config:GetSetting('DoSnare')
+                        and Targeting.GetXTHaterCount() == 1
+                        and Targeting.GetTargetPctHPs(target) <= 50
+                        and Casting.DetSpellCheck(spell)
+                        and not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
                 name = "AEArrows",
                 type = "Spell",
                 tooltip = Tooltips.AEArrows,
-                cond = function(self, spell)
+                cond = function(self, spell, target)
                     return Casting.OkayToNuke() and Config:GetSetting('DoAoE')
+                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
@@ -1356,7 +1539,7 @@ local _ClassConfig = {
                 type = "Spell",
                 tooltip = Tooltips.SwarmDot,
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Config:GetSetting('DoDot')
                 end,
             },
             {
@@ -1364,15 +1547,20 @@ local _ClassConfig = {
                 type = "Spell",
                 tooltip = Tooltips.ShortSwarmDot,
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Config:GetSetting('DoDot')
                 end,
             },
             {
                 name = "Firenuke",
                 type = "Spell",
                 tooltip = Tooltips.Firenuke,
-                cond = function(self, spell)
-                    return Casting.OkayToNuke()
+                cond = function(self, spell, target)
+                    if not Casting.OkayToNuke() then return false end
+                    if Targeting.MobHasLowHP(target) then return false end
+                    if spell and spell() and spell.Name() == "Flame Lick" then
+                        return Casting.DotSpellCheck(spell, target) and Casting.HaveManaToDot()
+                    end
+                    return true
                 end,
             },
             {
@@ -1559,6 +1747,7 @@ local _ClassConfig = {
             gem = 4,
             cond = function(self, gem) return mq.TLO.Me.NumGems() >= gem end,
             spells = {
+                { name = "PullFlameLick", cond = function(self) return Config:GetSetting('DoPull') end, },
                 { name = "ArrowOpener", cond = function(self) return Config:GetSetting('DoOpener') end, },
                 { name = "SnareSpells", cond = function(self) return not Casting.DetAACheck(219) and Config:GetSetting('DoSnare') end, },
             },
@@ -1627,6 +1816,7 @@ local _ClassConfig = {
             gem = 13,
             cond = function(self, gem) return mq.TLO.Me.NumGems() >= gem end,
             spells = {
+                { name = "SkinLike", },
                 { name = "Alliance", },
             },
         },
@@ -1701,6 +1891,21 @@ local _ClassConfig = {
                 local resolvedSpell = Core.GetResolvedActionMapItem('SnareSpells')
                 if not resolvedSpell then return false end
                 return mq.TLO.Me.Gem(resolvedSpell.RankName.Name() or "")() ~= nil
+            end,
+        },
+        {
+            id = 'FlameLick',
+            Type = "Spell",
+            DisplayName = "Flame Lick",
+            AbilityName = function()
+                local resolvedSpell = Core.GetResolvedActionMapItem('PullFlameLick')
+                return resolvedSpell and resolvedSpell() and resolvedSpell.RankName.Name() or "Flame Lick"
+            end,
+            AbilityRange = 200,
+            cond = function(self)
+                local resolvedSpell = Core.GetResolvedActionMapItem('PullFlameLick')
+                local spellName = (resolvedSpell and resolvedSpell() and resolvedSpell.RankName.Name()) or "Flame Lick"
+                return mq.TLO.Me.Book(spellName)() ~= nil or mq.TLO.Me.Book("Flame Lick")() ~= nil
             end,
         },
     },

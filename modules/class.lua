@@ -1176,6 +1176,11 @@ end
 
 function Module:CheckSelfForCures()
     local me = mq.TLO.Me
+    local getCounter = function(fn)
+        local ok, value = pcall(fn)
+        if not ok then return 0 end
+        return value or 0
+    end
     local selfChecks = {
         { type = "Poison",  check = me.Poisoned.ID() or 0, },
         { type = "Disease", check = me.Diseased.ID() or 0, },
@@ -1197,6 +1202,93 @@ function Module:CheckSelfForCures()
 
                 if not haveValidOptions or successful then
                     -- if succesful, clear the entire list so we don't chain group cures needlessly
+                    self:ClearCureList()
+                end
+                return
+            end
+        end
+    end
+
+    if me.Pet.ID() > 0 and not (me.Pet.CleanName() or "familiar"):lower():find("familiar") then
+        local petId = me.Pet.ID()
+        local petSpawn = mq.TLO.Spawn(petId)
+        local getPetCounter = function(counterType)
+            local petCounter = 0
+            if counterType == "Poison" then
+                petCounter = getCounter(function() return me.Pet.Poisoned.ID() end)
+                if petCounter <= 0 then
+                    petCounter = getCounter(function() return petSpawn.Poisoned.ID() end)
+                end
+            elseif counterType == "Disease" then
+                petCounter = getCounter(function() return me.Pet.Diseased.ID() end)
+                if petCounter <= 0 then
+                    petCounter = getCounter(function() return petSpawn.Diseased.ID() end)
+                end
+            elseif counterType == "Curse" then
+                petCounter = getCounter(function() return me.Pet.Cursed.ID() end)
+                if petCounter <= 0 then
+                    petCounter = getCounter(function() return petSpawn.Cursed.ID() end)
+                end
+            elseif counterType == "Corruption" then
+                petCounter = getCounter(function() return me.Pet.Corrupted.ID() end)
+                if petCounter <= 0 then
+                    petCounter = getCounter(function() return petSpawn.Corrupted.ID() end)
+                end
+            end
+            return petCounter
+        end
+
+        local petChecks = {
+            { type = "Poison",  check = getPetCounter("Poison"), },
+            { type = "Disease", check = getPetCounter("Disease"), },
+            { type = "Curse",   check = getPetCounter("Curse"), },
+        }
+        if not Core.OnLaz() then
+            table.insert(petChecks, { type = "Corruption", check = getPetCounter("Corruption"), })
+        end
+
+        local matchedPetType = nil
+        for _, data in ipairs(petChecks) do
+            Logger.log_verbose("\ay[Cures] %s(pet) :: [%s] => %s", (me.Pet.CleanName() or "unknown"):lower(), data.type,
+                data.check > 0 and data.check or "none")
+            if data.check > 0 then
+                matchedPetType = data.type
+                break
+            end
+        end
+
+        -- Some client builds don't expose pet poison/disease counters on Me.Pet;
+        -- fall back to checking pet buff slots for detrimental spell types.
+        if not matchedPetType then
+            local hasDetrimental = false
+            for i = 1, 30 do
+                local petBuff = me.PetBuff(i)
+                if petBuff and petBuff() and (petBuff.ID() or 0) > 0 then
+                    local buffSpell = mq.TLO.Spell(petBuff.ID())
+                    if buffSpell and buffSpell() and (buffSpell.SpellType() or "") == "Detrimental" then
+                        hasDetrimental = true
+                        break
+                    end
+                end
+            end
+
+            if hasDetrimental then
+                matchedPetType = "Disease"
+                Logger.log_verbose("\ay[Cures] %s(pet) :: detected detrimental buff via fallback scan.", (me.Pet.CleanName() or "unknown"):lower())
+            end
+        end
+
+        if matchedPetType then
+            Comms.HandleAnnounce(
+                Comms.FormatChatEvent("Cure", me.CleanName(), string.format('%s effect found on pet, processing cure.', matchedPetType)),
+                Config:GetSetting('CureAnnounceGroup'),
+                Config:GetSetting('CureAnnounce'),
+                Config:GetSetting('AnnounceToRaidIfInRaid'))
+
+            if self.ClassConfig.Cures and self.ClassConfig.Cures.CureNow then
+                local successful, haveValidOptions = Core.SafeCallFunc("CureNow", self.ClassConfig.Cures.CureNow, self, matchedPetType, petId)
+
+                if not haveValidOptions or successful then
                     self:ClearCureList()
                 end
                 return

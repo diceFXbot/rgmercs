@@ -15,6 +15,7 @@ local Core         = require("utils.core")
 local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
 local Comms        = require("utils.comms")
+local Logger       = require("utils.logger")
 
 local _ClassConfig = {
     _version            = "Alpha 1.1 - Live (Modern Era DPS Only)",
@@ -23,8 +24,125 @@ local _ClassConfig = {
         'ModernEra',
     },
     ['ModeChecks']      = {
+        CanMez = function() return true end,
+        IsCuring = function() return Config:GetSetting('DoCureSpells') end,
+        IsMezzing = function() return Config:GetSetting('MezOn') end,
         -- necro can AA Rez
         IsRezing = function() return Config:GetSetting('BattleRez') or Targeting.GetXTHaterCount() == 0 end,
+    },
+    ['Cures']           = {
+        GetCureSpells = function(self)
+            self.TempSettings.CureSpells = {}
+            local diseaseSpell = Core.GetResolvedActionMapItem("CureDisease") or mq.TLO.Spell("Cure Disease")
+            if diseaseSpell then
+                self.TempSettings.CureSpells.Disease = diseaseSpell
+            else
+                Logger.log_debug("GetCureSpells: Could not resolve CureDisease/Cure Disease (not mapped or not scribed).")
+            end
+            local poisonSpell = Core.GetResolvedActionMapItem("CurePoison") or mq.TLO.Spell("Cure Poison")
+            if poisonSpell then
+                self.TempSettings.CureSpells.Poison = poisonSpell
+            else
+                Logger.log_debug("GetCureSpells: Could not resolve CurePoison/Cure Poison (not mapped or not scribed).")
+            end
+        end,
+        CureNow = function(self, type, targetId)
+            if (mq.TLO.Me.CombatState() or ""):lower() == "combat" then
+                -- Request was to only cure out of combat.
+                return false, true
+            end
+            if not Config:GetSetting('DoCureSpells') then return false, false end
+            local cureType = (type or ""):lower()
+            if cureType ~= "disease" and cureType ~= "poison" then return false, true end
+
+            local targetSpawn = mq.TLO.Spawn(targetId)
+            if not (targetSpawn and targetSpawn()) then return false, true end
+            local hasCounter = false
+            local counterReadable = false
+
+            -- Prefer Actor heartbeat data for peer cures when available/recent.
+            if targetId ~= mq.TLO.Me.ID() then
+                local actorPeers = Comms.GetAllPeerHeartbeats(false) or {}
+                for _, heartbeat in pairs(actorPeers) do
+                    local data = heartbeat and heartbeat.Data
+                    local recentHeartbeat = (Globals.GetTimeSeconds() - (heartbeat.LastHeartbeat or 0)) <= 3
+                    if data and recentHeartbeat and tonumber(data.ID or 0) == tonumber(targetId or 0) then
+                        local actorCounter = cureType == "poison" and tonumber(data.Poison or "0") or tonumber(data.Disease or "0")
+                        if actorCounter ~= nil then
+                            counterReadable = true
+                            hasCounter = actorCounter > 0
+                        end
+                        break
+                    end
+                end
+            end
+
+            local ok, counterValue = pcall(function()
+                if targetId == mq.TLO.Me.ID() then
+                    if cureType == "poison" then
+                        return mq.TLO.Me.Poisoned.ID() or 0
+                    end
+                    return mq.TLO.Me.Diseased.ID() or 0
+                end
+                if cureType == "poison" then
+                    return targetSpawn.Poisoned.ID() or 0
+                end
+                return targetSpawn.Diseased.ID() or 0
+            end)
+            if ok then
+                counterReadable = true
+                if not hasCounter and (counterValue or 0) > 0 then
+                    hasCounter = true
+                elseif hasCounter and (counterValue or 0) <= 0 then
+                    -- If either source can read "no typed counter", treat it as no-match.
+                    hasCounter = false
+                end
+            end
+
+            -- If available, use TotalCounters as a stronger signal to avoid curing non-counter detrimentals (e.g. some snares).
+            local okTotal, totalCounters = pcall(function()
+                if targetId == mq.TLO.Me.ID() then
+                    return mq.TLO.Me.TotalCounters() or 0
+                end
+                return targetSpawn.TotalCounters() or 0
+            end)
+            if okTotal then
+                counterReadable = true
+                if (totalCounters or 0) <= 0 then
+                    hasCounter = false
+                elseif not hasCounter then
+                    -- We have counters present but couldn't read typed counter reliably; allow by requested type.
+                    hasCounter = true
+                end
+            end
+            if not hasCounter then
+                -- Some client builds do not expose disease/poison counters reliably on other PCs.
+                -- For Disease specifically, fail closed to avoid curing non-counter detrimentals (ex: some snares).
+                -- Poison keeps fallback behavior for compatibility with peers where counters are opaque.
+                if targetId ~= mq.TLO.Me.ID() and not counterReadable and cureType == "poison" then
+                    Logger.log_debug("CureNow: %s counter not readable on %s; trusting requested type for poison.", cureType, targetSpawn.CleanName() or "Unknown")
+                else
+                    Logger.log_debug("CureNow: Skipping cure on %s - no %s counters found.", targetSpawn.CleanName() or "Unknown", cureType)
+                    return false, true
+                end
+            end
+
+            local cureKey = cureType == "poison" and "Poison" or "Disease"
+            local defaultSpellName = cureType == "poison" and "Cure Poison" or "Cure Disease"
+            local cureSpell = self.TempSettings.CureSpells and self.TempSettings.CureSpells[cureKey]
+            local spellName = defaultSpellName
+            if cureSpell and cureSpell() and cureSpell.RankName then
+                spellName = cureSpell.RankName() or spellName
+            end
+
+            if not mq.TLO.Me.Book(spellName)() and not mq.TLO.Me.Book(defaultSpellName)() then
+                Logger.log_debug("CureNow: %s is not in spell book.", defaultSpellName)
+                return false, false
+            end
+
+            Logger.log_debug("CureNow: Using %s for %s on %s.", spellName, cureType, targetSpawn.CleanName() or "Unknown")
+            return Casting.UseSpell(spellName, targetId, true), true
+        end,
     },
     ['Themes']          = {
         ['DPS'] = {
@@ -103,6 +221,7 @@ local _ClassConfig = {
             "Major Shielding",
             "Shielding",
             "Lesser Shielding",
+            "Minor Shielding",
         },
         ['SelfRune1'] = {
             "Wraithskin XIII",
@@ -130,6 +249,11 @@ local _ClassConfig = {
         ['FDSpell'] = {
             -- Fd Spell
             "Death Peace",
+            "Feign Death",
+        },
+        ['HarmShieldSpell'] = {
+            "Harmshield",
+            "Harm Shield",
         },
         ---DPS
         ['AllianceSpell'] = {
@@ -254,6 +378,28 @@ local _ClassConfig = {
             "Mind Flay",
             "Mind Wrack",
         },
+        ['CureDisease'] = {
+            "Cure Disease",
+        },
+        ['CurePoison'] = {
+            "Cure Poison",
+        },
+        ['MezSpell'] = {
+            -- Screaming Terror line (single-target mez)
+            "Screaming Terror XIII",
+            "Horrifying Shriek",
+            "Lunatic Shriek",
+            "Nightmarish Shriek",
+            "Hair-Raising Shriek",
+            "Dreadful Shriek",
+            "Foreboding",
+            "Dread",
+            "Dismay",
+            "Bone-Rattling Shriek",
+            "Spine-Chilling Shriek",
+            "Bloodcurdling Shriek",
+            "Screaming Terror",
+        },
         ['PoisonNuke1'] = {
             ---PoisonNuke >=LVL21
             "Schisming Venin",
@@ -337,6 +483,9 @@ local _ClassConfig = {
             "Ignite Blood",
             "Boil Blood",
             "Heat Blood",
+        },
+        ['Fear'] = {
+            "Invoke Fear",
         },
         ['FireDot2_2'] = {
             ---FireDot2 >= LVL10
@@ -736,6 +885,25 @@ local _ClassConfig = {
             "Leering Corpse",
             "Cavorting Bones",
         },
+        ['PetHeal'] = {
+            -- Chilling Renewal line (pet heal + counter cure)
+            "Chilling Renewal XVI",
+            "Bracing Revival",
+            "Frigid Salubrity",
+            "Icy Revival",
+            "Algid Renewal",
+            "Icy Mending",
+            "Algid Mending",
+            "Chilled Mending",
+            "Gelid Mending",
+            "Icy Stitches",
+            "Wintry Revival",
+            "Chilling Renewal",
+            "Dark Salve",
+            "Touch of Death",
+            "Renew Bones",
+            "Mend Bones",
+        },
         ['PetBuff'] = {
             "Necrotize Ally X",
             "Instill Ally",
@@ -837,6 +1005,14 @@ local _ClassConfig = {
                 return combat_state == "Combat" and not Casting.IAmFeigning()
             end,
         },
+        { -- Pet heal/counter-cleanse utility, evaluated in and out of combat
+            name = 'PetHeal',
+            timer = 1,
+            targetId = function(self) return mq.TLO.Me.Pet.ID() > 0 and { mq.TLO.Me.Pet.ID(), } or {} end,
+            cond = function(self, combat_state)
+                return Config:GetSetting('DoPetHeal') and mq.TLO.Me.Pet.ID() > 0 and not Casting.IAmFeigning()
+            end,
+        },
     },
     ['Rotations']       = {
         ['Lich Management'] = {
@@ -882,7 +1058,18 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Config:GetSetting('AggroFeign') then return false end
-                    return (mq.TLO.Me.PctHPs() <= 40 and Targeting.IHaveAggro(100)) or (Globals.AutoTargetIsNamed and mq.TLO.Me.PctAggro() > 99)
+                    return (mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and Targeting.IHaveAggro(100)) or
+                        (Globals.AutoTargetIsNamed and mq.TLO.Me.PctAggro() > 99)
+                end,
+            },
+            {
+                name = "FDSpell",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('AggroFeign') then return false end
+                    if Casting.AAReady("Death's Effigy") then return false end
+                    return (mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and Targeting.IHaveAggro(100)) or
+                        (Globals.AutoTargetIsNamed and mq.TLO.Me.PctAggro() > 99)
                 end,
             },
             {
@@ -895,6 +1082,14 @@ local _ClassConfig = {
             {
                 name = "Embalmer's Carapace",
                 type = "AA",
+            },
+            {
+                name = "HarmShieldSpell",
+                type = "Spell",
+                cond = function(self, spell)
+                    if Casting.AAReady("Harm Shield") then return false end
+                    return (mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and Targeting.IHaveAggro(100))
+                end,
             },
             {
                 name = "Harm Shield",
@@ -923,6 +1118,20 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "HealthTaps",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return mq.TLO.Me.PctHPs() <= Config:GetSetting('HealthTapStart')
+                end,
+            },
+            {
+                name = "SnareDot",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return Casting.DetSpellCheck(spell) and Targeting.AggroCheckOkay() and not Casting.SnareImmuneTarget(target)
+                end,
+            },
+            {
                 name = "Summon Companion",
                 type = "AA",
                 cond = function(self, aaName, target)
@@ -939,16 +1148,47 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "Disease2",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return Targeting.GetTargetPctHPs(target) >= 55 and Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
+                end,
+            },
+            {
                 name = "FireDot2",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Targeting.GetTargetPctHPs(target) >= 55 and Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
+                end,
+            },
+            {
+                name = "Fear",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    local fearTarget = target or Targeting.GetAutoTarget() or mq.TLO.Target
+                    if not (fearTarget and fearTarget()) then return false end
+                    if (Targeting.GetTargetPctHPs(fearTarget) or 0) <= 21 then return false end
+
+                    local snareSpell = self:GetResolvedActionMapItem('SnareDot')
+                    local hasClassSnare = false
+                    if snareSpell and snareSpell() then
+                        local snareSpellId = Casting.GetUseableSpellId(snareSpell)
+                        if snareSpellId then
+                            hasClassSnare = fearTarget.FindBuff(string.format("id %d", snareSpellId))() ~= nil
+                        end
+                    end
+
+                    -- Allow any detrimental movement-speed debuff (e.g. RNG snare line), not only NEC SnareDot.
+                    local hasAnySnare = fearTarget.FindBuff("detspa 3")() ~= nil
+
+                    return (hasClassSnare or hasAnySnare) and Casting.DetSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
                 end,
             },
             {
                 name = "ManaDrain",
                 type = "Spell",
                 cond = function(self, spell, target)
+                    if not (spell and spell()) then return false end
                     return not Casting.IHaveBuff(spell.Name() .. " Recourse") and
                         (mq.TLO.Target.PctMana() or -1) > 0 and mq.TLO.Group.LowMana(40)() > 2
                 end,
@@ -957,28 +1197,28 @@ local _ClassConfig = {
                 name = "Combo",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
                 end,
             },
             {
                 name = "Poison2",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
                 end,
             },
             {
                 name = "Magic2",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
                 end,
             },
             {
                 name = "GroupLeech",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot() and Targeting.AggroCheckOkay()
                 end,
             },
             {
@@ -989,17 +1229,24 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "PoisonNuke1",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return not Targeting.MobHasLowHP(target) and Casting.OkayToNuke() and Targeting.AggroCheckOkay()
+                end,
+            },
+            {
                 name = "PoisonNuke2",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.OkayToNuke()
+                    return not Targeting.MobHasLowHP(target) and Casting.OkayToNuke() and Targeting.AggroCheckOkay()
                 end,
             },
             {
                 name = "FireNuke",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Targeting.MobHasLowHP and Casting.OkayToNuke()
+                    return not Targeting.MobHasLowHP(target) and Casting.OkayToNuke()
                 end,
             },
             {
@@ -1102,6 +1349,13 @@ local _ClassConfig = {
                     return Globals.AutoTargetIsNamed and mq.TLO.Me.PctAggro() <= 50
                 end,
             },
+            {
+                name = "PoisonNuke1",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return Casting.OkayToNuke()
+                end,
+            },
         },
         ['Downtime'] = {
             {
@@ -1183,6 +1437,34 @@ local _ClassConfig = {
                 end,
             },
         },
+        ['PetHeal'] = {
+            {
+                name = "PetHeal",
+                type = "Spell",
+                cond = function(self, spell)
+                    if not Config:GetSetting('DoPetHeal') then return false end
+                    local pet = mq.TLO.Me.Pet
+                    if not (pet and pet() and pet.ID() > 0) then return false end
+
+                    local petLowHP = (pet.PctHPs() or 100) <= Config:GetSetting('PetHealPct')
+                    local hasCounters = false
+                    local okTotal, totalCounters = pcall(function() return pet.TotalCounters() or 0 end)
+                    if okTotal and totalCounters > 0 then
+                        hasCounters = true
+                    end
+
+                    if not hasCounters then
+                        local okPoi, poi = pcall(function() return pet.Poisoned.ID() or 0 end)
+                        local okDis, dis = pcall(function() return pet.Diseased.ID() or 0 end)
+                        local okCur, cur = pcall(function() return pet.Cursed.ID() or 0 end)
+                        local okCor, cor = pcall(function() return pet.Corrupted.ID() or 0 end)
+                        hasCounters = (okPoi and poi > 0) or (okDis and dis > 0) or (okCur and cur > 0) or (okCor and cor > 0)
+                    end
+
+                    return petLowHP or hasCounters
+                end,
+            },
+        },
     },
     ['HelperFunctions'] = {
         CancelLich = function(self)
@@ -1224,24 +1506,47 @@ local _ClassConfig = {
             -- cond = function(self) return true end, --Kept here for illustration, this line could be removed in this instance since we aren't using conditions.
             spells = {
                 { name = "FireNuke", },
+                { name = "FDSpell", cond = function(self) return Config:GetSetting('AggroFeign') end, },
+                { name = "HarmShieldSpell", cond = function(self) return Config:GetSetting('AggroFeign') end, },
+                { name = "PoisonNuke1", },
                 { name = "PoisonNuke2", },
                 { name = "SwarmPet", },
+                { name = "SnareDot", },
+                { name = "Disease2", },
                 { name = "FireDot2", },
+                { name = "Fear", },
                 { name = "Combo", },
                 { name = "Poison2", },
                 { name = "Magic2", },
                 { name = "GroupLeech", },
                 { name = "ManaDrain", },
+                { name = "HealthTaps", },
                 { name = "FleshBuff", },
                 { name = "BestowBuff", },
                 { name = "PetBuff", },
+                { name = "PetHeal", cond = function(self) return Config:GetSetting('DoPetHeal') end, },
+                { name = "MezSpell", cond = function(self) return Config:GetSetting('DoSTMez') end, },
                 {
                     name_func = function(self)
-                        return Config:GetSetting('PetType') == 1 and "PetSpellWar" or "PetSpellRog"
+                        if Config:GetSetting('KeepPetMemmed') then
+                            return Config:GetSetting('PetType') == 1 and "PetSpellWar" or "PetSpellRog"
+                        end
+
+                        local selfHPBuff = self:GetResolvedActionMapItem('SelfHPBuff')
+                        if selfHPBuff and selfHPBuff() and not Casting.IHaveBuff(selfHPBuff) then
+                            return "SelfHPBuff"
+                        end
+
+                        local lichSpell = self:GetResolvedActionMapItem('LichSpell')
+                        if Config:GetSetting('DoLich') and lichSpell and lichSpell() and not Casting.IHaveBuff(lichSpell) and
+                            (not Config:GetSetting('DoUnity') or not Casting.AAReady("Mortifier's Unity")) and
+                            mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana') then
+                            return "LichSpell"
+                        end
+
+                        return nil
                     end,
-                    cond = function(self) return Config:GetSetting('KeepPetMemmed') end,
                 },
-                { name = "LichSpell", },
             },
         },
     },
@@ -1279,6 +1584,27 @@ local _ClassConfig = {
             Index = 102,
             Tooltip = "Keep your pet spell memorized (allows combat resummoning).",
             Default = false,
+        },
+        ['DoPetHeal']         = {
+            DisplayName = "Use Pet Heal",
+            Group = "Abilities",
+            Header = "Pet",
+            Category = "Pet Summoning",
+            Index = 103,
+            Tooltip = "Memorize and use the Pet Heal (Chilling Renewal line) when enabled.",
+            Default = false,
+            RequiresLoadoutChange = true,
+        },
+        ['PetHealPct']        = {
+            DisplayName = "Pet Heal HP%",
+            Group = "Abilities",
+            Header = "Pet",
+            Category = "Pet Summoning",
+            Index = 104,
+            Tooltip = "Pet HP% threshold to cast Pet Heal.",
+            Default = 70,
+            Min = 1,
+            Max = 100,
         },
         ['BattleRez']         = {
             DisplayName = "Battle Rez",
@@ -1371,12 +1697,24 @@ local _ClassConfig = {
             Max = 100,
             ConfigType = "Advanced",
         },
+        ['HealthTapStart']    = {
+            DisplayName = "Health Tap HP%",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Index = 102,
+            Tooltip = "Your HP % threshold to begin casting HealthTaps/Lifetap line.",
+            Default = 50,
+            Min = 1,
+            Max = 100,
+            ConfigType = "Advanced",
+        },
         ['AggroFeign']        = {
             DisplayName = "Emergency Feign",
             Group = "Abilities",
             Header = "Utility",
             Category = "Emergency",
-            Index = 102,
+            Index = 103,
             Tooltip = "Use your Feign AA when you have aggro at low health or aggro on mobs detected as 'named' by RGMercs (see Named tab).",
             Default = true,
         },

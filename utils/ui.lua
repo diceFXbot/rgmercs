@@ -233,6 +233,107 @@ function Ui.GetImGuiStyleId(e)
     return type(e) == 'string' and (Ui.ImGuiStyleVarIds[e] or ImGuiStyleVar[e] or 0) or e
 end
 
+--- Renders the indicated list.
+---@param listName string The list to render.
+function Ui.RenderList(listName, ordered)
+    if not listName then return end
+
+    local useKey = "Use" .. listName
+    local displayName = listName:gsub("List", " List")
+    local listData = Config:GetSetting(listName) or {}
+
+    if Config:GetSetting(useKey) then
+        ImGui.PushStyleColor(ImGuiCol.Button, Globals.Constants.Colors.ConditionPassColor)
+    else
+        ImGui.PushStyleColor(ImGuiCol.Button, Globals.Constants.Colors.ConditionFailColor)
+    end
+    ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(20, 3))
+
+    if ImGui.SmallButton(Config:GetSetting(useKey) and ("Use " .. displayName .. ": Enabled") or ("Use " .. displayName .. ": Disabled")) then
+        Config:SetSetting(useKey, not Config:GetSetting(useKey))
+    end
+    ImGui.PopStyleVar()
+    ImGui.PopStyleColor()
+    if mq.TLO.Target.ID() > 0 then
+        ImGui.SameLine()
+        ImGui.PushID("##_small_btn_create_" .. listName)
+        if ImGui.SmallButton("Add Target to " .. displayName) then
+            Config:ListAdd(mq.TLO.Target.DisplayName(), listName)
+        end
+        ImGui.PopID()
+    end
+    local tableId = listName .. " Names"
+    if ImGui.BeginTable(tableId, 5, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)) then
+        ImGui.TableSetupColumn('ID', (ImGuiTableColumnFlags.WidthFixed), 20.0)
+        ImGui.TableSetupColumn('Name', (ImGuiTableColumnFlags.WidthFixed), 140.0)
+        ImGui.TableSetupColumn('Distance', (ImGuiTableColumnFlags.WidthFixed), 40.0)
+        ImGui.TableSetupColumn('Loc', (ImGuiTableColumnFlags.WidthStretch), 150.0)
+        ImGui.TableSetupColumn('Controls', (ImGuiTableColumnFlags.WidthFixed), 80.0)
+        ImGui.TableHeadersRow()
+
+        for idx, name in ipairs(listData) do
+            local spawn = mq.TLO.Spawn(string.format("PC =%s", name))
+            ImGui.TableNextColumn()
+            if listName == "AssistList" and name == Globals.MainAssist then
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, IM_COL32(255, 255, 0, 64))
+            end
+            Ui.RenderText(tostring(idx))
+            ImGui.TableNextColumn()
+            local _, clicked = ImGui.Selectable(name, false)
+            if clicked and spawn and spawn() then
+                mq.TLO.Spawn(spawn.ID()).DoTarget()
+            end
+            ImGui.TableNextColumn()
+            if spawn() and spawn.ID() > 0 then
+                ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionPassColor)
+                Ui.RenderText(tostring(math.ceil(spawn.Distance())))
+                ImGui.PopStyleColor()
+                ImGui.TableNextColumn()
+                Ui.NavEnabledLoc(spawn.LocYXZ() or "0,0,0")
+            else
+                ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionFailColor)
+                Ui.RenderText("0")
+                ImGui.PopStyleColor()
+                ImGui.TableNextColumn()
+                Ui.RenderText("0")
+            end
+            ImGui.TableNextColumn()
+            local deleteId = "##_small_btn_delete_" .. listName .. "_" .. tostring(idx)
+            ImGui.PushID(deleteId)
+            if ImGui.SmallButton(Icons.FA_TRASH) then
+                Config:ListDelete(idx, listName)
+            end
+            ImGui.PopID()
+            if ordered then
+                ImGui.SameLine()
+                local upId = "##_small_btn_up_" .. listName .. "_" .. tostring(idx)
+                ImGui.PushID(upId)
+                if idx == 1 then
+                    ImGui.InvisibleButton(Icons.FA_CHEVRON_UP, ImVec2(22, 1))
+                else
+                    if ImGui.SmallButton(Icons.FA_CHEVRON_UP) then
+                        Config:ListMoveUp(idx, listName)
+                    end
+                end
+                ImGui.PopID()
+                ImGui.SameLine()
+                local downId = "##_small_btn_dn_" .. listName .. "_" .. tostring(idx)
+                ImGui.PushID(downId)
+                if idx == #listData then
+                    ImGui.InvisibleButton(Icons.FA_CHEVRON_DOWN, ImVec2(22, 1))
+                else
+                    if ImGui.SmallButton(Icons.FA_CHEVRON_DOWN) then
+                        Config:ListMoveDown(idx, listName)
+                    end
+                end
+                ImGui.PopID()
+            end
+        end
+
+        ImGui.EndTable()
+    end
+end
+
 --- Renders the assist list._
 --- This function is responsible for displaying the list of assist names
 --- It does not take any parameters and does not return any values.

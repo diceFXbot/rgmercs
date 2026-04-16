@@ -43,6 +43,14 @@ function Math.Lerp(a, b, t)
 end
 
 function Math.ColorLerp(c1, c2, t)
+    if type(c1) ~= "table" or c1.x == nil then
+        c1 = (type(c2) == "table" and c2.x ~= nil) and c2 or ImVec4(1, 1, 1, 1)
+    end
+    if type(c2) ~= "table" or c2.x == nil then
+        c2 = c1
+    end
+    t = Math.Clamp(tonumber(t) or 0, 0, 1)
+
     return ImVec4(Math.Lerp(c1.x, c2.x, t),
         Math.Lerp(c1.y, c2.y, t),
         Math.Lerp(c1.z, c2.z, t),

@@ -185,8 +185,10 @@ Globals.Constants.DefaultColors       = {
     MainDowntimeColor       = Globals.Constants.BasicColors.Green,
     TooltipTextColor        = Globals.Constants.BasicColors.White,
     HPHighColor             = ImVec4(0.20, 0.88, 0.30, 0.96),
+    HPMidColor              = ImVec4(0.95, 0.75, 0.12, 0.96),
     HPLowColor              = ImVec4(0.95, 0.12, 0.12, 0.96),
     ManaHighColor           = ImVec4(0.15, 0.55, 0.95, 0.96),
+    ManaMidColor            = ImVec4(0.45, 0.75, 1.00, 0.96),
     ManaLowColor            = ImVec4(0.95, 0.12, 0.12, 0.96),
     TogglePulseColor        = ImVec4(1.0, 0.85, 0.2, 1.0),
 }
