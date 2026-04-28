@@ -7,6 +7,28 @@ local Comms                                              = require("utils.comms"
 local Set                                                = require("mq.Set")
 local Files                                              = require("utils.files")
 local Globals                                            = require("utils.globals")
+local ConfigDB                                           = require("utils.config_db")
+
+local function BuildNoopDb()
+    return {
+        getAll = function() return {} end,
+        getValue = function() return nil end,
+        setAll = function() end,
+        setValue = function() end,
+        deleteCharacter = function() end,
+        deleteValue = function() end,
+        getCharacters = function() return {} end,
+        getClassesForCharacter = function() return {} end,
+        updateTelemetryGraphs = function() end,
+        renderTelemetry = function() end,
+        renderTelemetryGraph = function() end,
+        setCollectStats = function() end,
+        flushQueue = function() end,
+        pendingWrites = function() return 0 end,
+        close = function() end,
+        getCharacterId = function() return nil end,
+    }
+end
 
 local Config                                             = {
     _version = '2.1.0',
@@ -16,6 +38,8 @@ local Config                                             = {
     _author = 'Lead Devs: Derple, Algar',
 }
 Config.__index                                           = Config
+Config.Db                                                = ConfigDB.new(mq.configDir .. '/rgmercs/rgmercs_config.db') or BuildNoopDb()
+Config.Db:setCollectStats(true)
 Config.moduleSettings                                    = {}
 Config.moduleDefaultSettings                             = {}
 Config.moduleTempSettings                                = {}
@@ -26,6 +50,8 @@ Config.peerModuleDefaultSettings                         = {}
 Config.peerModuleSettingCategories                       = {}
 Config.FAQ                                               = {}
 Config.SettingsLoadComplete                              = false
+Config.DbConsistencyCheckPass                            = true
+Config.UnitTestsPass                                     = true
 
 Config.TempSettings                                      = {}
 Config.TempSettings.lastModuleRegisteredTime             = 0
@@ -2005,6 +2031,100 @@ Config.DefaultConfig                                     = {
         Min = 0,
         Max = 100,
     },
+    ['ShowTargetWindow']                 = {
+        DisplayName = "Show Target Window",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 1,
+        Tooltip = "Display an RGMercs-style target window with information about your current target.",
+        Default = false,
+    },
+    ['TargetBuffNameTooltip']            = {
+        DisplayName = "Show Target Buff Name Tooltips",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 2,
+        Tooltip = "Display tooltips with the names of buffs on your target.",
+        Default = true,
+    },
+    ['TargetBuffCasterTooltip']          = {
+        DisplayName = "Show Target Buff Caster Tooltips",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 3,
+        Tooltip = "Display tooltips with buff caster names on your target.",
+        Default = true,
+    },
+    ['TargetBuffDescriptionTooltip']     = {
+        DisplayName = "Show Target Buff Description Tooltips",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 4,
+        Tooltip = "Display tooltips with buff descriptions on your target.",
+        Default = true,
+    },
+    ['TargetBuffIconSize']               = {
+        DisplayName = "Target Buff Icon Size",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 5,
+        Tooltip = "Size of target buff icons in the target window.",
+        Default = 24,
+        Min = 12,
+        Max = 64,
+    },
+    ['TargetBuffBlinkAtTime']            = {
+        DisplayName = "Target Buff Blink Time",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 6,
+        Tooltip = "Seconds remaining on a buff before icon blinking starts.",
+        Default = 15,
+        Min = 0,
+        Max = 60,
+    },
+    ['LockTargetWindow']                 = {
+        DisplayName = "Lock Target Window",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 7,
+        Tooltip = "Lock movement and resizing of the target window.",
+        Default = false,
+    },
+    ['ShowTargetBuffs']                  = {
+        DisplayName = "Show Target Buffs",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 8,
+        Tooltip = "Display buffs on the target window.",
+        Default = true,
+    },
+    ['ShowTargetOfTarget']               = {
+        DisplayName = "Show Target of Target",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 9,
+        Tooltip = "Display the target's target.",
+        Default = true,
+    },
+    ['ShowTargetSecondaryAggro']         = {
+        DisplayName = "Show Secondary Aggro",
+        Group = "General",
+        Header = "Interface",
+        Category = "Mercs Target Window",
+        Index = 10,
+        Tooltip = "Display secondary aggro holder and value.",
+        Default = true,
+    },
 
     -- [ UI Colors ] --
     ['MainButtonUnpausedColor']          = {
@@ -2046,6 +2166,19 @@ Config.DefaultConfig                                     = {
             Config.CacheCustomColors()
         end,
     },
+    ['HPMidColor']                       = {
+        DisplayName = "HP Mid",
+        Group = "General",
+        Header = "Interface",
+        Category = "Default Colors",
+        Index = 14,
+        Tooltip = "Color used to display mid HP values.",
+        Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.HPMidColor),
+        Type = "Color",
+        OnChange = function(_, _)
+            Config.CacheCustomColors()
+        end,
+    },
     ['HPLowColor']                       = {
         DisplayName = "HP Low",
         Group = "General",
@@ -2067,6 +2200,19 @@ Config.DefaultConfig                                     = {
         Index = 16,
         Tooltip = "Color used to display high Mana values.",
         Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.ManaHighColor),
+        Type = "Color",
+        OnChange = function(_, _)
+            Config.CacheCustomColors()
+        end,
+    },
+    ['ManaMidColor']                     = {
+        DisplayName = "Mana Mid",
+        Group = "General",
+        Header = "Interface",
+        Category = "Default Colors",
+        Index = 17,
+        Tooltip = "Color used to display mid Mana values.",
+        Default = Tables.ImVec4ToTable(Globals.Constants.DefaultColors.ManaMidColor),
         Type = "Color",
         OnChange = function(_, _)
             Config.CacheCustomColors()
@@ -2364,6 +2510,28 @@ Config.DefaultConfig                                     = {
             end
         end,
     },
+    ['ToastLevel']                       = {
+        DisplayName = "Toast Level",
+        Category = "Internals",
+        Type = "Combo",
+        ComboOptions = Globals.Constants.ToastLevels,
+        Default = 3,
+        Min = 1,
+        Max = #Globals.Constants.ToastLevels,
+        OnChange = function(_, newValue)
+            Logger.set_toast_level(newValue - 1)
+        end,
+    },
+    ['PeerToastLevel']                   = {
+        DisplayName = "Peer Toast Level",
+        Category = "Internals",
+        Type = "Combo",
+        ComboOptions = Globals.Constants.ToastLevels,
+        Tooltip = "Show toasts generated by your actor peers (other characters running RGMercs).",
+        Default = 3,
+        Min = 1,
+        Max = #Globals.Constants.ToastLevels,
+    },
     ['EnableLogTracer']                  = {
         DisplayName = "Enable Debug Tracer",
         Category = "Internals",
@@ -2393,6 +2561,14 @@ Config.DefaultConfig                                     = {
         Category = "Internals",
         Index = 0,
         Tooltip = "Enable the Debug Panel",
+        Default = false,
+        ConfigType = "Advanced",
+    },
+    ['RunSelfTestsOnStartup']            = {
+        DisplayName = "Run Self-Tests on Startup",
+        Category = "Internals",
+        Index = 1,
+        Tooltip = "Run startup self-tests for key script components. This can increase startup time.",
         Default = false,
         ConfigType = "Advanced",
     },
@@ -3263,10 +3439,12 @@ function Config:SaveModuleSettings(module, settings)
     local defaultSettings = self:GetModuleDefaultSettings(module)
     local settingsCategories = self:GetModuleSettingCategories(module):toList() or {}
 
+    if self.Db and self.Db.setAll then
+        self.Db:setAll(Globals.CurServer, Globals.CurLoadedChar, Globals.CurLoadedClass, module, settings or {})
+    end
+
     if module == "Core" then
         self:SaveSettings()
-    else
-        Modules:ExecModule(module, "SaveSettings", false)
     end
     Logger.log_debug("\agModule %s - save settings requested!", module)
 
@@ -3663,6 +3841,44 @@ function Config.CacheCustomColors()
 
     for i, v in ipairs(Globals.Constants.ConColors) do
         Globals.Constants.ConColorsNameToVec4[v:upper()] = Globals.Constants.Colors[Globals.Constants.ConColors[i]:gsub(" ", "")] or Globals.Constants.Colors.White
+    end
+end
+
+function Config:GetAllModuleSettingsFromDb(module)
+    local dbSettings = {}
+    if self.Db and self.Db.getAll then
+        dbSettings = self.Db:getAll(Globals.CurServer, Globals.CurLoadedChar, Globals.CurLoadedClass, module) or {}
+        if Tables.GetTableSize(dbSettings) > 0 then
+            return dbSettings
+        end
+    end
+
+    local configFile = Config.GetConfigFileName(module)
+    if Files.file_exists(configFile) then
+        local config, err = loadfile(configFile)
+        if not err and config then
+            return config() or {}
+        end
+    end
+
+    return {}
+end
+
+function Config:FlushDB()
+    if self.Db and self.Db.flushQueue then
+        self.Db:flushQueue()
+    end
+end
+
+function Config:UpdateDbTelemetry()
+    if self.Db and self.Db.updateTelemetryGraphs then
+        self.Db:updateTelemetryGraphs()
+    end
+end
+
+function Config:Shutdown()
+    if self.Db and self.Db.close then
+        self.Db:close()
     end
 end
 

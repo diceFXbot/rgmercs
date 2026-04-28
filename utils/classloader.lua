@@ -30,7 +30,7 @@ function ClassLoader.getClassConfigFileName(class)
     if deprecated or not Files.file_exists(configFile) then
         -- Fall back to the appropriate config.
         Logger.log_error("Class Config not found or deprecated: \ay%s\aw. Returning to Default!", classConfigDir)
-        local folder = ClassLoader.getFallbackClassConfigFolder()
+        local folder = ClassLoader.getFallbackClassConfigFolder(class)
         Config:SetSetting('ClassConfigDir', folder)
         configFile = string.format("%s/%s/%s_class_config.lua", baseConfigDir, folder, class:lower())
     end
@@ -38,12 +38,29 @@ function ClassLoader.getClassConfigFileName(class)
     return configFile
 end
 
-function ClassLoader.getFallbackClassConfigFolder()
+function ClassLoader.getFallbackClassConfigFolder(class)
+    local baseConfigDir = Globals.ScriptDir .. "/class_configs"
+    local classFile = string.format("%s_class_config.lua", class:lower())
+
     if Core.OnEMU() then
         if Globals.Constants.SupportedEmuServers:contains(Globals.CurServer) then
-            return Globals.CurServer
+            local emuFile = string.format("%s/%s/%s", baseConfigDir, Globals.CurServer, classFile)
+            if Files.file_exists(emuFile) then
+                return Globals.CurServer
+            end
         end
     end
+
+    local liveFile = string.format("%s/Live/%s", baseConfigDir, classFile)
+    if Files.file_exists(liveFile) then
+        return "Live"
+    end
+
+    local liveKeshFile = string.format("%s/Live_kesh/%s", baseConfigDir, classFile)
+    if Files.file_exists(liveKeshFile) then
+        return "Live_kesh"
+    end
+
     return "Live"
 end
 

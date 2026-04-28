@@ -17,7 +17,7 @@ Config:LoadSettings()
 
 local Logger = require("utils.logger")
 Logger.set_log_level(Config:GetSetting('LogLevel'))
-Logger.set_toast_level(Config:GetSetting('ToastLevel') - 1) -- adjust for the "None" entry.
+Logger.set_toast_level((Config:GetSetting('ToastLevel', true) or 3) - 1) -- adjust for the "None" entry.
 Logger.set_log_to_file(Config:GetSetting('LogToFile'))
 Logger.set_log_timestamps_to_console(Config:GetSetting('LogTimeStampsToConsole'))
 Logger.set_debug_tracer_enabled(Config:GetSetting('EnableLogTracer'))

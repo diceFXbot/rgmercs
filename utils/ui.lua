@@ -3931,4 +3931,31 @@ function Ui.ChangeColorAlpoha(color, newAlpha)
     return ImVec4(color.x, color.y, color.z, newAlpha)
 end
 
+function Ui.RenderToastNotifications(states, lingerTime)
+    if type(states) ~= "table" then
+        return
+    end
+
+    local now = Globals.GetTimeSeconds()
+    local maxAge = tonumber(lingerTime) or 6.0
+    if maxAge < 0.5 then
+        maxAge = 0.5
+    end
+
+    -- Lightweight compatibility renderer: keeps toast lifecycle sane and
+    -- prevents nil-function crashes when merged branches are out of sync.
+    for i = #states, 1, -1 do
+        local s = states[i]
+        if not s then
+            table.remove(states, i)
+        else
+            local created = tonumber(s.receivedTime) or now
+            local age = now - created
+            if s.active == false or age > maxAge then
+                table.remove(states, i)
+            end
+        end
+    end
+end
+
 return Ui

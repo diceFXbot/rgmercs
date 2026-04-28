@@ -435,13 +435,6 @@ return {
         },
         ['CombatBuff'] = {
             {
-                name = "ThiefBuff",
-                type = "Disc",
-                cond = function(self, discSpell)
-                    return Casting.SelfBuffCheck(discSpell)
-                end,
-            },
-            {
                 name = "Epic",
                 type = "Item",
                 cond = function(self, itemName)
@@ -581,6 +574,13 @@ return {
             },
         },
         ['Downtime'] = {
+            {
+                name = "ThiefBuff",
+                type = "Disc",
+                cond = function(self, discSpell)
+                    return Casting.SelfBuffCheck(discSpell)
+                end,
+            },
             {
                 name = "EndRegen",
                 type = "Disc",
