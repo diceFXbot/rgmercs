@@ -411,7 +411,7 @@ local _ClassConfig = {
             "Spirit of Might",            -- Level 68, Single Target
         },
     },
-    ['HelperFunctions']   = {
+    ['Helpers']           = {
         DoRez = function(self, corpseId, ownerName)
             local rezAction = false
             local rezSpell = Core.GetResolvedActionMapItem('RezSpell')
@@ -440,7 +440,9 @@ local _ClassConfig = {
         ProcBuffChoice = function()
             local buffSpell = Core.GetResolvedActionMapItem('MeleeProcBuff')
             local buffLevel = buffSpell and buffSpell.Level() or 0
-            if mq.TLO.FindItem("=Artifact of the Leopard")() and mq.TLO.Me.Level() >= 65 and buffLevel < 70 then
+            if mq.TLO.FindItem("=Legendary Armband of the Panther")() and mq.TLO.Me.Level() >= 68 and buffLevel < 70 then
+                return "PantherItem"
+            elseif mq.TLO.FindItem("=Artifact of the Leopard")() and mq.TLO.Me.Level() >= 65 and buffLevel < 70 then
                 return "LeopardItem"
             elseif mq.TLO.FindItem("=Artifact of the Jaguar")() and mq.TLO.Me.Level() >= 52 and buffLevel < 55 then
                 return "JaguarItem"
@@ -697,9 +699,18 @@ local _ClassConfig = {
     ['Rotations']         = {
         ['MeleeProcBuff'] = {
             {
+                name = "Legendary Armband of the Panther",
+                type = "Item",
+                load_cond = function(self) return self.Helpers.ProcBuffChoice() == "PantherItem" end,
+                cond = function(self, itemName, target)
+                    if (mq.TLO.Me.CombatState():lower() or "") ~= "combat" then return false end
+                    return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck(9975, target) --Panther Rk. II
+                end,
+            },
+            {
                 name = "Artifact of the Leopard",
                 type = "Item",
-                load_cond = function(self) return self.ClassConfig.HelperFunctions.ProcBuffChoice() == "LeopardItem" end,
+                load_cond = function(self) return self.Helpers.ProcBuffChoice() == "LeopardItem" end,
                 cond = function(self, itemName, target)
                     return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck(9975, target) --Panther Rk. II
                 end,
@@ -707,7 +718,7 @@ local _ClassConfig = {
             {
                 name = "Artifact of the Jaguar",
                 type = "Item",
-                load_cond = function(self) return self.ClassConfig.HelperFunctions.ProcBuffChoice() == "JaguarItem" end,
+                load_cond = function(self) return self.Helpers.ProcBuffChoice() == "JaguarItem" end,
                 cond = function(self, itemName, target)
                     return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck(9975, target) --Panther Rk. II
                 end,
@@ -715,7 +726,7 @@ local _ClassConfig = {
             {
                 name = "MeleeProcBuff",
                 type = "Spell",
-                load_cond = function(self) return self.ClassConfig.HelperFunctions.ProcBuffChoice() == "ProcSpell" end,
+                load_cond = function(self) return self.Helpers.ProcBuffChoice() == "ProcSpell" end,
                 cond = function(self, spell, target)
                     if not Casting.CastReady(spell) then return false end                                 --avoid constant group buff checks
                     return Casting.GroupBuffCheck(spell, target) and Casting.AddedBuffCheck(9975, target) --Panther Rk. II
@@ -1218,7 +1229,7 @@ local _ClassConfig = {
                 { name = "CrippleSpell",    cond = function(self) return Config:GetSetting('DoCripple') end, },
                 { name = "PutridDecay",     cond = function(self) return Config:GetSetting('DoPutrid') end, },
                 { name = "CanniSpell",      cond = function(self) return Config:GetSetting('DoSpellCanni') end, },
-                { name = "MeleeProcBuff",   cond = function(self) return self.ClassConfig.HelperFunctions.ProcBuffChoice() == "ProcSpell" end, },
+                { name = "MeleeProcBuff",   cond = function(self) return self.Helpers.ProcBuffChoice() == "ProcSpell" end, },
                 { name = "SlowProcBuff", },
                 { name = "LowLvlAtkBuff",   cond = function(self) return not mq.TLO.FindItem("=Artifact of the Champion")() or mq.TLO.Me.Level() < 68 end, },
                 { name = "ColdNuke",        cond = function(self) return Config:GetSetting('DoColdNuke') end, },
@@ -1242,7 +1253,7 @@ local _ClassConfig = {
                 { name = "CrippleSpell",    cond = function(self) return Config:GetSetting('DoCripple') end, },
                 { name = "PutridDecay",     cond = function(self) return Config:GetSetting('DoPutrid') end, },
                 { name = "CanniSpell",      cond = function(self) return Config:GetSetting('DoSpellCanni') end, },
-                { name = "MeleeProcBuff",   cond = function(self) return self.ClassConfig.HelperFunctions.ProcBuffChoice() == "ProcSpell" end, },
+                { name = "MeleeProcBuff",   cond = function(self) return self.Helpers.ProcBuffChoice() == "ProcSpell" end, },
                 { name = "SlowProcBuff", },
                 { name = "LowLvlAtkBuff",   cond = function(self) return not mq.TLO.FindItem("=Artifact of the Champion")() or mq.TLO.Me.Level() < 68 end, },
                 { name = "ColdNuke",        cond = function(self) return Config:GetSetting('DoColdNuke') end, },

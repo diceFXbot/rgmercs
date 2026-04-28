@@ -10,7 +10,7 @@ local Icons         = require('mq.ICONS')
 local ImageUI       = require('ui.images')
 local Core          = require('utils.core')
 local Targeting     = require('utils.targeting')
-local Casting       = require('utils.casting')
+local Logger        = require('utils.logger')
 local Combat        = require('utils.combat')
 local Modules       = require('utils.modules')
 local Movement      = require('utils.movement')
@@ -124,11 +124,15 @@ function StandardUI:RenderAutoTargetInfo(assistSpawn)
 end
 
 function StandardUI:RenderForceBurnButton()
+    local assistSpawn = Targeting.GetAutoTarget()
+    if not assistSpawn() or assistSpawn.ID() == 0 then
+        ImGui.InvisibleButton("###fakeburn", ImVec2(0.1, ImGui.GetTextLineHeight()))
+        return
+    end
     ImGui.PushStyleColor(ImGuiCol.Button, Globals.Constants.Colors.BurnFlashColorOne)
     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Globals.Constants.Colors.BurnFlashColorTwo)
     local burnLabel = (Targeting.ForceBurnTargetID > 0 and Targeting.ForceBurnTargetID == mq.TLO.Target.ID()) and " FORCE BURN ACTIVATED " or " FORCE BURN THIS TARGET! "
     if ImGui.SmallButton(Icons.FA_FIRE .. burnLabel .. Icons.FA_FIRE) then
-        local assistSpawn = Targeting.GetAutoTarget()
         Comms.SendAllPeersDoCmd(true, true, "/squelch /rgl burnnow %d", assistSpawn.ID())
     end
     ImGui.PopStyleColor(2)
@@ -139,6 +143,14 @@ function StandardUI:RenderTarget()
 
     if mq.TLO.Plugin("MQ2AdvPath").IsLoaded() and mq.TLO.AdvPath ~= nil and mq.TLO.AdvPath.Following() then
         warningMessage = 'AFOLLOW ("FOLLOW ME") ENGAGED - THIS MAY INTERFERE WITH RGMERCS!'
+    end
+
+    if not Config.DbConsistencyCheckPass then
+        warningMessage = warningMessage and warningMessage .. "\n" or "" .. "Database Consistency Check Failed! Please check logs and report to Derple and Algar!"
+    end
+
+    if not Config.UnitTestsPass then
+        warningMessage = warningMessage and warningMessage .. "\n" or "" .. "Unit Tests Failed! Please check logs and report to Derple and Algar!"
     end
 
     if warningMessage then
@@ -391,6 +403,8 @@ function StandardUI:RenderMainWindow(imgui_style, openGUI, flags)
 
             ImGui.EndChild()
         end
+
+        Ui.RenderToastNotifications(Logger.ToastStates, 6.0)
 
         ImGui.PopID()
 

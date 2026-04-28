@@ -44,7 +44,7 @@ local _ClassConfig = {
             handler =
                 function(self)
                     Config:SetSetting('DoLich', true)
-                    Core.SafeCallFunc("Start Necro Lich", self.ClassConfig.HelperFunctions.StartLich, self)
+                    Core.SafeCallFunc("Start Necro Lich", self.Helpers.StartLich, self)
 
                     return true
                 end,
@@ -54,7 +54,7 @@ local _ClassConfig = {
             about = "Stop your Lich Spell [Note: This will NOT disable DoLich].",
             handler =
                 function(self)
-                    Core.SafeCallFunc("Stop Necro Lich", self.ClassConfig.HelperFunctions.CancelLich, self)
+                    Core.SafeCallFunc("Stop Necro Lich", self.Helpers.CancelLich, self)
 
                     return true
                 end,
@@ -222,13 +222,13 @@ local _ClassConfig = {
             "Allure of Death",
             "Dark Pact",
         },
-        ['PetSpellRog'] = {
+        ['RogPetSpell'] = {
             "Dark Assassin",
             "Child of Bertoxxulous",
             "Saryrn's Companion",
             "Minion of Shadows",
         },
-        ['PetSpellWar'] = {
+        ['WarPetSpell'] = {
             "Lost Soul",
             "Child of Bertoxxulous",
             "Legacy of Zek",
@@ -307,7 +307,7 @@ local _ClassConfig = {
             name = 'PetSummon',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and mq.TLO.Me.Pet.ID() == 0 and Casting.OkayToPetBuff() and Casting.AmIBuffable()
+                return combat_state == "Downtime" and mq.TLO.Me.Pet.ID() == 0 and Casting.OkayToPetBuff() and Casting.AmIBuffable() and not Core.IsCharming()
             end,
         },
         {
@@ -552,7 +552,7 @@ local _ClassConfig = {
                         (mq.TLO.Me.PctHPs() <= Config:GetSetting('StopLichHP') or mq.TLO.Me.PctMana() >= Config:GetSetting('StopLichMana'))
                 end,
                 custom_func = function(self)
-                    Core.SafeCallFunc("Stop Necro Lich", self.ClassConfig.HelperFunctions.CancelLich, self)
+                    Core.SafeCallFunc("Stop Necro Lich", self.Helpers.CancelLich, self)
                 end,
             },
         },
@@ -836,40 +836,23 @@ local _ClassConfig = {
                         (mq.TLO.Me.PctHPs() <= Config:GetSetting('StopLichHP') or mq.TLO.Me.PctMana() >= Config:GetSetting('StopLichMana'))
                 end,
                 custom_func = function(self)
-                    Core.SafeCallFunc("Stop Necro Lich", self.ClassConfig.HelperFunctions.CancelLich, self)
+                    Core.SafeCallFunc("Stop Necro Lich", self.Helpers.CancelLich, self)
                 end,
             },
         },
         ['PetSummon']       = {
             {
-                name = "PetSpellWar",
+                name_func = function(self)
+                    return string.format("%sPetSpell", self.ClassConfig.DefaultConfig.PetType.ComboOptions[Config:GetSetting('PetType')])
+                end,
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('PetType') == 1 end,
-                active_cond = function(self, _) return mq.TLO.Me.Pet.ID() ~= 0 and mq.TLO.Me.Pet.Class.ShortName():lower() == ("war" or "mnk") end,
+                active_cond = function(self) return mq.TLO.Me.Pet.ID() > 0 end,
                 cond = function(self, spell)
                     return Casting.ReagentCheck(spell)
                 end,
                 post_activate = function(self, spell, success)
                     local pet = mq.TLO.Me.Pet
                     if success and pet.ID() > 0 then
-                        Comms.PrintGroupMessage("Summoned a new %d %s pet named %s using '%s'!", pet.Level(), pet.Class.Name(), pet.CleanName(), spell.RankName())
-                        mq.delay(50) -- slight delay to prevent chat bug with command issue
-                        self:SetPetHold()
-                    end
-                end,
-            },
-            {
-                name = "PetSpellRog",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('PetType') == 2 end,
-                active_cond = function(self, _) return mq.TLO.Me.Pet.ID() ~= 0 and mq.TLO.Me.Pet.Class.ShortName():lower() == "rog" end,
-                cond = function(self, spell)
-                    return Casting.ReagentCheck(spell)
-                end,
-                post_activate = function(self, spell, success)
-                    local pet = mq.TLO.Me.Pet
-                    if success and pet.ID() > 0 then
-                        Comms.PrintGroupMessage("Summoned a new %d %s pet named %s using '%s'!", pet.Level(), pet.Class.Name(), pet.CleanName(), spell.RankName())
                         mq.delay(50) -- slight delay to prevent chat bug with command issue
                         self:SetPetHold()
                     end
@@ -901,7 +884,7 @@ local _ClassConfig = {
             },
         },
     },
-    ['HelperFunctions'] = {
+    ['Helpers']         = {
         CancelLich = function(self)
             -- detspa means detremental spell affect
             -- spa is positive spell affect
@@ -970,6 +953,7 @@ local _ClassConfig = {
             Default = 1,
             Min = 1,
             Max = 2,
+            RequiresLoadoutChange = true,
         },
         ['DoPetHealSpell']    = {
             DisplayName = "Pet Heal Spell",

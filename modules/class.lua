@@ -152,7 +152,7 @@ Module.CommandHandlers                       = {
         handler = function(self, name)
             local enabledRotationEntries = Config:GetSetting('EnabledRotationEntries') or {}
             enabledRotationEntries[name] = true
-            self:SaveSettings(false)
+            Config:SetSetting('EnabledRotationEntries', enabledRotationEntries)
             return true
         end,
     },
@@ -162,7 +162,7 @@ Module.CommandHandlers                       = {
         handler = function(self, name)
             local enabledRotationEntries = Config:GetSetting('EnabledRotationEntries') or {}
             enabledRotationEntries[name] = false
-            self:SaveSettings(false)
+            Config:SetSetting('EnabledRotationEntries', enabledRotationEntries)
             return true
         end,
     },
@@ -172,7 +172,7 @@ Module.CommandHandlers                       = {
         handler = function(self, name)
             local enabledRotations = Config:GetSetting('EnabledRotations') or {}
             enabledRotations[name] = true
-            self:SaveSettings(false)
+            Config:SetSetting('EnabledRotations', enabledRotations)
             return true
         end,
     },
@@ -182,19 +182,20 @@ Module.CommandHandlers                       = {
         handler = function(self, name)
             local enabledRotations = Config:GetSetting('EnabledRotations') or {}
             enabledRotations[name] = false
-            self:SaveSettings(false)
+            Config:SetSetting('EnabledRotations', enabledRotations)
             return true
         end,
     },
     rebuff = {
         usage = "/rgl rebuff",
-        about = "Resets the delay timer on buff rotations. Does not force the cast of any buff.",
+        about = "Forces buff checks to re-run on the next rotation. Does not cast any buff.",
         handler = function(self)
             self:ResetRotationTimer("SlowDowntime")
             self:ResetRotationTimer("GroupBuff")
             self:ResetRotationTimer("PetBuff")
+            Globals.LastCachedBuffUpdate = {}
 
-            Logger.log_info("\awResetting buff rotation timers.")
+            Logger.log_info("\awForcing buff checks.")
 
             return true
         end,
@@ -294,18 +295,12 @@ function Module:New()
     return Base.New(self)
 end
 
-function Module:WriteSettings()
-    if not self.SaveRequested then return end
-    Base.WriteSettings(self)
-
-    -- set dynamic names.
-    self:SetDynamicNames()
-end
-
 function Module:LoadSettings()
     Base.LoadSettings(self, function()
         -- load base configurations
         self.ClassConfig = ClassLoader.load(Globals.CurLoadedClass)
+        -- HelperFunctions used in legacy configs
+        self.Helpers = self.ClassConfig.Helpers or self.ClassConfig.HelperFunctions
 
         if not self.ClassConfig.DefaultConfig then
             Logger.log_error("\arFailed to Load Core Class Config for Classs: %s", Globals
@@ -463,7 +458,7 @@ function Module:RenderRotationWithToggle(r, rotationTable)
     ImGui.SetCursorPos(ImGui.GetWindowWidth() - toggleOffset, cursorScreenPos.y)
     if ImGui.InvisibleButton("##Enable" .. rotationName, ImVec2(20, 20)) then
         enabledRotations[r.name] = not enabledRotations[r.name]
-        Config:SaveModuleSettings(self._name, Config:GetModuleSettings(self._name))
+        Config:SetSetting('EnabledRotations', enabledRotations)
     end
 
     -- Reset the cursor position to where we started
@@ -475,7 +470,7 @@ function Module:RenderRotationWithToggle(r, rotationTable)
                 rotationTable[r.name],
                 self.ResolvedActionMap, r.state or 0, self.TempSettings.ShowFailedSpells, enabledRotationEntries)
 
-            if enabledRotationEntriesChanged then Config:SaveModuleSettings(self._name, Config:GetModuleSettings(self._name)) end
+            if enabledRotationEntriesChanged then Config:SetSetting('EnabledRotationEntries', enabledRotationEntries) end
             ImGui.Unindent()
         end
     end
@@ -635,7 +630,30 @@ function Module:ResetRotation()
     end
 end
 
+function Module:GetRotationNames()
+    local names = {}
+    for _, rotation in ipairs(self.ClassConfig and self.ClassConfig.RotationOrder or {}) do
+        table.insert(names, rotation.name)
+    end
+    return names
+end
+
+function Module:GetHealRotationNames()
+    local names = {}
+    for _, rotation in ipairs(self.ClassConfig and self.ClassConfig.HealRotationOrder or {}) do
+        table.insert(names, rotation.name)
+    end
+    return names
+end
+
+function Module:GetAllRotationNames()
+    return Tables.ConcatTables(self:GetRotationNames(), self:GetHealRotationNames())
+end
+
 function Module:GetRotationTable(mode)
+    if self.ClassConfig and not self.TempSettings.RotationTable[mode] then
+        printf("\ayGetRotationTable(%s) found %d entries", mode, #self.TempSettings.RotationTable[mode])
+    end
     return self.ClassConfig and self.TempSettings.RotationTable[mode] or {}
 end
 
@@ -752,6 +770,10 @@ function Module:GetClassConfig()
     return self.ClassConfig
 end
 
+function Module:GetHelpers()
+    return self.Helpers
+end
+
 function Module:GetRotations()
     -- filter rotations for load conditions, populate rotation states
     self.TempSettings.RotationStates = {} -- clear the array for loadout rescans
@@ -760,6 +782,7 @@ function Module:GetRotations()
         if self:LoadConditionPass(rotation) then
             table.insert(self.TempSettings.RotationStates, rotation)
             self.TempSettings.RotationTable[rotation.name] = {}
+            self.ClassConfig.Rotations[rotation.name] = self.ClassConfig.Rotations[rotation.name] or {}
         end
     end
 
@@ -771,6 +794,8 @@ function Module:GetRotations()
                     table.insert(self.TempSettings.RotationTable[rname], entry)
                 end
             end
+            self.TempSettings.RotationTable[rname] = Tables.ConcatTables(self.TempSettings.RotationTable[rname],
+                Modules:ExecModule("Clickies", "GetClickiesForRotation", rname) or {})
         end
     end
 
@@ -792,6 +817,8 @@ function Module:GetRotations()
                     table.insert(self.TempSettings.HealRotationTable[rname], entry)
                 end
             end
+            self.TempSettings.HealRotationTable[rname] = Tables.ConcatTables(self.TempSettings.HealRotationTable[rname],
+                Modules:ExecModule("Clickies", "GetClickiesForHealRotation", rname) or {})
         end
     end
 end
@@ -853,12 +880,12 @@ function Module:SelfCheckAndRez(combat_state)
 
             if rezSpawn() then
                 Logger.log_debug("\atSelfCheckAndRez(): Found corpse of %s :: %s", rezSpawn.CleanName() or "Unknown", rezSpawn.Name() or "Unknown")
-                if self.ClassConfig.HelperFunctions and self.ClassConfig.HelperFunctions.DoRez then
+                if self.Helpers and self.Helpers.DoRez then
                     if Config:GetSetting('ConCorpseForRez') and Tables.TableContains(Globals.RezzedCorpses, rezSpawn.ID()) then
                         Logger.log_debug("\atSelfCheckAndRez(): Found corpse of %s(ID:%d), but it appears to have been rezzed already.", rezSpawn.CleanName() or "Unknown",
                             rezSpawn.ID() or 0)
                     elseif (Globals.GetTimeSeconds() - (self.TempSettings.RezTimers[rezSpawn.ID()] or 0)) >= Config:GetSetting('RetryRezDelay') then
-                        Core.SafeCallFunc("SelfCheckAndRez", self.ClassConfig.HelperFunctions.DoRez, self, rezSpawn.ID())
+                        Core.SafeCallFunc("SelfCheckAndRez", self.Helpers.DoRez, self, rezSpawn.ID())
                         self.TempSettings.RezTimers[rezSpawn.ID()] = Globals.GetTimeSeconds()
                         self:ResetRotationTimer("GroupBuff")
                     end
@@ -880,7 +907,7 @@ function Module:IGCheckAndRez(combat_state)
         local ownerName = corpseName:gsub("'s corpse$", "")
 
         if rezSpawn() and ownerName ~= mq.TLO.Me.CleanName() then -- don't try to rez ourselves in the group checks
-            if self.ClassConfig.HelperFunctions.DoRez then
+            if self.Helpers and self.Helpers.DoRez then
                 Logger.log_debug("\atIGCheckAndRez(): Found corpse of %s :: %s", rezSpawn.CleanName() or "Unknown", rezSpawn.Name() or "Unknown")
                 -- don't rez someone nearby during combat or any time if we have it set that way
                 if (combat_state == "Combat" or not Config:GetSetting('RezInZonePC')) and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
@@ -892,7 +919,7 @@ function Module:IGCheckAndRez(combat_state)
                 elseif (Globals.GetTimeSeconds() - (self.TempSettings.RezTimers[rezSpawn.ID()] or 0)) >= Config:GetSetting('RetryRezDelay') then
                     Logger.log_debug("\atIGCheckAndRez(): Attempting to Res: %s", rezSpawn.CleanName())
                     self.TempSettings.RezTimers[rezSpawn.ID()] = Globals.GetTimeSeconds()
-                    if Core.SafeCallFunc("IGCheckAndRez", self.ClassConfig.HelperFunctions.DoRez, self, rezSpawn.ID(), ownerName) then
+                    if Core.SafeCallFunc("IGCheckAndRez", self.Helpers.DoRez, self, rezSpawn.ID(), ownerName) then
                         self:ResetRotationTimer("GroupBuff")
                         -- make sure we process other healing/etc instead of chain rezzing
                         if combat_state == "Combat" then
@@ -917,7 +944,7 @@ function Module:OOGCheckAndRez(combat_state)
 
         -- don't try to rez in group, we just checked those PCs... we will check them again with IGCheckAndRez next loop.
         if rezSpawn() and not mq.TLO.Group.Member(ownerName)() and (Targeting.IsSafeName("pc", rezSpawn.DisplayName())) then
-            if self.ClassConfig.HelperFunctions.DoRez then
+            if self.Helpers and self.Helpers.DoRez then
                 -- don't rez someone nearby during combat or any time if we have it set that way
                 if (combat_state == "Combat" or not Config:GetSetting('RezInZonePC')) and mq.TLO.Spawn(string.format("PC =%s", ownerName))() then
                     Logger.log_debug("\atIGCheckAndRez(): Found corpse of %s(ID:%d), but the player appears to be in-zone.", ownerName or "Unknown",
@@ -927,7 +954,7 @@ function Module:OOGCheckAndRez(combat_state)
                         rezSpawn.ID() or 0)
                 elseif (Globals.GetTimeSeconds() - (self.TempSettings.RezTimers[rezSpawn.ID()] or 0)) >= Config:GetSetting('RetryRezDelay') then
                     self.TempSettings.RezTimers[rezSpawn.ID()] = Globals.GetTimeSeconds()
-                    if Core.SafeCallFunc("OOGCheckAndRez", self.ClassConfig.HelperFunctions.DoRez, self, rezSpawn.ID(), ownerName) then
+                    if Core.SafeCallFunc("OOGCheckAndRez", self.Helpers.DoRez, self, rezSpawn.ID(), ownerName) then
                         self:ResetRotationTimer("GroupBuff")
                         -- make sure we process other healing/etc instead of chain rezzing
                         if combat_state == "Combat" then
@@ -1471,18 +1498,18 @@ function Module:ProcessQueuedEvents()
         success = Casting.UseDisc(queueData.name, queueData.targetId)
     end
 
-    if not success then
-        Logger.log_error("\arFailed to cast queued %s: %s on %s", queueData.type, queueData.name, queueData.targetId)
+    if not success and self.TempSettings.QueuedAbilities[1] ~= nil then
+        Logger.log_debug("\arFailed to cast queued %s: %s on %s", queueData.type, queueData.name, queueData.targetId)
         self.TempSettings.QueuedAbilities[1].retries = (self.TempSettings.QueuedAbilities[1].retries or 0) + 1
 
         if self.TempSettings.QueuedAbilities[1].retries > 3 then
-            Logger.log_error("\arFailed to cast queued %s: %s on %s after 3 attempts - giving up", queueData.type, queueData.name, queueData.targetId)
+            Logger.log_warning("\arFailed to cast queued %s: %s on %s after 3 attempts - giving up", queueData.type, queueData.name, queueData.targetId)
             table.remove(self.TempSettings.QueuedAbilities, 1)
         else
-            Logger.log_info("\ayRetrying queued %s: %s on %s (%d)", queueData.type, queueData.name, queueData.targetId, self.TempSettings.QueuedAbilities[1].retries)
+            Logger.log_debug("\ayRetrying queued %s: %s on %s (%d)", queueData.type, queueData.name, queueData.targetId, self.TempSettings.QueuedAbilities[1].retries)
         end
     else
-        Logger.log_info("\agSuccessfully cast queued %s: %s on %s", queueData.type, queueData.name, queueData.targetId)
+        Logger.log_debug("\agSuccessfully cast queued %s: %s on %s", queueData.type, queueData.name, queueData.targetId)
         table.remove(self.TempSettings.QueuedAbilities, 1)
     end
 
@@ -1861,7 +1888,7 @@ function Module:SetRotationClickies()
     -- Check rotations for clickies, either by checking items that were resolved from the maps, or checking strings for item entries without a map
     for _, rotation in pairs(self.TempSettings.RotationTable) do
         for _, entry in ipairs(rotation) do
-            if entry.type:lower() == "item" then
+            if entry.type:lower() == "item" and not entry.from_clicky then
                 local resolvedMap = self.ResolvedActionMap[entry.name]
                 if resolvedMap and mq.TLO.FindItem(string.format("=%s", resolvedMap))() then
                     self.TempSettings.RotationClickies:add(resolvedMap)
@@ -1875,7 +1902,7 @@ function Module:SetRotationClickies()
     -- do it again for heal rotation
     for _, rotation in pairs(self.TempSettings.HealRotationTable or {}) do
         for _, entry in ipairs(rotation) do
-            if entry.type:lower() == "item" then
+            if entry.type:lower() == "item" and not entry.from_clicky then
                 local resolvedMap = self.ResolvedActionMap[entry.name]
                 if resolvedMap and mq.TLO.FindItem(string.format("=%s", resolvedMap))() then
                     self.TempSettings.RotationClickies:add(resolvedMap)

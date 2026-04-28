@@ -17,6 +17,7 @@ Config:LoadSettings()
 
 local Logger = require("utils.logger")
 Logger.set_log_level(Config:GetSetting('LogLevel'))
+Logger.set_toast_level(Config:GetSetting('ToastLevel') - 1) -- adjust for the "None" entry.
 Logger.set_log_to_file(Config:GetSetting('LogToFile'))
 Logger.set_log_timestamps_to_console(Config:GetSetting('LogTimeStampsToConsole'))
 Logger.set_debug_tracer_enabled(Config:GetSetting('EnableLogTracer'))
@@ -46,6 +47,8 @@ Modules:load(Globals.Constants.LootModuleTypes[Config:GetSetting('LootModuleType
 -- pass through to avoid include loop
 Globals.Modules = Modules
 Globals.Logger  = Logger
+Globals.Comms   = Comms
+Globals.Config  = Config
 
 require('utils.datatypes')
 
@@ -64,6 +67,7 @@ local OptionsUI       = require("ui.options")
 local ConsoleUI       = require("ui.console")
 local LoaderUI        = require("ui.loader")
 local HudUI           = require("ui.hud")
+local TargetUI        = require("ui.target")
 
 local function Alive()
     return mq.TLO.NearestSpawn('pc')() ~= nil
@@ -174,6 +178,10 @@ local function RGMercsGUI()
                 end
             end
 
+            if Config:GetSetting('ShowTargetWindow') then
+                TargetUI:RenderWindow(flags)
+            end
+
             Ui.RenderModulesPopped(flags)
 
             if Config:GetSetting("AlwaysShowMiniButton") or Globals.Minimized then
@@ -239,12 +247,17 @@ local function RGInit(...)
 
     Core.CheckSpawnMasterVersion()
 
+    if mq.TLO.Plugin("MQ2Mono").IsLoaded() then
+        Logger.log_warning("\ar MQ2Mono detected! \aw Pausing E3N to avoid conflicts.")
+        mq.cmd("/e3p on")
+    end
+
     initPctComplete = 0
     initMsg = "Initializing RGMercs..."
     local args = { ..., }
     -- check mini argument before loading other modules so it minimizes as soon as possible.
     if args and #args > 0 then
-        Logger.log_info("Arguments passed to RGMercs: %s", table.concat(args, ", "))
+        Logger.log_debug("Arguments passed to RGMercs: %s", table.concat(args, ", "))
         for _, v in ipairs(args) do
             if v == "mini" then
                 Globals.Minimized = true
@@ -254,12 +267,28 @@ local function RGInit(...)
                 Globals.PauseMain = true
                 break
             end
+            if v == "reset_config_type" or v == "reset_class_config_type" or v == "reset_class_config" then
+                Config:SetSetting('ClassConfigDir', '')
+                Logger.log_info("ClassConfigDir reset to empty by startup argument.")
+                break
+            end
+            if v == "reset_to_default" then
+                Config.Db:deleteCharacter(Globals.CurServer, Globals.CurLoadedChar)
+                Logger.log_info("All settings for %s on %s wiped from DB — defaults will load on startup.", Globals.CurLoadedChar, Globals.CurServer)
+                break
+            end
         end
     end
 
     initPctComplete = 10
     initMsg = "Scanning for Configurations..."
     Core.ScanConfigDirs()
+
+    if Config:GetSetting("RunSelfTestsOnStartup") then
+        initPctComplete = 15
+        initMsg = "Running Self Tests..."
+        Config.UnitTestsPass = require('utils.unit_tests').RunAll()
+    end
 
     initPctComplete = 20
     initMsg = "Initializing Modules..."
@@ -287,7 +316,7 @@ local function RGInit(...)
     end
 
     if Core.IAmMA() then
-        Logger.log_warn("This PC has assigned itself as the MA! If this is not intentional, please check your assist setup.")
+        Logger.log_info("This PC has assigned itself as the MA! If this is not intentional, please check your assist setup.")
     end
 
     initPctComplete = 50
@@ -334,14 +363,19 @@ local function RGInit(...)
     initMsg = "Storing Initial Positioning Data..."
     Movement:StoreLastMove()
 
-    initMsg = "Done!"
     initPctComplete = 100
+    initMsg = "Done!"
 
     HudUI:LoadAllOptions()
 end
 
 local function Main()
     Logger.log_verbose("Starting Main loop.")
+
+    -- always do this and do it first
+    Config:FlushDB()
+    Config.Db:updateTelemetryGraphs()
+
     if mq.TLO.Zone.ID() ~= Globals.CurZoneId or mq.TLO.Me.Instance() ~= Globals.CurInstance then
         if notifyZoning then
             Modules:ExecAll("OnZone")
@@ -349,6 +383,7 @@ local function Main()
             Config.TempSettings.NoLevZone = false
             Globals.ForceCombatID = 0
             Globals.IgnoredTargetIDs = Set.new({})
+            Globals.LastCachedBuffUpdate = {}
             Globals.AutoTargetID = 0
             Globals.AutoTargetIsNamed = false
             Globals.AggroTargetID = 0
@@ -382,11 +417,10 @@ local function Main()
         Modules:ExecModule("Drag", "GiveTime")
         Modules:ExecModule("Debug", "GiveTime")
         Modules:ExecModule("Clickies", "ValidateClickies")
-        Modules:ExecAll("WriteSettings") -- this needs to happen even when paused.
         return
     end
 
-    if Targeting.GetXTHaterCount(true) > 0 then
+    if Targeting.GetXTHaterCount(false) > 0 then
         if Globals.CurrentState == "Downtime" and mq.TLO.Me.Sitting() then
             -- if switching into combat state stand up.
             mq.TLO.Me.Stand()
@@ -541,7 +575,6 @@ local function Main()
     end
 
     Modules:ExecAll("GiveTime")
-    Modules:ExecAll("WriteSettings")
 
     mq.doevents()
     Logger.log_verbose("Completed Main loop.")
@@ -608,3 +641,4 @@ end
 Core.CheckPlugins(unloadedPlugins, true)
 
 Modules:ExecAll("Shutdown")
+Config:Shutdown()

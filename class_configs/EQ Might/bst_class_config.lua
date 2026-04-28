@@ -348,7 +348,7 @@ return {
             end,
         },
     },
-    ['HelperFunctions']   = {
+    ['Helpers']           = {
         DoRez = function(self, corpseId)
             local rezStaff = self.ResolvedActionMap['RezStaff']
 
@@ -378,7 +378,7 @@ return {
                 name = "Group Bestial Alignment",
                 type = "AA",
                 cond = function(self, aaName)
-                    return not self.ClassConfig.HelperFunctions.DmgModActive(self)
+                    return not self.Helpers.DmgModActive(self)
                 end,
             },
             {
@@ -397,21 +397,21 @@ return {
                 name = "DmgModDisc",
                 type = "Disc",
                 cond = function(self, discSpell)
-                    return not self.ClassConfig.HelperFunctions.DmgModActive(self)
+                    return not self.Helpers.DmgModActive(self)
                 end,
             },
             {
                 name = "Bestial Alignment",
                 type = "AA",
                 cond = function(self, aaName)
-                    return not self.ClassConfig.HelperFunctions.DmgModActive(self)
+                    return not self.Helpers.DmgModActive(self)
                 end,
             },
             {
                 name = "OoW_Chest",
                 type = "Item",
                 cond = function(self, itemName)
-                    return not self.ClassConfig.HelperFunctions.DmgModActive(self)
+                    return not self.Helpers.DmgModActive(self)
                 end,
             },
             {
@@ -427,7 +427,7 @@ return {
                     return mq.TLO.Me.Level() >= 68 and (Core.GetResolvedActionMapItem('SlowSpell').Level() or 99) < 70 and mq.TLO.FindItem("=Legendary Armband of Muada")()
                 end,
                 cond = function(self, itemName, target)
-                    return Casting.DetSpellCheck(itemName) and not Casting.SlowImmuneTarget(target)
+                    return Casting.DetItemCheck(itemName) and not Casting.SlowImmuneTarget(target)
                 end,
 
             },

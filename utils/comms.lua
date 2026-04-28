@@ -12,6 +12,7 @@ Comms.LastHeartbeat        = 0
 Comms.Peers                = Set.new({})
 Comms.PeersToServerNameMap = {}
 Comms.PeersHeartbeats      = {}
+Comms.OutgoingToasts       = {}
 
 -- Putting this here for lack of a beter spot.
 --- @param peerName string? The character name string if not supplied then we use Me.DisplayName()
@@ -157,13 +158,16 @@ function Comms.SendHeartbeat(assist, chase, forceSend)
         Blocked       = Globals.CurrentBlocked,
         PetBuffs      = Globals.CurrentPetBuffs,
         PetBlocked    = Globals.CurrentPetBlocked,
-        OpenBuffSlots = mq.TLO.Me.MaxBuffSlots() - mq.TLO.Me.BuffCount(),
+        OpenBuffSlots = mq.TLO.Me.MaxBuffSlots() - Globals.CurrentBuffCount,
         MaxBuffSlots  = mq.TLO.Me.MaxBuffSlots(),
         Forced        = forceSend and true or false,
+        Toasts        = Comms.OutgoingToasts,
     }
     Comms.BroadcastMessage("RGMercs", "Heartbeat", heartBeat)
     -- update our own heartbeat too
     Comms.UpdatePeerHeartbeat(Comms.GetPeerName(), heartBeat)
+
+    Comms.OutgoingToasts = {}
 end
 
 function Comms.GetAllPeerHeartbeats(includeSelf)
@@ -214,6 +218,25 @@ function Comms.UpdatePeerHeartbeat(peer, data)
     data.PetBlocked                  = data.PetBlocked or {}
 
     Comms.PeersHeartbeats[peer]      = { LastHeartbeat = Globals.GetTimeSeconds(), Data = data or {}, }
+
+    if peer ~= Comms.GetPeerName() and Globals.Config then
+        local peerToastLevel = Globals.Config:GetSetting("PeerToastLevel") or 1
+        for _, toast in ipairs(data.Toasts or {}) do
+            -- PeerToastLevel is 2..n so it is 1 larger than the logLevel
+            if toast.active and (tonumber(toast.logLevel) or 0) < peerToastLevel then
+                Logger.log_super_verbose("Received toast from peer %s: %s", peer, toast.message)
+                table.insert(Logger.ToastStates, {
+                    active = true,
+                    timer = 0,
+                    from = toast.from,
+                    peer = peer,
+                    message = toast.message,
+                    color = toast.color,
+                    receivedTime = os.time(),
+                })
+            end
+        end
+    end
 end
 
 function Comms.ValidatePeers(timeout)

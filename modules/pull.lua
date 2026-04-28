@@ -26,7 +26,6 @@ setmetatable(Module, { __index = Base, })
 Module.FAQ                                = {}
 
 Module.TempSettings                       = {}
-Module.TempSettings.BuffCount             = 0
 Module.TempSettings.LastPullOrCombatEnded = Globals.GetTimeSeconds()
 Module.TempSettings.TargetSpawnID         = 0
 Module.TempSettings.CurrentWP             = 1
@@ -547,7 +546,7 @@ Module.DefaultConfig                   = {
         Category = "Targets",
         Index = 5,
         Tooltip = "The minimum level to be considered a valid pull target (if Level-Based Pulling is enabled).",
-        Default = mq.TLO.Me.Level() - 3,
+        Default = math.max(mq.TLO.Me.Level() - 3, 1),
         Min = 1,
         Max = 150,
         ConfigType = "Advanced",
@@ -975,7 +974,6 @@ function Module:Render()
                 if ImGui.Button(Config:GetSetting('DoPull') and "Stop Pulls" or "Start Pulls", -1, 25) then
                     Config:SetSetting('DoPull', not Config:GetSetting('DoPull'))
                     Module:SetRoles()
-                    self:SaveSettings(false)
                 end
                 ImGui.PopStyleColor()
                 ImGui.TableNextColumn()
@@ -1105,7 +1103,7 @@ function Module:Render()
             ImGui.TableNextColumn()
             Ui.RenderText("Buff Count")
             ImGui.TableNextColumn()
-            Ui.RenderText("%s", self.TempSettings.BuffCount)
+            Ui.RenderText("%s", Globals.CurrentBuffCount)
             ImGui.EndTable()
         end
 
@@ -1375,21 +1373,6 @@ function Module:DeleteWayPoint(idx)
     end
 end
 
--- because mq.TLO.Me.BuffCount() fails to update when gaining buffs without targeting yourself.
--- it does update when you lose buffs though.
----@return number -- # of buffs you have currently
-function Module:CountBuffs()
-    local count = 0
-    for i = 1, mq.TLO.Me.MaxBuffSlots() do
-        local buff = mq.TLO.Me.Buff(i)()
-        if buff ~= nil then
-            count = count + 1
-        end
-    end
-    self.TempSettings.BuffCount = count
-    return count
-end
-
 ---@param campData table
 ---@return boolean, string
 function Module:ShouldPull(campData)
@@ -1486,7 +1469,7 @@ function Module:ShouldPull(campData)
     end
 
     if Config:GetSetting('PullBuffCount') > 0 then
-        if self:CountBuffs() < Config:GetSetting('PullBuffCount') then
+        if Globals.CurrentBuffCount < Config:GetSetting('PullBuffCount') then
             Logger.log_verbose("\ay::PULL:: \arAborted!\ax Waiting for Buffs! BuffCount < %d", Config:GetSetting('PullBuffCount'))
             return false, string.format("BuffCount < %d", Config:GetSetting('PullBuffCount'))
         end
@@ -2302,18 +2285,18 @@ function Module:GiveTime()
         Logger.log_super_verbose("Pathing to pull id...")
         if self:IsPullMode("Chain") then
             if Targeting.GetXTHaterCount() >= Config:GetSetting('ChainCount') then
-                Logger.log_info("\awNOTICE:\ax Gained aggro -- aborting chain pull!")
+                Logger.log_debug("\awNOTICE:\ax Gained aggro -- aborting chain pull!")
                 abortPull = true
                 break
             end
             if Targeting.DiffXTHaterIDs(startingXTargs) then
-                Logger.log_info("\awNOTICE:\ax XTarget List Changed -- aborting chain pull!")
+                Logger.log_debug("\awNOTICE:\ax XTarget List Changed -- aborting chain pull!")
                 abortPull = true
                 break
             end
         else
             if Targeting.GetXTHaterCount() > 0 then
-                Logger.log_info("\awNOTICE:\ax Gained aggro -- aborting pull!")
+                Logger.log_debug("\awNOTICE:\ax Gained aggro -- aborting pull!")
                 abortPull = true
                 break
             end
@@ -2641,14 +2624,12 @@ function Module:StartPuller()
     if Config:GetSetting('DoPull') == true then return end
     Config:SetSetting('DoPull', true)
     Module:SetRoles()
-    self:SaveSettings(false)
 end
 
 function Module:StopPuller()
     if Config:GetSetting('DoPull') == false then return end
     Config:SetSetting('DoPull', false)
     Module:SetRoles()
-    self:SaveSettings(false)
 end
 
 function Module:SetRoles()

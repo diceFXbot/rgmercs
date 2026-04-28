@@ -155,10 +155,11 @@ local _ClassConfig = {
             "Twilight Breath",
         },
         ['ReptileBuff'] = {
+            "Skin of the Green Dragon", -- EQM Custom
             "Skin of the Reptile",
-            "Skin of the Serpent", -- EQM Custom
+            "Skin of the Serpent",      -- EQM Custom
         },
-        ['SwarmDot'] = {           -- Magic Dot, 54s
+        ['SwarmDot'] = {                -- Magic Dot, 54s
             "Swarm of Fireants",
             "Wasp Swarm",
             "Swarming Death",
@@ -644,7 +645,7 @@ local _ClassConfig = {
                 name = "IceRain",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    if not self.ClassConfig.HelperFunctions.RainCheck(target) then return false end
+                    if not self.Helpers.RainCheck(target) then return false end
                     return Casting.HaveManaToNuke(true)
                 end,
             },
@@ -980,7 +981,7 @@ local _ClassConfig = {
             },
         },
     },
-    ['HelperFunctions']   = {
+    ['Helpers']           = {
         DoRez = function(self, corpseId, ownerName)
             local rezAction = false
             local rezSpell = Core.GetResolvedActionMapItem('RezSpell')

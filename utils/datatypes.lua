@@ -5,8 +5,6 @@ local Globals           = require("utils.globals")
 local mq                = require 'mq'
 
 ---@class RGMercsModuleType
----@field Name string
----@field State string
 ---@type DataType
 local rgMercsModuleType = mq.DataType.new('RGMercsModule', {
     Members = {
@@ -28,9 +26,6 @@ local rgMercsModuleType = mq.DataType.new('RGMercsModule', {
 })
 
 ---@class RGMercsMainType
----@field State string
----@field Config string
----@field Paused boolean
 ---@type DataType
 local rgMercsMainType   = mq.DataType.new('RGMercsMain', {
     Members = {
@@ -38,6 +33,10 @@ local rgMercsMainType   = mq.DataType.new('RGMercsMain', {
             return 'bool', Globals.PauseMain
         end,
         Config = function(param, self)
+            if not Globals.SubmodulesLoaded then
+                return 'string', "Submodules not loaded yet, please wait..."
+            end
+
             if not param or param:len() == 0 then
                 return 'string', "false"
             end

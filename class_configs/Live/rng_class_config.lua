@@ -897,6 +897,7 @@ local _ClassConfig = {
             name = 'Circle Nav',
             state = 1,
             steps = 1,
+            load_cond = function(self) return Config:GetSetting('NavCircle') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat" and not Config:GetSetting('DoMelee') and not Core.IsModeActive("Healer")
@@ -1257,7 +1258,7 @@ local _ClassConfig = {
                 name = "Ranged Mode",
                 type = "CustomFunc",
                 custom_func = function(self)
-                    Core.SafeCallFunc("Ranger Custom Nav", self.ClassConfig.HelperFunctions.combatNav, false)
+                    Core.SafeCallFunc("Ranger Custom Nav", self.Helpers.combatNav, false)
                 end,
             },
         },
@@ -1266,34 +1267,32 @@ local _ClassConfig = {
                 name = "ArrowOpener",
                 type = "Spell",
                 tooltip = Tooltips.ArrowOpener,
-                cond = function(self, spell, target)
+                cond = function(self, spell)
                     return Casting.DetSpellCheck(spell) and Config:GetSetting('DoOpener') and Config:GetSetting('DoReagentArrow')
-                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
                 name = "PullOpener",
                 type = "Spell",
                 tooltip = Tooltips.PullOpener,
-                cond = function(self, spell, target)
+                cond = function(self, spell)
                     return Casting.DetSpellCheck(spell) and Config:GetSetting('DoReagentArrow')
-                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
                 name = "CalledShotsArrow",
                 type = "Spell",
                 tooltip = Tooltips.CalledShotsArrow,
-                cond = function(self, spell, target)
-                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
                 end,
             },
             {
                 name = "FocusedArrows",
                 type = "Spell",
                 tooltip = Tooltips.FocusedArrows,
-                cond = function(self, spell, target)
-                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
                 end,
             },
             {
@@ -1308,8 +1307,8 @@ local _ClassConfig = {
                 name = "Heartshot",
                 type = "Spell",
                 tooltip = Tooltips.Heartshot,
-                cond = function(self, spell, target)
-                    return Casting.OkayToNuke() and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
                 end,
             },
             {
@@ -1348,9 +1347,8 @@ local _ClassConfig = {
                 name = "AEArrows",
                 type = "Spell",
                 tooltip = Tooltips.AEArrows,
-                cond = function(self, spell, target)
+                cond = function(self, spell)
                     return Casting.OkayToNuke() and Config:GetSetting('DoAoE')
-                        and target and target.ID() > 0 and Targeting.GetTargetDistance(target) > 30
                 end,
             },
             {
@@ -1373,12 +1371,8 @@ local _ClassConfig = {
                 name = "Firenuke",
                 type = "Spell",
                 tooltip = Tooltips.Firenuke,
-                cond = function(self, spell, target)
-                    if not Casting.OkayToNuke() then return false end
-                    if spell and spell() and spell.Name() == "Flame Lick" then
-                        return Casting.DotSpellCheck(spell, target)
-                    end
-                    return true
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
                 end,
             },
             {
@@ -1637,7 +1631,7 @@ local _ClassConfig = {
             },
         },
     },
-    ['HelperFunctions']   = {
+    ['Helpers']           = {
         combatNav = function(forceMove)
             if not Config:GetSetting('DoMelee') then
                 if not mq.TLO.Me.AutoFire() then

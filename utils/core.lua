@@ -477,6 +477,18 @@ function Core.GetResolvedActionMapItem(action)
     return Modules:ExecModule("Class", "GetResolvedActionMapItem", action)
 end
 
+function Core.GetHelpers()
+    return Modules:ExecModule("Class", "GetHelpers")
+end
+
+-- Safely invokes a class helper by name, wrapped in SafeCallFunc. No-op if the helper isn't defined.
+function Core.SafeCallClassHelper(logInfo, name, ...)
+    local helpers = Modules:ExecModule("Class", "GetHelpers")
+    if helpers and helpers[name] then
+        return Core.SafeCallFunc(logInfo, helpers[name], ...)
+    end
+end
+
 function Core.ProcessCureChecks()
     Modules:ExecModule("Class", "DoEvents")
 end
@@ -500,14 +512,17 @@ function Core.UpdateBuffs()
 end
 
 function Core.GetBuffTable()
+    local buffCount = 0 --count buffs here because BuffCount member is cached, requires self target
     Globals.CurrentBuffs = {}
 
     for i = 1, mq.TLO.Me.MaxBuffSlots() do
         local buff = mq.TLO.Me.Buff(i)
         if buff() and (buff.Spell.ID() or 0) > 0 then
             table.insert(Globals.CurrentBuffs, buff.Spell.ID())
+            buffCount = buffCount + 1
         end
     end
+    Globals.CurrentBuffCount = buffCount
 end
 
 function Core.GetSongTable()

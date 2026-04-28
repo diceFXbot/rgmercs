@@ -545,8 +545,9 @@ return {
         "Ralthazor",
         "Ralthazor, Fabled Champion of Marr",
         "The Fabled Bromal Rythat",
-        "The Fabled Lord Mithaniel Marr ",
-        "The Fabled Rydda`Dar", },
+        "The Fabled Lord Mithaniel Marr",
+        "The Fabled Rydda`Dar",
+    },
 
     ["poair"] = {
         "Avatar of Dust",
@@ -565,7 +566,8 @@ return {
         "The Fabled Malerian Metamo",
         "The Fabled Rallius Rattican",
         "The Fabled Sengian Fly",
-        "The Fabled Skal`s Waking Nightmare", },
+        "The Fabled Skals Waking Nightmare",
+    },
 
     ["poeartha"] = {
         "An Earthen Undercon",

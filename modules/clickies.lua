@@ -3,6 +3,7 @@ local mq        = require('mq')
 local Config    = require('utils.config')
 local Globals   = require('utils.globals')
 local Core      = require('utils.core')
+local Comms     = require('utils.comms')
 local Combat    = require('utils.combat')
 local Casting   = require("utils.casting")
 local Strings   = require("utils.strings")
@@ -11,6 +12,7 @@ local Logger    = require("utils.logger")
 local Targeting = require("utils.targeting")
 local Tables    = require("utils.tables")
 local Modules   = require("utils.modules")
+local Set       = require('mq.set')
 local Icons     = require('mq.ICONS')
 local Base      = require("modules.base")
 local animItems = mq.FindTextureAnimation("A_DragItem")
@@ -19,7 +21,7 @@ local Module    = { _version = '0.1a', _name = "Clickies", _author = 'Derple', }
 Module.__index  = Module
 setmetatable(Module, { __index = Base, })
 
-Module.FAQ                              = {
+Module.FAQ                                 = {
     {
         Question = "How do I set RGmercs up to use a clicky item?",
         Answer = "  Using the GUI on the Clickies tab, you can add, remove and organize clickies you would like your PCs to use, under customizable conditions.\n\n" ..
@@ -31,9 +33,9 @@ Module.FAQ                              = {
     },
 }
 
-Module.ClickyRotationIndex              = 1
+Module.ClickyRotationIndex                 = 1
 
-Module.CommandHandlers                  = {
+Module.CommandHandlers                     = {
     enableclicky = {
         usage = "/rgl enableclicky <clicky name|idx>",
         about = "Enables the clicky item with the specified name or index.",
@@ -102,13 +104,19 @@ Module.CommandHandlers                  = {
     },
 }
 
-Module.TempSettings                     = {}
-Module.TempSettings.ClickyState         = {}
-Module.TempSettings.CombatClickiesTimer = 0
-Module.TempSettings.ClickyDropFrame     = {}
-Module.TempSettings.ClickyHeaderOpen    = {}
+Module.TempSettings                        = {}
+Module.TempSettings.ClickyState            = {}
+Module.TempSettings.ConditionsCache        = {}
+Module.TempSettings.CombatClickiesTimer    = 0
+Module.TempSettings.ClickyDropFrame        = {}
+Module.TempSettings.ClickyHeaderOpen       = {}
+Module.TempSettings.RotationComboIdx       = {}
+Module.TempSettings.RotationNamesCache     = nil
+Module.TempSettings.RotationNameSet        = nil
+Module.TempSettings.HealRotationNamesCache = nil
+Module.TempSettings.HealRotationNameSet    = nil
 
-Module.DefaultServerClickies            = {
+Module.DefaultServerClickies               = {
     ['Project Lazarus'] = {
         [1] = {
             ['conditions'] = {
@@ -207,7 +215,7 @@ Module.DefaultServerClickies            = {
     },
 }
 
-Module.DefaultConfig                    = {
+Module.DefaultConfig                       = {
     ['MaxClickiesPerFrame']                    = {
         DisplayName = "Max Clickies Per Frame",
         Group = "Items",
@@ -228,6 +236,9 @@ Module.DefaultConfig                    = {
         Type        = "Custom",
         Default     = {},
         ConfigType  = "Normal",
+        OnChange    = function()
+            Modules:ExecModule("Class", "GetRotations")
+        end,
     },
     [string.format("%s_Popped", Module._name)] = {
         DisplayName = Module._name .. " Popped",
@@ -236,20 +247,22 @@ Module.DefaultConfig                    = {
     },
 }
 
-Module.CombatTargetTypes                = { 'Self', 'Pet', 'Main Assist', 'Auto Target', }
-Module.NonCombatTargetTypes             = { 'Self', 'Pet', 'Main Assist', }
-Module.CombatStates                     = { 'Downtime', 'Combat', 'Any', }
-Module.ImpliedCondition                 = {
+Module.CombatTargetTypes                   = { 'Self', 'Pet', 'Main Assist', 'Auto Target', 'Mercs Peer', 'Rotation Target', }
+Module.NonCombatTargetTypes                = { 'Self', 'Pet', 'Main Assist', 'Mercs Peer', 'Rotation Target', }
+Module.RotationTargetTypes                 = { 'Rotation Target', }
+Module.MercPeerTargetTypes                 = { 'Mercs Peer', }
+Module.CombatStates                        = { 'Downtime', 'Combat', 'Any', 'During Rotation', 'During Heal Rotation', }
+Module.ImpliedCondition                    = {
     render_header_text = function(_, _)
         return "Not already active and will stack on the target"
     end,
 }
 
 -- each of these becomes a condition you can set per clickie
-Module.LogicBlocks                      = {
+Module.LogicBlocks                         = {
     {
         name = "None",
-        cond = function(self, target) return true end,
+        cond = function(self, target, peerData) return true end,
         tooltip = "No condition, always true.",
         render_header_text = function(self, cond)
             return string.format("No Condition")
@@ -259,15 +272,22 @@ Module.LogicBlocks                      = {
 
     {
         name = "HP Threshold",
-        cond = function(self, target, aboveHP, belowHP)
-            if not target or not target() then
+        cond = function(self, target, peerData, aboveHP, belowHP)
+            local pctHPs = -999
+            local targetName = target and target.CleanName() or peerData and peerData.Name or "None"
+
+            if target and target() then
+                pctHPs = target.PctHPs() or 0
+            elseif peerData and peerData.ID then
+                pctHPs = peerData.HPs
+            end
+
+            if pctHPs == -999 then
                 return false
             end
 
-            local pctHPs = target.PctHPs() or 0
-
             Logger.log_super_verbose("\ayClicky: \ayClicky: \awHP Threshold condition check on \at%s\aw, aboveHP(\a-t%d\aw/%s) belowHP(\a-t%d\aw/%s) pctHPs(\a-t%d\aw)",
-                target.CleanName() or "None", aboveHP, Strings.BoolToColorString((pctHPs >= aboveHP)), belowHP, Strings.BoolToColorString((pctHPs <= belowHP)),
+                targetName, aboveHP, Strings.BoolToColorString((pctHPs >= aboveHP)), belowHP, Strings.BoolToColorString((pctHPs <= belowHP)),
                 pctHPs)
 
             if not (pctHPs >= aboveHP) then
@@ -292,15 +312,22 @@ Module.LogicBlocks                      = {
 
     {
         name = "Mana Threshold",
-        cond = function(self, target, aboveMana, belowMana)
-            if not target or not target() then
+        cond = function(self, target, peerData, aboveMana, belowMana)
+            local pctMana = -999
+            local targetName = target and target.CleanName() or peerData and peerData.Name or "None"
+
+            if target and target() then
+                pctMana = target.PctMana() or 0
+            elseif peerData and peerData.ID then
+                pctMana = peerData.Mana
+            end
+
+            if pctMana == -999 then
                 return false
             end
 
-            local pctMana = target.PctMana() or 0
-
             Logger.log_super_verbose("\ayClicky: \ayClicky: \awMana Threshold condition check on \at%s\aw, aboveMana(\a-t%d\aw/%s) belowMana(\a-t%d\aw/%s) pctMana(\a-t%d\aw)",
-                target.CleanName() or "None", aboveMana, Strings.BoolToColorString((pctMana >= aboveMana)), belowMana, Strings.BoolToColorString((pctMana <= belowMana)), pctMana)
+                targetName, aboveMana, Strings.BoolToColorString((pctMana >= aboveMana)), belowMana, Strings.BoolToColorString((pctMana <= belowMana)), pctMana)
 
             if not (pctMana >= aboveMana) then
                 return false
@@ -324,16 +351,23 @@ Module.LogicBlocks                      = {
 
     {
         name = "Endurance Threshold",
-        cond = function(self, target, aboveEndurance, belowEndurance)
-            if not target or not target() then
+        cond = function(self, target, peerData, aboveEndurance, belowEndurance)
+            local pctEndurance = -999
+            local targetName = target and target.CleanName() or peerData and peerData.Name or "None"
+
+            if target and target() then
+                pctEndurance = target.PctEndurance() or 0
+            elseif peerData and peerData.ID then
+                pctEndurance = peerData.Endurance
+            end
+
+            if pctEndurance == -999 then
                 return false
             end
 
-            local pctEndurance = target.PctEndurance() or 0
-
             Logger.log_super_verbose(
                 "\ayClicky: \ayClicky: \awEndurance Threshold condition check on \at%s\aw, aboveEndurance(\a-t%d\aw/%s) belowEndurance(\a-t%d\aw/%s) pctEndurance(\a-t%d\aw)",
-                target.CleanName() or "None", aboveEndurance, Strings.BoolToColorString((pctEndurance >= aboveEndurance)), belowEndurance,
+                targetName, aboveEndurance, Strings.BoolToColorString((pctEndurance >= aboveEndurance)), belowEndurance,
                 Strings.BoolToColorString((pctEndurance <= belowEndurance)), pctEndurance)
 
             if not (pctEndurance >= aboveEndurance) then
@@ -358,14 +392,20 @@ Module.LogicBlocks                      = {
 
     {
         name = "Any Threshold",
-        cond = function(self, target, aboveHP, belowHP, aboveMana, belowMana, aboveEndurance, belowEndurance)
-            if not target or not target() then
-                return false
-            end
+        cond = function(self, target, peerData, aboveHP, belowHP, aboveMana, belowMana, aboveEndurance, belowEndurance)
+            local pctEndurance = -999
+            local pctMana = -999
+            local pctHPs = -999
 
-            local pctEndurance = target.PctEndurance() or 0
-            local pctMana = target.PctMana() or 0
-            local pctHPs = target.PctHPs() or 0
+            if target and target() then
+                pctEndurance = target.PctEndurance() or 0
+                pctMana = target.PctMana() or 0
+                pctHPs = target.PctHPs() or 0
+            elseif peerData and peerData.ID then
+                pctEndurance = peerData.Endurance
+                pctMana = peerData.Mana
+                pctHPs = peerData.HPs
+            end
 
             if pctHPs >= aboveHP and pctHPs <= belowHP then
                 return true
@@ -375,7 +415,7 @@ Module.LogicBlocks                      = {
                 return true
             end
 
-            if pctEndurance >= aboveEndurance and pctMana <= belowEndurance then
+            if pctEndurance >= aboveEndurance and pctEndurance <= belowEndurance then
                 return true
             end
 
@@ -401,7 +441,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Group Injured Count",
-        cond = function(self, target, hp, cnt)
+        cond = function(self, target, peerData, cnt, hp)
             return (mq.TLO.Group.Injured(hp)() or 0) >= cnt
         end,
         tooltip = "Only use if [Count] group members are below [X] HP%.",
@@ -416,7 +456,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "I Have Effect",
-        cond = function(self, target, effect, negate)
+        cond = function(self, target, peerData, effect, negate)
             local hasEffect = Casting.IHaveBuff(effect)
             if negate then
                 return not hasEffect
@@ -437,7 +477,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "I Have a Curable Detrimental Effect",
-        cond = function(self, target, checkPoi, checkDis, checkCur, checkCor)
+        cond = function(self, target, peerData, checkPoi, checkDis, checkCur, checkCor)
             local me = mq.TLO.Me
             return (checkPoi and me.Poisoned() ~= nil) or
                 (checkDis and me.Diseased() ~= nil) or
@@ -483,7 +523,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "I Have A Pet",
-        cond = function(self, _, negate)
+        cond = function(self, _, peerData, negate)
             if negate then
                 return mq.TLO.Me.Pet.ID() == 0
             else
@@ -502,7 +542,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "My Pet Has Effect",
-        cond = function(self, _, effect, negate)
+        cond = function(self, _, peerData, effect, negate)
             local hasEffect = not Casting.PetBuffCheck(mq.TLO.Spell(effect)) -- this will return false if the pet has it
             if negate then
                 return not hasEffect
@@ -523,7 +563,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "My Pet Has a Primary Equipped",
-        cond = function(self, _, negate)
+        cond = function(self, _, peerData, negate)
             local primaryEquiped = mq.TLO.Me.Pet.Primary() > 0
             return ((not negate and primaryEquiped) or (negate and not primaryEquiped))
         end,
@@ -539,7 +579,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "My Pet Has a Secondary Equipped",
-        cond = function(self, _, negate)
+        cond = function(self, _, peerData, negate)
             local secondaryEquiped = mq.TLO.Me.Pet.Secondary() > 0
             return ((not negate and secondaryEquiped) or (negate and not secondaryEquiped))
         end,
@@ -555,7 +595,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Your Aggro Percent",
-        cond = function(self, target, aboveAggro, belowAggro)
+        cond = function(self, target, peerData, aboveAggro, belowAggro)
             if not target or not target() then
                 return false
             end
@@ -590,7 +630,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Secondary Aggro Percent",
-        cond = function(self, target, aboveAggro, belowAggro)
+        cond = function(self, target, peerData, aboveAggro, belowAggro)
             if not target or not target() then
                 return false
             end
@@ -626,7 +666,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "XT Hater Count",
-        cond = function(self, target, aboveCount, belowCount)
+        cond = function(self, target, peerData, aboveCount, belowCount)
             local haterCount = Targeting.GetXTHaterCount()
 
             Logger.log_super_verbose(
@@ -654,7 +694,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "During Burns",
-        cond = function(self, target, negate)
+        cond = function(self, target, peerData, negate)
             local burning = Casting.BurnCheck()
             if negate then
                 return not burning
@@ -672,8 +712,175 @@ Module.LogicBlocks                      = {
     },
 
     {
+        name = "No Disc is Active",
+        cond = function(self, target, peerData, negate)
+            if negate then
+                return not Casting.NoDiscActive()
+            else
+                return Casting.NoDiscActive()
+            end
+        end,
+        tooltip = "Only use when there is no/(any) active Disc. (Optional Negate)",
+        render_header_text = function(self, cond)
+            return string.format("%s disc is active.", cond.args[1] and "Any" or "No")
+        end,
+        args = {
+            { name = "Negate", type = "boolean", default = false, },
+        },
+    },
+
+    {
+        name = "Target Has (High/Low) HP",
+        cond = function(self, target, peerData, negate)
+            if negate then
+                return Targeting.MobHasLowHP(target)
+            else
+                return Targeting.MobNotLowHP(target)
+            end
+        end,
+        cond_targets = { "Auto Target", "Rotation Target", },
+        tooltip = "Only use when the target has health above(below) the Low HP setting. Detects Named to use the correct value. (Optional Negate)",
+        render_header_text = function(self, cond)
+            return string.format("Target has %s HP.", cond.args[1] and "low" or "high")
+        end,
+        args = {
+            { name = "Negate", type = "boolean", default = false, },
+        },
+    },
+
+    {
+        name = "Target Is Not Immune To ...",
+        cond = function(self, target, peerData, checkSlow, checkSnare, checkStun)
+            return (checkSlow and not Casting.SlowImmuneTarget(target)) or
+                (checkSnare and not Casting.SnareImmuneTarget(target)) or
+                (checkStun and not Casting.StunImmuneTarget(target))
+        end,
+        tooltip = "Only use when the target is not immune to an effect.",
+        render_header_text = function(self, cond)
+            local header = "Target is not immune to ("
+            local anyChecked = false
+            if cond.args[1] then
+                header = header .. "Slow or "
+                anyChecked = true
+            end
+            if cond.args[2] then
+                header = header .. "Snare or "
+                anyChecked = true
+            end
+            if cond.args[3] then
+                header = header .. "Stun or "
+                anyChecked = true
+            end
+            if anyChecked then
+                header = header:sub(0, -5) -- remove the last " or "
+            else
+                header = header .. "None"
+            end
+            header = header .. ")"
+            return header
+        end,
+        cond_targets = { "Auto Target", "Rotation Target", },
+        args = {
+            { name = "Slow",  type = "boolean", default = true, },
+            { name = "Snare", type = "boolean", default = true, },
+            { name = "Stun",  type = "boolean", default = true, },
+        },
+    },
+
+    {
+        name = "Target Body Type Is ...",
+        cond = function(self, target, peerData, checkUndead, checkSummoned)
+            return (checkUndead and Targeting.TargetBodyIs(target, "Undead")) or
+                (checkSummoned and Targeting.TargetBodyIs(target, "Undead Pet"))
+        end,
+        tooltip = "Only use when the target body type matches this criteria.",
+        render_header_text = function(self, cond)
+            local header = "Target body type is ("
+            local anyChecked = false
+            if cond.args[1] then
+                header = header .. "Undead or "
+                anyChecked = true
+            end
+            if cond.args[2] then
+                header = header .. "Summoned or "
+                anyChecked = true
+            end
+            if anyChecked then
+                header = header:sub(0, -5) -- remove the last " or "
+            else
+                header = header .. "None"
+            end
+            header = header .. ")"
+            return header
+        end,
+        cond_targets = { "Auto Target", "Rotation Target", },
+        args = {
+            { name = "Undead",   type = "boolean", default = true, },
+            { name = "Summoned", type = "boolean", default = true, },
+        },
+    },
+
+    {
+        name = "Target Is A... (ClassType)",
+        cond = function(self, target, peerData, checkCaster, checkMelee, checkTank)
+            return (checkCaster and Targeting.TargetIsACaster(target)) or
+                (checkMelee and Targeting.TargetIsAMelee(target)) or
+                (checkTank and Targeting.TargetIsATank(target))
+        end,
+        tooltip = "Only use when the target class type matches this criteria.",
+        render_header_text = function(self, cond)
+            local header = "Target class type is ("
+            local anyChecked = false
+            if cond.args[1] then
+                header = header .. "Caster or "
+                anyChecked = true
+            end
+            if cond.args[2] then
+                header = header .. "Melee or "
+                anyChecked = true
+            end
+            if cond.args[3] then
+                header = header .. "Tank or "
+                anyChecked = true
+            end
+            if anyChecked then
+                header = header:sub(0, -5) -- remove the last " or "
+            else
+                header = header .. "None"
+            end
+            header = header .. ")"
+            return header
+        end,
+        cond_targets = { "Self", "Pet", "Main Assist", "Rotation Target", },
+        args = {
+            { name = "Caster", type = "boolean", default = true, },
+            { name = "Melee",  type = "boolean", default = true, },
+            { name = "Tank",   type = "boolean", default = true, },
+        },
+    },
+
+    {
+        name = "Rotation Target Is Myself",
+        cond = function(self, target, peerData, negate)
+            if negate then
+                return not Targeting.TargetIsMyself(target)
+            else
+                return Targeting.TargetIsMyself(target)
+            end
+        end,
+        tooltip = "Only use when the rotation target is (not) myself. (Optional Negate)",
+        render_header_text = function(self, cond)
+            return string.format("Target is %s", cond.args[1] and "not Myself" or "Myself")
+        end,
+        cond_targets = Module.RotationTargetTypes,
+        args = {
+            { name = "Negate", type = "boolean", default = false, },
+        },
+    },
+
+    {
         name = "The RGMercs Auto Target Is Named",
-        cond = function(self, target, negate)
+        cond = function(self, target, peerData, negate)
             local isNamed = Globals.AutoTargetIsNamed
             if negate then
                 return not isNamed
@@ -692,7 +899,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "The RGMercs Auto Target Has Effect",
-        cond = function(self, target, effect, negate)
+        cond = function(self, target, peerData, effect, negate)
             local hasEffect = Casting.TargetHasBuff(effect, target)
 
             return mq.TLO.Target.ID() == Globals.AutoTargetID and (negate and not hasEffect or hasEffect)
@@ -709,7 +916,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "The RGMercs Auto Target Has Any Beneficial Effect",
-        cond = function(self, target)
+        cond = function(self, target, peerData)
             return mq.TLO.Target.ID() == Globals.AutoTargetID and mq.TLO.Target.Beneficial() ~= nil
         end,
         tooltip = "Only use when a beneficial effect is present on the RGMercs combat auto target. (Generally used for dispel clickies.)",
@@ -720,7 +927,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Item Count",
-        cond = function(self, target, item, belowCount, aboveCount)
+        cond = function(self, target, peerData, item, belowCount, aboveCount)
             local itemCount = mq.TLO.FindItemCount(string.format("=%s", item))()
             return itemCount <= aboveCount and itemCount >= belowCount
         end,
@@ -737,7 +944,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Config Setting",
-        cond = function(self, target, setting, value)
+        cond = function(self, target, peerData, setting, value)
             Logger.log_super_verbose("\ayClicky: \a-yChecking if GetSetting(%s) == %s", setting, tostring(value))
 
             return Config:HaveSetting(setting) and (Config:GetSetting(setting) == value) or false
@@ -771,7 +978,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "Server Type",
-        cond = function(self, target, onLive, onEmu, onLaz)
+        cond = function(self, target, peerData, onLive, onEmu, onLaz)
             Logger.log_super_verbose("\ayClicky: \a-yChecking Server Type is onLive(%s) onEmu(%s), onLaz(%s)", Strings.BoolToColorString(onLive),
                 Strings.BoolToColorString(onEmu), Strings.BoolToColorString(onLaz))
 
@@ -797,7 +1004,7 @@ Module.LogicBlocks                      = {
 
     {
         name = "In Zone",
-        cond = function(self, target, zoneName, bNotInZone)
+        cond = function(self, target, peerData, zoneName, bNotInZone)
             Logger.log_super_verbose("\ayClicky: \a-yChecking if we are in Zone(s): \at%s\aw CurZone: \at%s\aw/\at%s", zoneName, mq.TLO.Zone.Name() or "None",
                 mq.TLO.Zone.ShortName() or "None")
             local zoneChecks = Strings.split(zoneName or "", ",")
@@ -827,7 +1034,7 @@ Module.LogicBlocks                      = {
     },
 }
 
-Module.LogicBlockTypeIDs                = {}
+Module.LogicBlockTypeIDs                   = {}
 
 for id, block in ipairs(Module.LogicBlocks) do
     Module.LogicBlockTypeIDs[block.name] = id
@@ -847,6 +1054,14 @@ Module.NonCombatTargetTypeIDs = {}
 for k, v in pairs(Module.NonCombatTargetTypes) do
     Module.NonCombatTargetTypeIDs[v] = k
 end
+Module.RotationTargetTypeIDs = {}
+for k, v in pairs(Module.RotationTargetTypes) do
+    Module.RotationTargetTypeIDs[v] = k
+end
+Module.MercPeerTargetTypeIDs = {}
+for k, v in pairs(Module.MercPeerTargetTypes) do
+    Module.MercPeerTargetTypeIDs[v] = k
+end
 Module.CombatStateIDs = {}
 for k, v in pairs(Module.CombatStates) do
     Module.CombatStateIDs[v] = k
@@ -856,56 +1071,61 @@ function Module:New()
     return Base.New(self)
 end
 
+function Module:RebuildRotationCache()
+    local names = { "None", }
+    for _, name in ipairs(Modules:ExecModule("Class", "GetRotationNames") or {}) do
+        table.insert(names, name)
+    end
+    self.TempSettings.RotationNamesCache = names
+    self.TempSettings.RotationNameSet    = Set.new(names)
+
+    local healNames                      = { "None", }
+    for _, name in ipairs(Modules:ExecModule("Class", "GetHealRotationNames") or {}) do
+        table.insert(healNames, name)
+    end
+    self.TempSettings.HealRotationNamesCache = healNames
+    self.TempSettings.HealRotationNameSet    = Set.new(healNames)
+end
+
+function Module:GetValidRotationNames()
+    if not self.TempSettings.RotationNamesCache then
+        self:RebuildRotationCache()
+    end
+    return self.TempSettings.RotationNamesCache
+end
+
+function Module:GetValidHealRotationNames()
+    if not self.TempSettings.HealRotationNamesCache then
+        self:RebuildRotationCache()
+    end
+    return self.TempSettings.HealRotationNamesCache
+end
+
+function Module:ValidateRotationName(rotationName, isHeal)
+    if not rotationName or rotationName == "None" then return true end
+    if isHeal then
+        if not self.TempSettings.HealRotationNameSet then self:RebuildRotationCache() end
+        return self.TempSettings.HealRotationNameSet:contains(rotationName)
+    end
+    if not self.TempSettings.RotationNameSet then self:RebuildRotationCache() end
+    return self.TempSettings.RotationNameSet:contains(rotationName)
+end
+
 function Module:LoadSettings()
-    Base.LoadSettings(self, nil, function(settings)
+    Base.LoadSettings(self, nil, function(settings, firstSaveRequired)
         local settingsChanged = false
 
         -- insert default server clickies on very first run per PC
-        if not settings.Clickies then
+        if firstSaveRequired then
             -- Live/Test use "Live". Emu servers use server-specific.
             local serverType = Globals.BuildType:lower() ~= "emu" and "Live" or Globals.CurServer
             local defaultClickyList = self.DefaultServerClickies[serverType]
-            settings.Clickies = defaultClickyList or {}
-            settingsChanged = true
+            Config:SetSetting('Clickies', defaultClickyList or {})
         end
 
-        for _, clicky in ipairs(settings.DowntimeClickies or {}) do
-            if type(clicky) == 'string' then
-                -- convert old clickies
-                table.insert(settings.Clickies,
-                    {
-                        itemName = clicky,
-                        target = 'Self',
-                        combat_state = 'Downtime',
-                        conditions = {},
-                    })
-                settingsChanged = true
-            end
-        end
-
-        for _, clicky in ipairs(settings.CombatClickies or {}) do
-            if type(clicky) == 'string' then
-                -- convert old clickies
-                table.insert(settings.Clickies,
-                    {
-                        itemName = clicky,
-                        target = 'Self',
-                        combat_state = 'Combat',
-                        conditions = {},
-                    })
-                settingsChanged = true
-            end
-        end
-
-        settings.CombatClickies = nil
-        settings.DowntimeClickies = nil
-
-        if settingsChanged then
-            self:SaveSettings(false)
-        end
-
-        -- validate condition targets.
-        for _, clicky in ipairs(settings.Clickies or {}) do
+        -- validate condition targets and rotation names.
+        local tempClickies = Tables.DeepCopy(settings.Clickies or {})
+        for _, clicky in ipairs(tempClickies) do
             for _, cond in ipairs(clicky.conditions or {}) do
                 local blockDef = self.LogicBlocks[self.LogicBlockTypeIDs[cond.type]]
                 if blockDef and blockDef.cond_targets then
@@ -915,14 +1135,19 @@ function Module:LoadSettings()
                         Logger.log_warn(
                             "\ayClicky Module: \ayClicky Condition Target '%s' is invalid for Condition Type '%s', resetting to default.",
                             cond.target, cond.type)
-                        self:SaveSettings(false)
+                        settingsChanged = true
                     end
                 end
             end
             if clicky.no_target_change == nil then
                 clicky.no_target_change = false
-                self:SaveSettings(false)
+                settingsChanged = true
             end
+            settingsChanged = self:ValidateClickyRotationSettings(clicky) or settingsChanged
+        end
+
+        if settingsChanged then
+            Config:SetSetting('Clickies', tempClickies)
         end
     end)
 end
@@ -947,7 +1172,6 @@ function Module:RenderClickyControls(clickies, clickyIdx, headerCursorPos, heade
         if changed then
             clickies[clickyIdx].enabled = enabled
             Config:SetSetting('Clickies', clickies)
-            self:SaveSettings(false)
         end
     end
 
@@ -957,7 +1181,6 @@ function Module:RenderClickyControls(clickies, clickyIdx, headerCursorPos, heade
         if ImGui.SmallButton(Icons.FA_CHEVRON_UP) then
             clickies[clickyIdx], clickies[clickyIdx - 1] = clickies[clickyIdx - 1], clickies[clickyIdx]
             Config:SetSetting('Clickies', clickies)
-            self:SaveSettings(false)
         end
         ImGui.PopID()
     else
@@ -971,7 +1194,6 @@ function Module:RenderClickyControls(clickies, clickyIdx, headerCursorPos, heade
         if ImGui.SmallButton(Icons.FA_CHEVRON_DOWN) then
             clickies[clickyIdx], clickies[clickyIdx + 1] = clickies[clickyIdx + 1], clickies[clickyIdx]
             Config:SetSetting('Clickies', clickies)
-            self:SaveSettings(false)
         end
         ImGui.PopID()
     else
@@ -1029,7 +1251,6 @@ function Module:RenderConditionControls(clickyIdx, idx, conditionsTable)
         if ImGui.SmallButton(Icons.FA_CHEVRON_UP) then
             conditionsTable[idx], conditionsTable[idx - 1] = conditionsTable[idx - 1], conditionsTable[idx]
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
         end
     end
     ImGui.PopID()
@@ -1041,7 +1262,6 @@ function Module:RenderConditionControls(clickyIdx, idx, conditionsTable)
         if ImGui.SmallButton(Icons.FA_CHEVRON_DOWN) then
             conditionsTable[idx], conditionsTable[idx + 1] = conditionsTable[idx + 1], conditionsTable[idx]
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
         end
     end
     ImGui.PopID()
@@ -1077,13 +1297,12 @@ function Module:RenderConditionTypesCombo(cond, condIdx)
                 cond.args[argIdx] = arg.default
             end
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
         end
         ImGui.EndTable()
     end
 end
 
-function Module:RenderConditionTargetCombo(cond, condIdx)
+function Module:RenderConditionTargetCombo(cond, condIdx, combatState)
     local condBlock = self:GetLogicBlockByType(cond.type)
     if not condBlock or not condBlock.cond_targets then
         return
@@ -1094,15 +1313,33 @@ function Module:RenderConditionTargetCombo(cond, condIdx)
         ImGui.TableNextColumn()
         Ui.RenderText("Target")
         ImGui.TableNextColumn()
-        local selectedNum, changed = ImGui.Combo("##clicky_cond_target_" .. "_" .. condIdx, tonumber(condBlock.cond_targetIDs[cond.target or "Self"]) or 1, condBlock.cond_targets,
+        local selectedNum, changed = ImGui.Combo("##clicky_cond_target_" .. "_" .. condIdx, tonumber(condBlock.cond_targetIDs[cond.target or "Self"]) or 1,
+            condBlock.cond_targets,
             #condBlock.cond_targets)
         if changed then
             cond.target = condBlock.cond_targets[selectedNum] or "Self"
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
         end
         ImGui.EndTable()
-        Ui.Tooltip("Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target")
+        Ui.Tooltip(
+            "Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target\nMercs Peer - A character running RGMercs on the same network\nRotation Target - The target passed in by the active rotation")
+    end
+
+    if cond.target == "Mercs Peer" then
+        if ImGui.BeginTable("##clicky_cond_mercs_peer_name_table_" .. condIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
+            ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 50)
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
+            ImGui.TableNextColumn()
+            Ui.RenderText("Peer")
+            ImGui.TableNextColumn()
+            local newName, changedName = ImGui.InputText("##clicky_cond_mercs_peer_name_" .. condIdx, cond.mercs_peer_name or "")
+            if changedName then
+                cond.mercs_peer_name = newName
+                Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+            end
+            ImGui.EndTable()
+            Ui.Tooltip("The Mercs Peer this condition should test.\nCan be left blank if the same Mercs Peer is the clicky target.")
+        end
     end
 end
 
@@ -1113,41 +1350,75 @@ function Module:RenderClickyTargetCombo(clicky, clickyIdx)
         ImGui.TableNextColumn()
         Ui.RenderText("Target")
         ImGui.TableNextColumn()
-        local targetTypeIDs = self.CombatTargetTypeIDs
-        local targetTypes = self.CombatTargetTypes
 
-        if clicky.combat_state == "Downtime" then
-            targetTypeIDs = self.NonCombatTargetTypeIDs
-            targetTypes = self.NonCombatTargetTypes
-        end
+        if clicky.combat_state == "During Rotation" or clicky.combat_state == "During Heal Rotation" then
+            ImGui.TextDisabled("Rotation Target")
+            if clicky.target ~= "Rotation Target" then
+                clicky.target = "Rotation Target"
+                Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+            end
+        else
+            local targetTypeIDs, targetTypes, defaultTarget
+            if clicky.combat_state == "Downtime" then
+                targetTypeIDs = self.NonCombatTargetTypeIDs
+                targetTypes   = self.NonCombatTargetTypes
+                defaultTarget = "Self"
+            else
+                targetTypeIDs = self.CombatTargetTypeIDs
+                targetTypes   = self.CombatTargetTypes
+                defaultTarget = "Self"
+            end
 
-        local selectedNum, changed = ImGui.Combo("##clicky_cond_target_" .. "_" .. clickyIdx, tonumber(targetTypeIDs[clicky.target or "Self"]) or 1,
-            targetTypes,
-            #targetTypes)
-        if changed then
-            clicky.target = targetTypes[selectedNum] or "Self"
-            Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
+            local selectedNum, changed = ImGui.Combo("##clicky_cond_target_" .. "_" .. clickyIdx, tonumber(targetTypeIDs[clicky.target or defaultTarget]) or 1,
+                targetTypes, #targetTypes)
+            if changed then
+                clicky.target = targetTypes[selectedNum] or defaultTarget
+                Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+            end
         end
         ImGui.EndTable()
-        Ui.Tooltip("Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target")
+        Ui.Tooltip(
+            "Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target\nMercs Peer - A character running RGMercs on the same network\nRotation Target - The target passed in by the active rotation")
+    end
+
+    if clicky.target == "Mercs Peer" then
+        if ImGui.BeginTable("##clicky_mercs_peer_name_table_" .. clickyIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
+            ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
+            ImGui.TableNextColumn()
+            Ui.RenderText("Mercs Peer Name")
+            ImGui.TableNextColumn()
+            local newName, changed = ImGui.InputText("##clicky_mercs_peer_name_" .. clickyIdx, clicky.mercs_peer_name or "")
+            if changed then
+                clicky.mercs_peer_name = newName
+                Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+            end
+            ImGui.EndTable()
+        end
     end
 end
 
 function Module:RenderClickyNoTargetChangeToggle(clicky, clickyIdx)
+    local isRotationTarget = clicky.target == "Rotation Target"
     if ImGui.BeginTable("##clicky_target_no_change_table_" .. clickyIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
         Ui.RenderText("Don't Change Target")
         ImGui.TableNextColumn()
+        ImGui.BeginDisabled(isRotationTarget)
         local new_no_target_change, clicked = Ui.RenderOptionToggle("##clicky_no_target_change_" .. clickyIdx, "",
             clicky.no_target_change)
+        ImGui.EndDisabled()
 
-        if clicked then
+        if isRotationTarget and clicky.no_target_change then
+            clicky.no_target_change = false
+            Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+        end
+
+        if not isRotationTarget and clicked then
             clicky.no_target_change = new_no_target_change
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
         end
         Ui.Tooltip("If enabled, we will not change targets to use this clicky.")
         ImGui.EndTable()
@@ -1166,8 +1437,49 @@ function Module:RenderClickyCombatStateCombo(clicky, clickyIdx)
             #self.CombatStates)
         if changed then
             clicky.combat_state = self.CombatStates[selectedNum] or "Any"
+            if clicky.combat_state == "During Rotation" or clicky.combat_state == "During Heal Rotation" then
+                clicky.rotation_name = "None"
+                clicky.target        = "Rotation Target"
+            else
+                clicky.rotation_name = nil
+                clicky.target        = "Self"
+            end
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-            self:SaveSettings(false)
+        end
+        ImGui.EndTable()
+    end
+
+    if clicky.combat_state == "During Rotation" or clicky.combat_state == "During Heal Rotation" then
+        self:RenderClickyRotationCombo(clicky, clickyIdx)
+    end
+end
+
+function Module:RenderClickyRotationCombo(clicky, clickyIdx)
+    local rotationNames = clicky.combat_state == "During Heal Rotation" and self:GetValidHealRotationNames() or self:GetValidRotationNames()
+    local currentName   = clicky.rotation_name or "None"
+    local cachedIdx     = self.TempSettings.RotationComboIdx[clickyIdx]
+
+    if cachedIdx == nil or rotationNames[cachedIdx] ~= currentName then
+        cachedIdx = 1
+        for i, name in ipairs(rotationNames) do
+            if name == currentName then
+                cachedIdx = i; break
+            end
+        end
+        self.TempSettings.RotationComboIdx[clickyIdx] = cachedIdx
+    end
+
+    if ImGui.BeginTable("##clicky_rotation_table_" .. clickyIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
+        ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
+        ImGui.TableNextColumn()
+        Ui.RenderText("Rotation")
+        ImGui.TableNextColumn()
+        local selectedIdx, changed = Ui.SearchableCombo("clicky_rotation_" .. clickyIdx, cachedIdx, rotationNames)
+        if changed then
+            clicky.rotation_name = rotationNames[selectedIdx] or "None"
+            self.TempSettings.RotationComboIdx[clickyIdx] = selectedIdx
+            Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
         end
         ImGui.EndTable()
     end
@@ -1196,7 +1508,6 @@ function Module:RenderClickyOption(type, cond, condIdx, argIdx, clickyIdx)
         end
 
         Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
-        self:SaveSettings(false)
     end
 end
 
@@ -1264,6 +1575,7 @@ function Module:RenderClickyHeaderIcon(clicky, headerPos)
     if clicky.iconId == nil then
         local item = mq.TLO.FindItem(clicky.itemName)
         clicky.iconId = item() and tonumber((item.Icon() or 500) - 500) or 0
+        Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
     end
 
     local draw_list = ImGui.GetWindowDrawList()
@@ -1271,7 +1583,7 @@ function Module:RenderClickyHeaderIcon(clicky, headerPos)
     draw_list:AddTextureAnimation(animItems, ImVec2(headerPos.x + offset, headerPos.y), ImVec2(20, 20))
 end
 
-function Module:RenderCondition(clickyIdx, condIdx, cond, conditionsTable)
+function Module:RenderCondition(clickyIdx, condIdx, cond, conditionsTable, combatState)
     if condIdx == 0 then
         ImGui.SetNextItemOpen(false, ImGuiCond.Always);
         ImGui.TreeNodeEx(cond.render_header_text(self, cond) .. "###clicky_cond_tree_" .. clickyIdx .. "_" .. condIdx, ImGuiTreeNodeFlags.NoTreePushOnOpen)
@@ -1309,7 +1621,7 @@ function Module:RenderCondition(clickyIdx, condIdx, cond, conditionsTable)
             ImGui.BeginChild("##clicky_cond_child_" .. clickyIdx .. "_" .. condIdx, ImVec2(0, 0),
                 bit32.bor(ImGuiChildFlags.AlwaysAutoResize, ImGuiChildFlags.Borders, ImGuiChildFlags.AutoResizeY),
                 bit32.bor(ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoTitleBar))
-            self:RenderConditionTargetCombo(cond, condIdx)
+            self:RenderConditionTargetCombo(cond, condIdx, combatState)
             self:RenderConditionArgs(cond, condIdx, clickyIdx)
             ImGui.EndChild()
             ImGui.PopStyleVar(1)
@@ -1329,15 +1641,17 @@ function Module:RenderClickiesWithConditions(type, clickies)
 
     if ImGui.SmallButton(mq.TLO.Cursor.Name() and string.format("%s Add %s to %s", Icons.FA_PLUS, mq.TLO.Cursor.Name() or "N/A", type) or "Pickup an Item To Add") then
         if mq.TLO.Cursor() then
+            local spell = mq.TLO.Cursor.Clicky.Spell
+            local targetType = spell and spell() and spell.TargetType() or "Unknown"
             table.insert(clickies, {
                 itemName = mq.TLO.Cursor.Name(),
                 target = 'Self',
+                iconId = tonumber((mq.TLO.Cursor.Icon() or 500) - 500) or 0,
                 combat_state = 'Any',
-                no_target_change = false,
+                no_target_change = targetType == "Self" or targetType == "Group v1" or targetType == "AE v1",
                 conditions = {},
             })
             Config:SetSetting('Clickies', clickies)
-            self:SaveSettings(false)
         end
     end
 
@@ -1357,7 +1671,7 @@ function Module:RenderClickiesWithConditions(type, clickies)
     ImGui.Separator()
     if #clickies > 0 then
         for clickyIdx, clicky in ipairs(clickies) do
-            if clicky.itemName:len() > 0 then
+            if clicky.itemName:len() > 0 and clickies[clickyIdx].Delete ~= true then
                 local headerScreenPos = ImGui.GetCursorScreenPosVec()
                 local headerCursorPos = ImGui.GetCursorPosVec()
 
@@ -1412,7 +1726,6 @@ function Module:RenderClickiesWithConditions(type, clickies)
                     if ImGui.SmallButton(Icons.FA_PLUS .. " Add Condition") then
                         table.insert(clicky.conditions, { type = 'None', args = {}, target = 'Self', })
                         Config:SetSetting('Clickies', clickies)
-                        self:SaveSettings(false)
                     end
                     Config:GetSetting('Clickies')
                     ImGui.PopID()
@@ -1422,23 +1735,23 @@ function Module:RenderClickiesWithConditions(type, clickies)
                         bit32.bor(ImGuiChildFlags.AlwaysAutoResize, ImGuiChildFlags.Borders, ImGuiChildFlags.AutoResizeY),
                         bit32.bor(ImGuiWindowFlags.NoMove, ImGuiWindowFlags.NoTitleBar))
 
-                    self:RenderCondition(clickyIdx, 0, self.ImpliedCondition)
+                    self:RenderCondition(clickyIdx, 0, self.ImpliedCondition, nil, clicky.combat_state)
 
                     for condIdx, cond in ipairs(clicky.conditions or {}) do
-                        if self:GetLogicBlockByType(cond.type) then
+                        if self:GetLogicBlockByType(cond.type) and cond.Delete ~= true then
                             -- only render configs if we are not filtered
                             ImGui.BeginDisabled(filterApplied)
                             self:RenderConditionControls(clickyIdx, condIdx, clicky.conditions)
                             ImGui.EndDisabled()
 
-                            if clicky.conditionsCache and clicky.conditionsCache[condIdx] == true then
+                            if self.TempSettings.ConditionsCache[clickyIdx] and self.TempSettings.ConditionsCache[clickyIdx][condIdx] == true then
                                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionPassColor)
-                            elseif clicky.conditionsCache and clicky.conditionsCache[condIdx] == false then
+                            elseif self.TempSettings.ConditionsCache[clickyIdx] and self.TempSettings.ConditionsCache[clickyIdx][condIdx] == false then
                                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionFailColor)
                             else
                                 ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionMidColor)
                             end
-                            self:RenderCondition(clickyIdx, condIdx, cond, not filterApplied and clicky.conditions or nil)
+                            self:RenderCondition(clickyIdx, condIdx, cond, not filterApplied and clicky.conditions or nil, clicky.combat_state)
                         end
                     end
 
@@ -1461,6 +1774,12 @@ function Module:RenderClickiesWithConditions(type, clickies)
     end
 end
 
+function Module:SetUsed(clickyName)
+    if self.TempSettings.ClickyState[clickyName] then
+        self.TempSettings.ClickyState[clickyName].lastUsed = Globals.GetTimeSeconds()
+    end
+end
+
 function Module:RenderClickyData(clicky, clickyIdx)
     if ImGui.BeginTable("##clickies_table_" .. clicky.itemName .. tostring(clickyIdx), 3, bit32.bor(ImGuiTableFlags.Resizable, ImGuiTableFlags.Borders)) then
         ImGui.TableSetupColumn('Last Used', (ImGuiTableColumnFlags.WidthFixed), 100.0)
@@ -1474,7 +1793,7 @@ function Module:RenderClickyData(clicky, clickyIdx)
             local lastUsed = clickyState.lastUsed or 0
 
             ImGui.TableNextColumn()
-            Ui.RenderText(lastUsed > 0 and Strings.FormatTime((os.clock() - lastUsed)) or "Never")
+            Ui.RenderText(lastUsed > 0 and Strings.FormatTime((Globals.GetTimeSeconds() - lastUsed)) or "Never")
             ImGui.TableNextColumn()
             Ui.RenderText(clicky.itemName)
             ImGui.TableNextColumn()
@@ -1573,7 +1892,6 @@ function Module:ValidateClickies()
     if clickiesChanged then
         -- update the actual settings since we just mutated the temp reference above.
         Config:SetSetting('Clickies', clickies)
-        self:SaveSettings(false)
     end
 end
 
@@ -1588,7 +1906,6 @@ function Module:InsertDefaultClickies()
             table.insert(clickes, defaultClicky)
         end
         Config:SetSetting('Clickies', clickes)
-        self:SaveSettings(false)
     end
 end
 
@@ -1633,71 +1950,88 @@ function Module:GiveTime()
             if item and item.Clicky then
                 if not moving or (item.Clicky.CastTime() or -1) == 0 then
                     if clicky.combat_state == "Any" or clicky.combat_state == combat_state then
-                        local target = mq.TLO.Me
+                        local condTarget = nil
+                        local condPeer = nil
                         local allConditionsMet = true
-                        local conditionsCache = {}
+                        -- store this by index incase the same name appears twice.
+                        self.TempSettings.ConditionsCache[clickyIdx] = {}
                         for _, cond in ipairs(clicky.conditions or {}) do
                             local condBlock = self:GetLogicBlockByType(cond.type)
                             if condBlock then
                                 if condBlock.cond_targets then
-                                    if cond.target == "Main Assist" then
-                                        ---@diagnostic disable-next-line: cast-local-type
-                                        target = Core.GetMainAssistSpawn()
-                                    elseif cond.target == "Pet" then
-                                        ---@diagnostic disable-next-line: cast-local-type
-                                        target = mq.TLO.Me.Pet
-                                    elseif cond.target == "Auto Target" then
-                                        ---@diagnostic disable-next-line: cast-local-type
-                                        target = Targeting.GetAutoTarget()
-                                    end
+                                    condTarget, condPeer = Module.GetConditionTarget(cond, nil, clicky.mercs_peer_name)
                                 end
                                 Logger.log_super_verbose("\ayClicky: \awTesting Condition: \at%s\aw on target: \at%s (%s)", cond.type,
-                                    target and (target.CleanName() or "None") or "None",
+                                    condTarget and (condTarget.CleanName() or "None") or "None",
                                     cond.target or "Self")
 
                                 ---@diagnostic disable-next-line: deprecated --LuaJIT is based off of 5.1
-                                if not Core.SafeCallFunc("Test clicky Condition", self:GetLogicBlockByType(cond.type).cond, self, target, unpack(cond.args or {})) then
+                                if not Core.SafeCallFunc("Test clicky Condition", self:GetLogicBlockByType(cond.type).cond, self, condTarget, condPeer and condPeer.Data, unpack(cond.args or {})) then
                                     Logger.log_super_verbose("\ayClicky: \aw\t|->\aw \arFailed!")
                                     allConditionsMet = false
-                                    table.insert(conditionsCache, false)
+                                    table.insert(self.TempSettings.ConditionsCache[clickyIdx], false)
                                     break
                                 else
                                     Logger.log_super_verbose("\ayClicky: \aw\t|->\aw \agSuccess!")
-                                    table.insert(conditionsCache, true)
+                                    table.insert(self.TempSettings.ConditionsCache[clickyIdx], true)
                                 end
                             end
                         end
 
-                        clicky.conditionsCache = conditionsCache
-
                         if allConditionsMet then
-                            target = mq.TLO.Me
+                            local target = nil
                             local buffCheckPassed = true
                             local targetId = nil
+                            local targetPeer = nil
 
                             if clicky.target == "Self" then
                                 target = mq.TLO.Me
-
                                 buffCheckPassed = Casting.SelfBuffItemCheck(clicky.itemName)
                             elseif clicky.target == "Pet" then
-                                ---@diagnostic disable-next-line: cast-local-type
                                 target = mq.TLO.Me.Pet
-                                buffCheckPassed = mq.TLO.Me.Pet.ID() > 0 and Casting.PetBuffItemCheck(clicky.itemName)
+                                buffCheckPassed = target and Casting.PetBuffItemCheck(clicky.itemName)
                             elseif clicky.target == "Main Assist" then
-                                ---@diagnostic disable-next-line: cast-local-type
                                 target = Core.GetMainAssistSpawn()
-                                buffCheckPassed = Casting.GroupBuffItemCheck(clicky.itemName, target)
+                                buffCheckPassed = target and Casting.GroupBuffItemCheck(clicky.itemName, target)
                             elseif clicky.target == "Auto Target" then
-                                ---@diagnostic disable-next-line: cast-local-type
                                 target = Targeting.GetAutoTarget()
-                                buffCheckPassed = Casting.DetItemCheck(clicky.itemName)
+                                buffCheckPassed = target and Casting.DetItemCheck(clicky.itemName, target)
+                            elseif clicky.target == "Mercs Peer" then
+                                targetPeer = Comms.GetPeerHeartbeatByName(clicky.mercs_peer_name or "")
+                                local peerFound = (targetPeer and targetPeer.Data and targetPeer.Data.ID and (targetPeer.Data.Zone or "") == mq.TLO.Zone.Name()) or false
+                                Logger.log_verbose("\ayClicky: \awChecking Mercs Peer Target: \am%s\aw found: %s", clicky.mercs_peer_name or "",
+                                    Strings.BoolToColorString(peerFound))
+                                if peerFound then
+                                    target = mq.TLO.Spawn(targetPeer.Data.ID)
+                                    buffCheckPassed = target and Casting.ActorBuffCheck(item.Clicky.Spell.RankName.ID(), target)
+                                else
+                                    buffCheckPassed = false
+                                end
                             end
 
                             if not clicky.no_target_change then
-                                targetId = target.ID()
+                                targetId = target and target.ID()
                             end
 
-                            if buffCheckPassed and Casting.ItemReady(item()) then
+                            -- distance check
+                            local distanceCheckPassed = true
+                            if targetId and targetId ~= mq.TLO.Me.ID() then
+                                local spellRange = itemSpell.MyRange() or 0
+
+                                if spellRange == 0 then
+                                    local aeRange = itemSpell.AERange() or 0
+                                    spellRange = aeRange > 0 and aeRange or 200
+                                end
+
+                                if Targeting.GetTargetDistance(target) > spellRange then
+                                    Logger.log_debug("\ayClicky: \arTried to use item on targetId %s they are too far away!!", target and target.DisplayName() or "None")
+                                    distanceCheckPassed = false
+                                end
+                            end
+
+                            local readyCheckPassed = Casting.ItemReady(item())
+
+                            if buffCheckPassed and distanceCheckPassed and readyCheckPassed then
                                 Logger.log_verbose("\ayClicky: \awItem \am%s\aw Clicky Spell: \at%s\ag!", item.Name(), item.Clicky.Spell.RankName.Name())
                                 Casting.UseItem(item.Name(), targetId)
                                 clickiesUsedThisFrame = clickiesUsedThisFrame + 1
@@ -1706,27 +2040,179 @@ function Module:GiveTime()
                                         maxClickiesPerFrame, self.ClickyRotationIndex)
                                     break
                                 end
-                                self.TempSettings.ClickyState[clicky.itemName].lastUsed = os.clock()
+                                self.TempSettings.ClickyState[clicky.itemName].lastUsed = Globals.GetTimeSeconds()
                                 break --ensure we stop after we process a single clicky to allow rotations to continue
                             else
-                                if not buffCheckPassed then
-                                    Logger.log_verbose("\ayClicky: \awItem \am%s\aw Clicky Spell: \at%s\ar already active or would not stack!", item.Name(),
-                                        item.Clicky.Spell.RankName.Name())
-                                else
-                                    Logger.log_verbose("\ayClicky: \awItem \am%s\aw Clicky: \at%s\ar Buff check failed, not using!", item.Name(), item.Clicky.Spell.RankName.Name())
-                                end
+                                Logger.log_verbose("\ayClicky: \awItem \am%s\aw Clicky: \at%s\ar checks failed, not using!\aw BuffCheck(%s), DistanceCheck(%s), ItemReady(%s)",
+                                    item.Name(), item.Clicky.Spell.RankName.Name(), Strings.BoolToColorString(buffCheckPassed), Strings.BoolToColorString(distanceCheckPassed),
+                                    Strings.BoolToColorString(readyCheckPassed))
                             end
                         end
                     else
                         Logger.log_super_verbose("\ayClicky: \arSkipping clicky entry: \am%s\ar due to Combat State mismatch (Clicky State: \at%s \arCurrent State: \at%s\ar)",
-                            clicky.itemName,
-                            clicky.combat_state, combat_state)
+                            clicky.itemName, clicky.combat_state, combat_state)
                     end
                 else
                     Logger.log_super_verbose("\ayClicky: \arSkipping clicky entry: \am%s\ar due to movement.", clicky.itemName)
                 end
             end
         end
+    end
+end
+
+function Module.GetConditionTarget(cond, targetSpawn, clickyPeerName)
+    if cond.target == "Self" then return mq.TLO.Me end
+    if cond.target == "Main Assist" then return Core.GetMainAssistSpawn() end
+    if cond.target == "Pet" then return mq.TLO.Me.Pet end
+    if cond.target == "Auto Target" then return Targeting.GetAutoTarget() end
+    if cond.target == "Rotation Target" then return targetSpawn end
+    if cond.target == "Mercs Peer" then
+        return nil, Comms.GetPeerHeartbeatByName(cond.mercs_peer_name ~= "" and cond.mercs_peer_name or clickyPeerName or "")
+    end
+    return nil
+end
+
+function Module:GetClickiesForRotation(rotationName)
+    local result   = {}
+    local clickies = Config:GetSetting('Clickies') or {}
+
+    for _, clicky in ipairs(clickies) do
+        if clicky.combat_state == "During Rotation"
+            and clicky.rotation_name == rotationName
+            and clicky.itemName:len() > 0
+            and (clicky.enabled == nil or clicky.enabled == true)
+        then
+            local itemName   = clicky.itemName
+            local conditions = clicky.conditions or {}
+
+            table.insert(result, {
+                name = itemName,
+                type = "Item",
+                from_clicky = true,
+                cond = function(caller, itemName, targetSpawn)
+                    if not Casting.ItemReady(itemName) then return false end
+                    local buffCheckPassed = true
+
+                    if targetSpawn.ID() == mq.TLO.Me.ID() then
+                        buffCheckPassed = Casting.SelfBuffItemCheck(clicky.itemName)
+                    elseif targetSpawn.ID() == mq.TLO.Me.Pet.ID() then
+                        ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = mq.TLO.Me.Pet.ID() > 0 and Casting.PetBuffItemCheck(clicky.itemName)
+                    elseif targetSpawn.Type() == "PC" then
+                        ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = Casting.GroupBuffItemCheck(clicky.itemName, targetSpawn)
+                    else ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = Casting.DetItemCheck(clicky.itemName, targetSpawn)
+                    end
+
+                    if not buffCheckPassed then return false end
+
+                    local condTarget = nil
+                    local condPeer = nil
+                    for _, cond in ipairs(conditions) do
+                        local condBlock = self:GetLogicBlockByType(cond.type)
+                        if condBlock then
+                            if condBlock.cond_targets then
+                                condTarget, condPeer = Module.GetConditionTarget(cond, targetSpawn, clicky.mercs_peer_name)
+                            end
+                            ---@diagnostic disable-next-line: deprecated
+                            if not Core.SafeCallFunc("Rotation Clicky :: Test clicky Condition", condBlock.cond, caller, condTarget, condPeer and condPeer.Data, unpack(cond.args or {})) then
+                                return false
+                            end
+                        end
+                    end
+                    return true
+                end,
+            })
+        end
+    end
+
+    return result
+end
+
+function Module:GetClickiesForHealRotation(rotationName)
+    local result   = {}
+    local clickies = Config:GetSetting('Clickies') or {}
+
+    for _, clicky in ipairs(clickies) do
+        if clicky.combat_state == "During Heal Rotation"
+            and clicky.rotation_name == rotationName
+            and clicky.itemName:len() > 0
+            and (clicky.enabled == nil or clicky.enabled == true)
+        then
+            local itemName   = clicky.itemName
+            local conditions = clicky.conditions or {}
+
+            table.insert(result, {
+                name = itemName,
+                type = "Item",
+                from_clicky = true,
+                cond = function(caller, itemName, targetSpawn)
+                    if not Casting.ItemReady(itemName) then return false end
+                    local buffCheckPassed = true
+
+                    if targetSpawn.ID() == mq.TLO.Me.ID() then
+                        buffCheckPassed = Casting.SelfBuffItemCheck(clicky.itemName)
+                    elseif targetSpawn.ID() == mq.TLO.Me.Pet.ID() then
+                        ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = mq.TLO.Me.Pet.ID() > 0 and Casting.PetBuffItemCheck(clicky.itemName)
+                    elseif targetSpawn.Type() == "PC" then
+                        ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = Casting.GroupBuffItemCheck(clicky.itemName, targetSpawn)
+                    else ---@diagnostic disable-next-line: cast-local-type
+                        buffCheckPassed = Casting.DetItemCheck(clicky.itemName, targetSpawn)
+                    end
+
+                    if not buffCheckPassed then return false end
+
+                    local condTarget = nil
+                    local condPeer = nil
+                    for _, cond in ipairs(conditions) do
+                        local condBlock = self:GetLogicBlockByType(cond.type)
+                        if condBlock then
+                            if condBlock.cond_targets then
+                                condTarget, condPeer = Module.GetConditionTarget(cond, targetSpawn, clicky.mercs_peer_name)
+                            end
+                            ---@diagnostic disable-next-line: deprecated
+                            if not Core.SafeCallFunc("Rotation Clicky :: Test clicky Condition", condBlock.cond, caller, condTarget, condPeer and condPeer.Data, unpack(cond.args or {})) then
+                                return false
+                            end
+                        end
+                    end
+                    return true
+                end,
+            })
+        end
+    end
+
+    return result
+end
+
+function Module:ValidateClickyRotationSettings(clicky)
+    local isHeal = clicky.combat_state == "During Heal Rotation"
+    if clicky.combat_state ~= "During Rotation" and not isHeal then return false end
+    local changed = false
+    if not self:ValidateRotationName(clicky.rotation_name, isHeal) then
+        Logger.log_warn("\ayClicky Module: rotation '%s' is no longer valid, resetting to None.", tostring(clicky.rotation_name))
+        clicky.rotation_name = "None"
+        changed = true
+    end
+    if clicky.target ~= "Rotation Target" then
+        clicky.target = "Rotation Target"
+        changed = true
+    end
+    return changed
+end
+
+function Module:OnCombatModeChanged()
+    self:RebuildRotationCache()
+    local clickies = Config:GetSetting('Clickies')
+    local changed = false
+    for _, clicky in ipairs(clickies) do
+        changed = self:ValidateClickyRotationSettings(clicky) or changed
+    end
+    if changed then
+        Config:SetSetting('Clickies', clickies)
     end
 end
 

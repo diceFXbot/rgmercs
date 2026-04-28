@@ -351,7 +351,7 @@ local _ClassConfig = {
             "Promised Renewal",
         },
     }, -- end AbilitySets
-    ['HelperFunctions']   = {
+    ['Helpers']           = {
         DoRez = function(self, corpseId)
             local rezAction = false
             local rezSpell = self.ResolvedActionMap['RezSpell']
@@ -643,6 +643,15 @@ local _ClassConfig = {
                 return combat_state == "Combat" and Core.OkayToNotHeal()
             end,
         },
+        {
+            name = 'Combat Buffs',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Casting.GetBuffableIDs() end,
+            cond = function(self, combat_state)
+                return combat_state == "Combat" and Core.OkayToNotHeal()
+            end,
+        },
     },
     ['Rotations']         = {
         ['ManaRestore'] = {
@@ -709,6 +718,17 @@ local _ClassConfig = {
             {
                 name = "Graverobber's Icon",
                 type = "Item",
+            },
+        },
+        ['Combat Buffs'] = {
+            {
+                name = "DivineBuff",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoDivineBuff') end,
+                cond = function(self, spell, target)
+                    if not Targeting.TargetIsATank(target) then return false end
+                    return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target)
+                end,
             },
         },
         ['DPS'] = {
@@ -932,7 +952,7 @@ local _ClassConfig = {
                 type = "Item",
                 load_cond = function() return Config:GetSetting('DoVieBuff') and mq.TLO.Me.Level() >= 69 and mq.TLO.FindItem("=Artifact of Aegis")() end,
                 cond = function(self, itemName, target)
-                    return Casting.GroupBuffItemCheck(itemName, target)
+                    return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck("43037", target) -- Bulwark of the Pegasus
                 end,
             },
             {
@@ -941,7 +961,7 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoVieBuff') and (mq.TLO.Me.Level() < 69 or not mq.TLO.FindItem("=Artifact of Aegis")()) end,
                 cond = function(self, spell, target)
                     if not Targeting.TargetIsATank(target) then return false end
-                    return Casting.GroupBuffCheck(spell, target)
+                    return Casting.GroupBuffCheck(spell, target) and Casting.AddedBuffCheck("43037", target) -- Bulwark of the Pegasus
                 end,
             },
             {
