@@ -312,8 +312,8 @@ function Combat.MATargetScan(radius, zradius)
                     if (xtSpawn.Distance() or 999) <= radius then
                         -- Check for lack of aggro and make sure we get the ones we haven't aggro'd. We can only get aggro data from xtargs
                         if Config:GetSetting("MAAggroScan") and mq.TLO.Me.Level() >= 20 then
-                            -- Added move check to prevent false positives on the pull from things like bard song aggro. Testing. Algar 3/5/25
-                            if xtSpawn.PctAggro() < 100 and not xtSpawn.Moving() and Core.IsTanking() then
+                            -- Prefer switching to a different hater we do not fully control yet.
+                            if xtSpawn.PctAggro() < 100 and Core.IsTanking() and spawnId ~= Globals.AutoTargetID then
                                 -- Coarse check to determine if a mob is _not_ mezzed. No point in waking a mezzed mob if we don't need to.
                                 if Globals.Constants.RGNotMezzedAnims:contains(xtSpawn.Animation()) then
                                     Logger.log_verbose("MATargetScan \agHave not fully aggro'd %s -- returning %s [%d]", xtName, xtName, spawnId)

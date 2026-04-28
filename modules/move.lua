@@ -723,7 +723,7 @@ function Module:GiveTime()
         self:DoAutoCampCheck()
     end
 
-    if (Core.IsTanking() and Config:GetSetting('MovebackWhenBehind')) and Targeting.IHaveAggro(100) then
+    if (Core.IsTanking() and Config:GetSetting('MovebackWhenBehind') and Config:GetSetting('DoCombatCampCheck')) and Targeting.IHaveAggro(100) then
         self:DoCombatCampCheck()
     end
 
