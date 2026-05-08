@@ -15,6 +15,12 @@ local Events    = require("utils.events")
 local Combat    = { _version = '1.0', _name = "Combat", _author = 'Derple', }
 Combat.__index  = Combat
 
+local function IsAutoHater(spawn)
+    if not (spawn and spawn()) then return false end
+    local ok, targetType = pcall(function() return spawn.TargetType() end)
+    return ok and type(targetType) == "string" and targetType:lower() == "auto hater"
+end
+
 -- actual combat state right now
 function Combat.GetCombatState()
     return Targeting.GetXTHaterCount(true) > 0 and "Combat" or "Downtime"
@@ -240,9 +246,11 @@ function Combat.ValidMAXTarget(target)
         return false
     end
 
-    if target.ID() > 0 and not (target.Aggressive() or target.TargetType():lower() == "auto hater" or spawnId == Globals.ForceTargetID) then
+    if target.ID() > 0 and not (target.Aggressive() or IsAutoHater(target) or spawnId == Globals.ForceTargetID) then
+        local ok, targetType = pcall(function() return target.TargetType() end)
+        local targetTypeLabel = ok and targetType or "Unavailable"
         Logger.log_verbose("ValidateMATarget: Spawn ID %d is not aggressive or auto hater or forced (Aggressive: %s, TargetType: %s)", spawnId,
-            Strings.BoolToColorString(target.Aggressive()), target.TargetType())
+            Strings.BoolToColorString(target.Aggressive()), targetTypeLabel)
         return false
     end
 
@@ -282,6 +290,53 @@ function Combat.MATargetScan(radius, zradius)
     local preferLowHealth  = Globals.Constants.ScanHPPriority[Config:GetSetting('ScanHPPriority')] == "Lowest HP%"
     local preferHighHealth = Globals.Constants.ScanHPPriority[Config:GetSetting('ScanHPPriority')] == "Highest HP%"
     local xtCount          = mq.TLO.Me.XTarget()
+    local allowMezBreak    = Config:GetSetting('AllowMezBreak')
+
+    local function IsSpawnMezzed(spawn)
+        if not spawn or not spawn() then return false end
+        local okMezzed, mezzed = pcall(function() return spawn.Mezzed() end)
+        if not okMezzed or not mezzed then return false end
+        local okMezzId, mezzId = pcall(function() return spawn.Mezzed.ID() end)
+        return okMezzId and mezzId ~= nil
+    end
+
+    -- During aggro recovery, prioritize the lowest-aggro valid hater first. This avoids
+    -- flickering back to HP-priority while still allowing switches to even lower-aggro mobs.
+    if Config:GetSetting("MAAggroScan") and Core.IsTanking() and (Globals.AutoTargetID or 0) > 0 and mq.TLO.Me.Level() >= 20 then
+        local currentAutoTarget = mq.TLO.Spawn(Globals.AutoTargetID)
+        if currentAutoTarget() and Combat.ValidMAXTarget(currentAutoTarget) then
+            local currentPctAggro = 100
+            local lowestAggroPct = 100
+            local lowestAggroId = 0
+            for i = 1, xtCount do
+                local xtSpawn = mq.TLO.Me.XTarget(i)
+                if xtSpawn() and Combat.ValidMAXTarget(xtSpawn) and (xtSpawn.Distance() or 999) <= radius and
+                    (allowMezBreak or not IsSpawnMezzed(xtSpawn)) then
+                    local pctAggro = xtSpawn.PctAggro() or 100
+                    local xtId = xtSpawn.ID() or 0
+                    if xtId == Globals.AutoTargetID then
+                        currentPctAggro = pctAggro
+                    end
+                    if pctAggro < lowestAggroPct then
+                        lowestAggroPct = pctAggro
+                        lowestAggroId = xtId
+                    end
+                end
+            end
+            local inRange = (currentAutoTarget.Distance() or 999) <= radius
+            if currentPctAggro < 100 and inRange and (allowMezBreak or not IsSpawnMezzed(currentAutoTarget)) then
+                if lowestAggroId > 0 and lowestAggroId ~= Globals.AutoTargetID and lowestAggroPct < currentPctAggro then
+                    Logger.log_verbose(
+                        "MATargetScan \\agSwitching aggro recovery target to lower aggro mob [%d] at %d%% (current [%d] at %d%%).",
+                        lowestAggroId, lowestAggroPct, Globals.AutoTargetID, currentPctAggro)
+                    return lowestAggroId
+                end
+                Logger.log_verbose("MATargetScan \agHolding current aggro recovery target %s [%d] at %d%% aggro.",
+                    currentAutoTarget.CleanName() or "Unknown", currentAutoTarget.ID() or 0, currentPctAggro)
+                return currentAutoTarget.ID() or 0
+            end
+        end
+    end
 
     local function TargetScanLowHealth(targetSpawn)
         if (targetSpawn.PctHPs() or 101) < lowestHP then
@@ -310,15 +365,16 @@ function Combat.MATargetScan(radius, zradius)
                 if not Config:GetSetting('SafeTargeting') or not Targeting.IsSpawnFightingStranger(xtSpawn, radius) then
                     Logger.log_verbose("MATargetScan Found %s [%d] Distance: %d", xtName, spawnId, xtSpawn.Distance() or 0)
                     if (xtSpawn.Distance() or 999) <= radius then
+                        if not allowMezBreak and IsSpawnMezzed(xtSpawn) then
+                            Logger.log_verbose("MATargetScan \agSkipping mezzed target %s [%d].", xtName, spawnId)
+                            goto continue_xtarget
+                        end
                         -- Check for lack of aggro and make sure we get the ones we haven't aggro'd. We can only get aggro data from xtargs
                         if Config:GetSetting("MAAggroScan") and mq.TLO.Me.Level() >= 20 then
                             -- Prefer switching to a different hater we do not fully control yet.
                             if xtSpawn.PctAggro() < 100 and Core.IsTanking() and spawnId ~= Globals.AutoTargetID then
-                                -- Coarse check to determine if a mob is _not_ mezzed. No point in waking a mezzed mob if we don't need to.
-                                if Globals.Constants.RGNotMezzedAnims:contains(xtSpawn.Animation()) then
-                                    Logger.log_verbose("MATargetScan \agHave not fully aggro'd %s -- returning %s [%d]", xtName, xtName, spawnId)
-                                    return spawnId
-                                end
+                                Logger.log_verbose("MATargetScan \agHave not fully aggro'd %s -- returning %s [%d]", xtName, xtName, spawnId)
+                                return spawnId
                             end
                         end
 
@@ -365,6 +421,7 @@ function Combat.MATargetScan(radius, zradius)
                 end
             end
         end
+        ::continue_xtarget::
     end
 
     if killId == 0 then
@@ -426,7 +483,7 @@ function Combat.TankAggroScan()
         local xtarg = mq.TLO.Me.XTarget(i)
         if xtarg() then
             local xtId = xtarg.ID() or 0
-            if xtId > 0 and xtId ~= Globals.AutoTargetID and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) then
+            if xtId > 0 and xtId ~= Globals.AutoTargetID and (xtarg.Aggressive() or IsAutoHater(xtarg)) then
                 if xtarg.PctAggro() < 100 and (xtarg.Distance() or 999) <= assistRange and Globals.Constants.RGNotMezzedAnims:contains(xtarg.Animation()) then
                     if Combat.OkToEngagePreValidateId(xtId) then
                         Logger.log_verbose("TankAggroScan: Found Aggro Target: %s (id %d).", xtarg.DisplayName(), xtId)
@@ -527,7 +584,7 @@ function Combat.FindBestAutoTarget(validateFn)
                         Logger.log_verbose("MATargetScan returned %d -- Setting initial AutoTarget: %s",
                             Globals.AutoTargetID, mq.TLO.Spawn(Globals.AutoTargetID).CleanName() or "None")
                     end
-                elseif not Config:GetSetting('StayOnTarget') then -- rescan our auto target unless we are forced to stay on one
+                elseif (not Config:GetSetting('StayOnTarget')) or (Core.IsTanking() and Config:GetSetting("MAAggroScan")) then -- allow aggro recovery scans even while staying on target
                     Globals.AutoTargetID = Combat.MATargetScan(Config:GetSetting('AssistRange'),
                         Config:GetSetting('MAScanZRange'))
                     local autoTarget = mq.TLO.Spawn(Globals.AutoTargetID)
@@ -626,6 +683,13 @@ function Combat.OkToEngagePreValidateId(targetId)
         return false
     end
 
+    local okCharmed, charmed = pcall(function() return target.Charmed() end)
+    local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
+    if okCharmed and charmed and okCharmId and charmId then
+        Logger.log_verbose("\ayOkToEngagePrevalidate check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
+        return false
+    end
+
     local pcCheck = Targeting.TargetIsType("pc", target) or (Targeting.TargetIsType("pet", target) and Targeting.TargetIsType("pc", target.Master))
     local mercCheck = Targeting.TargetIsType("mercenary", target)
     if pcCheck or mercCheck then
@@ -694,6 +758,13 @@ function Combat.OkToEngage(autoTargetId)
 
     if Globals.IgnoredTargetIDs:contains(targetId) then
         Logger.log_verbose("\ayOkToEngage check for %s(ID: %d) - Target is in IgnoredTargetIDs --> Not Engaging", targetName, targetId)
+        return false
+    end
+
+    local okCharmed, charmed = pcall(function() return target.Charmed() end)
+    local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
+    if okCharmed and charmed and okCharmId and charmId then
+        Logger.log_verbose("\ayOkToEngage check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
         return false
     end
 
@@ -1145,7 +1216,10 @@ end
 --function to determine if we should AE taunt and optionally, if it is safe to do so
 function Combat.AETauntCheck(printDebug)
     local xtCount = mq.TLO.Me.XTarget() or 0
-    if xtCount < Config:GetSetting('AETauntCnt') then return false end
+    local xtHaters = mq.TLO.SpawnCount("NPC xtarhater radius 50 zradius 50")()
+    local triggerCnt = Config:GetSetting('AETauntTriggerCnt') or 1
+    local aggroThreshold = Config:GetSetting('AETauntAggroThreshold') or 100
+    if xtHaters < Config:GetSetting('AETauntCnt') then return false end
 
     local mobs = mq.TLO.SpawnCount("NPC radius 50 zradius 50")()
     if mobs < Config:GetSetting('AETauntCnt') then return false end
@@ -1153,16 +1227,20 @@ function Combat.AETauntCheck(printDebug)
     local tauntme = Set.new({})
     for i = 1, xtCount do
         local xtarg = mq.TLO.Me.XTarget(i)
-        if xtarg and xtarg.ID() > 0 and (xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater" or xtarg.ID() == Globals.ForceTargetID) and xtarg.PctAggro() < 100 and (xtarg.Distance() or 999) <= 50 and Globals.Constants.RGNotMezzedAnims:contains(xtarg.Animation()) then
+        if xtarg and xtarg.ID() > 0 and (xtarg.Aggressive() or IsAutoHater(xtarg) or xtarg.ID() == Globals.ForceTargetID) and xtarg.PctAggro() < aggroThreshold and (xtarg.Distance() or 999) <= 50 and Globals.Constants.RGNotMezzedAnims:contains(xtarg.Animation()) then
             if printDebug then
                 Logger.log_verbose("AETauntCheck(): XT(%d) Counting %s(%d) as a hater eligible to AE Taunt.", i, xtarg.CleanName() or "None",
                     xtarg.ID())
             end
             tauntme:add(xtarg.ID())
         end
-        if not Config:GetSetting('SafeAETaunt') and #tauntme:toList() > 0 then return true end --no need to find more than one if we don't care about safe taunt
+        if not Config:GetSetting('SafeAETaunt') and #tauntme:toList() >= triggerCnt then return true end
     end
-    return #tauntme:toList() > 0 and not (Config:GetSetting('SafeAETaunt') and #tauntme:toList() < mobs)
+    local tauntCount = #tauntme:toList()
+    if not Config:GetSetting('SafeAETaunt') then
+        return tauntCount >= triggerCnt
+    end
+    return xtHaters > 0 and xtHaters >= mobs and tauntCount >= triggerCnt
 end
 
 --function to determine if we should use AE damage abilities

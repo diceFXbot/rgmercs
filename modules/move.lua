@@ -25,6 +25,8 @@ Module.TempSettings                = {}
 Module.TempSettings.CampZoneId     = 0
 Module.TempSettings.LastCmd        = ""
 Module.TempSettings.StuckAtTime    = 0
+Module.TempSettings.ShrinkCastsUsed = 0
+Module.TempSettings.ShrinkZoneId   = 0
 
 Module.Constants                   = {}
 Module.Constants.GGHZones          = Set.new({ "poknowledge", "potranquility", "stratos", "guildlobby", "moors", "crescent", "guildhalllrg_int", "guildhall", })
@@ -661,6 +663,8 @@ end
 
 function Module:OnZone()
     self:CampOff()
+    self.TempSettings.ShrinkCastsUsed = 0
+    self.TempSettings.ShrinkZoneId = mq.TLO.Zone.ID()
 end
 
 function Module:DoAutoCampCheck(bCalledFromInsideEvent)
@@ -695,8 +699,18 @@ function Module:GiveTime()
     local combat_state = Combat.GetCachedCombatState()
 
     if combat_state == "Downtime" then
+        if self.TempSettings.ShrinkZoneId ~= mq.TLO.Zone.ID() then
+            self.TempSettings.ShrinkCastsUsed = 0
+            self.TempSettings.ShrinkZoneId = mq.TLO.Zone.ID()
+        end
+
         if Casting.ShouldShrink() then
-            Casting.UseItem(Config:GetSetting('ShrinkItem'), mq.TLO.Me.ID())
+            local shrinkStages = Config:GetSetting('ShrinkStages') or 2
+            if shrinkStages == 2 or self.TempSettings.ShrinkCastsUsed < 1 then
+                if Casting.UseItem(Config:GetSetting('ShrinkItem'), mq.TLO.Me.ID()) then
+                    self.TempSettings.ShrinkCastsUsed = self.TempSettings.ShrinkCastsUsed + 1
+                end
+            end
         end
 
         if Casting.ShouldShrinkPet() then

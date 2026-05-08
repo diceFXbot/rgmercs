@@ -19,6 +19,9 @@ local Casting   = require("utils.casting")
 local Strings   = require("utils.strings")
 local Logger    = require("utils.logger")
 
+local AVATAR_SPELL_ID = 2434
+local AVATAR_MIN_SECONDS = 60
+
 local Tooltips  = {
     ArrowOpener         = "Spell Line: Archery Attack with High Crit Chance when not in Combat. Consumes a 50 range CLASS 3 Wood Silver Tip Arrow when cast.",
     PullOpener          = "Spell Line: Archery Attack when not in Combat. Consumes a 50 range CLASS 3 Wood Silver Tip Arrow when cast.",
@@ -26,6 +29,7 @@ local Tooltips  = {
     FocusedArrows       = "Spell Line: Quad Archery Attack",
     DichoSpell          = "Spell Line: Cast best Summer's Cyclone + Double Massive Archery Attack + Lower Hatred",
     SummerNuke          = "Spell Line: Fire Nuke + Cold Nuke + Increase Hatred",
+    FireDoT             = "Spell Line: Fire DoT + Fire Resist Debuff + AC Debuff",
     SwarmDot            = "Spell Line: Magic DoT",
     ShortSwarmDot       = "Spell Line: Prismatic DoT + ToT Damage Shield",
     UnityBuff           = "AA: Casts Highest Level of Scribed Buffs (ParryProcBuff, Hunt, Protectionbuff, Eyes)",
@@ -58,6 +62,7 @@ local Tooltips  = {
     RegenSpells         = "Spell Line: Increase Regeneration",
     SnareSpells         = "Spell Line: Decrease Enemy Movement Speed",
     FireFist            = "Spell Line: Self Increase Attack",
+    DDProc              = "Spell Line: Self DD Proc Buff",
     DsBuff              = "Spell Line: Damage Shield",
     SkinLike            = "Spell Line: Increase AC + Increase Max HP",
     MoveSpells          = "Spell Line: Increase Movement Speed",
@@ -105,6 +110,74 @@ local function castWSU()
         mq.TLO.Me.AltAbility("Wildstalker's Unity (Azia)").Rank() > 0
 
     return res
+end
+
+local function HasNearbyUnaggroNpcExceptTarget(radius)
+    local target = mq.TLO.Target
+    if not (target and target()) then return true end
+    local targetId = target.ID() or 0
+    if targetId == 0 then return true end
+
+    local search = string.format("npc radius %d zradius 30", radius)
+    local nearbyCount = mq.TLO.SpawnCount(search)() or 0
+
+    for i = 1, nearbyCount do
+        local nearby = mq.TLO.NearestSpawn(i, search)
+        if nearby and nearby() and (nearby.ID() or 0) > 0 and not nearby.Dead() then
+            local nearbyId = nearby.ID() or 0
+            if nearbyId ~= targetId then
+                local isAggressive = nearby.Aggressive() or false
+                local okType, targetType = pcall(function() return (nearby.TargetType() or ""):lower() end)
+                local isAutoHater = okType and targetType == "auto hater"
+                if not isAggressive and not isAutoHater then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function CountNearbyAggroNpcs(radius)
+    local search = string.format("npc radius %d zradius 30", radius)
+    local nearbyCount = mq.TLO.SpawnCount(search)() or 0
+    local aggroCount = 0
+
+    for i = 1, nearbyCount do
+        local nearby = mq.TLO.NearestSpawn(i, search)
+        if nearby and nearby() and (nearby.ID() or 0) > 0 and not nearby.Dead() then
+            local isAggressive = nearby.Aggressive() or false
+            local okType, targetType = pcall(function() return (nearby.TargetType() or ""):lower() end)
+            local isAutoHater = okType and targetType == "auto hater"
+            if isAggressive or isAutoHater then
+                aggroCount = aggroCount + 1
+            end
+        end
+    end
+
+    return aggroCount
+end
+
+local function CountNearbyXTHaters(radius)
+    local npcHaters = mq.TLO.SpawnCount(string.format("npc xtarhater radius %d zradius 30", radius))() or 0
+    local npcPetHaters = mq.TLO.SpawnCount(string.format("npcpet xtarhater radius %d zradius 30", radius))() or 0
+    return npcHaters + npcPetHaters
+end
+
+local function TargetHasAnySnareDebuff(target, snareSpellName)
+    if not (target and target()) then return false end
+
+    if snareSpellName and snareSpellName ~= "" and Casting.TargetHasBuff(snareSpellName, target) then
+        return true
+    end
+
+    local entrapSpell = mq.TLO.Me.AltAbility("Entrap").Spell
+    if entrapSpell and entrapSpell() and Casting.TargetHasBuff(entrapSpell, target) then
+        return true
+    end
+
+    return false
 end
 
 local _ClassConfig = {
@@ -357,6 +430,26 @@ local _ClassConfig = {
             "Bloodbeetle Swarm",
             "Hotaria Swarm",
         },
+        ["FireDoT"] = {
+            "Blistering Sunray XII",
+            "Searing Sunray",
+            "Tenebrous Sunray",
+            "Erupting Sunray",
+            "Overwhelming Sunray",
+            "Consuming Sunray",
+            "Incinerating Sunray",
+            "Blazing Sunray",
+            "Scorching Sunray",
+            "Withering Sunray",
+            "Torrid Sunray",
+            "Blistering Sunray",
+            "Immolation of the Sun",
+            "Sylvan Embers",
+            "Immolation of Ro",
+            "Breath of Ro",
+            "Immolate",
+            "Flame Lick",
+        },
         ["ShortSwarmDot"] = {
             "Swarm of Spitemidges",
             "Swarm of Fernflies",
@@ -461,8 +554,9 @@ local _ClassConfig = {
         },
         ["GroupStrengthBuff"] = {
             "Strength of the Grovestalker",
+            "Storm Strength",
+            "Strength of Earth",
             "Nature's Precision",
-            "Strength of Nature",
             "Strength of Tunare",
             "Strength of the Hunter",
             "Strength of the Forest Stalker",
@@ -493,6 +587,7 @@ local _ClassConfig = {
             "Frostroar of the Predator",
             "Shout of the Dusksage Stalker",
             "Shout of the Fernstalker",
+            "Strength of Nature",
         },
         ["GroupEnrichmentBuff"] = {
             "Arbor Stalker's Enrichment",
@@ -543,30 +638,33 @@ local _ClassConfig = {
             "Wildfire Boon",
             "Ashcloud Boon",
         },
-        ["Firenuke"] = {
+        ["Firenuke1"] = {
             "Volcanic Ash XVIII",
-            "Flame Lick",
+            "Flaming Arrow",
+            "Call of Flame",
+            "Sylvan Burn",
+            "Hearth Embers",
+            "Volcanic Ash",
+            "Cataclysm Ash",
+            "Beastwood Ash",
+            "Wildfire Ash",
+            "Pyroclastic Ash",
+        },
+        ["Firenuke2"] = {
+            "Burning Arrow",
+            "Brushfire",
+            "Ancient: Burning Chaos",
+            "Scorched Earth",
+            "Galvanic Ash",
+            "Burning Ash",
+            "Vileoak Ash",
+            "Skyfire Ash",
+            "Lunarflare Ash",
+        },
+        ["Firenuke(LowLevel)"] = {
             "Burst of Fire",
             "Ignite",
-            "Flaming Arrow",
-            "Burning Arrow",
-            "Call of Flame",
             "FireStrike",
-            "Brushfire",
-            "Sylvan Burn",
-            "Ancient: Burning Chaos",
-            "Hearth Embers",
-            "Scorched Earth",
-            "Volcanic Ash",
-            "Galvanic Ash",
-            "Cataclysm Ash",
-            "Burning Ash",
-            "Beastwood Ash",
-            "Vileoak Ash",
-            "Wildfire Ash",
-            "Skyfire Ash",
-            "Pyroclastic Ash",
-            "Lunarflare Ash",
         },
         ["Iceboon"] = {
             "Frostsquall Boon",
@@ -721,6 +819,13 @@ local _ClassConfig = {
             "Greater Wolf Form",
             "Feral Form",
             "Firefist",
+        },
+        ["DDProc"] = {
+            "Call of Lightning",
+            "Cry of Thunder",
+            "Call of Ice",
+            "Call of Fire",
+            "Call of Sky",
         },
         ["DsBuff"] = {
             "Shield of Underbrush",
@@ -1019,12 +1124,21 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "DDProc",
+                type = "Spell",
+                tooltip = Tooltips.DDProc,
+                active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
+                cond = function(self, spell)
+                    return Casting.SelfBuffCheck(spell)
+                end,
+            },
+            {
                 name = "DsBuff",
                 type = "Spell",
                 tooltip = Tooltips.DsBuff,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell)
-                    return Casting.SelfBuffCheck(spell)
+                    return false
                 end,
             },
             {
@@ -1095,6 +1209,16 @@ local _ClassConfig = {
         },
         ['GroupBuff'] = {
             {
+                name = "DsBuff",
+                type = "Spell",
+                tooltip = Tooltips.DsBuff,
+                active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
+                cond = function(self, spell, target)
+                    if not Targeting.TargetIsATank(target) then return false end
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
                 name = "Rathe",
                 type = "Spell",
                 tooltip = Tooltips.Rathe,
@@ -1109,6 +1233,9 @@ local _ClassConfig = {
                 tooltip = Tooltips.GroupStrengthBuff,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell, target)
+                    if target and target() and Targeting.TargetIsType("pc", target) and not Globals.Constants.RGMelee:contains(target.Class.ShortName()) then
+                        return false
+                    end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1264,6 +1391,58 @@ local _ClassConfig = {
         },
         ['DPS'] = {
             {
+                name = "Avatar 2HPrimal",
+                type = "CustomFunc",
+                cond = function(self)
+                    if not Config:GetSetting('DoMelee') then return false end
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return (not avatarBuff() or avatarRemaining < AVATAR_MIN_SECONDS) and not mq.TLO.Me.Bandolier("2HPrimal").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate 2HPrimal")
+                end,
+            },
+            {
+                name = "PrimalBow",
+                type = "CustomFunc",
+                cond = function(self)
+                    if Config:GetSetting('DoMelee') then return false end
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return (not avatarBuff() or avatarRemaining < AVATAR_MIN_SECONDS) and not mq.TLO.Me.Bandolier("PrimalBow").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate PrimalBow")
+                end,
+            },
+            {
+                name = "Bow",
+                type = "CustomFunc",
+                cond = function(self)
+                    if Config:GetSetting('DoMelee') then return false end
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return avatarBuff() and avatarRemaining >= AVATAR_MIN_SECONDS and not mq.TLO.Me.Bandolier("Bow").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate Bow")
+                end,
+            },
+            {
+                name = "Dual",
+                type = "CustomFunc",
+                cond = function(self)
+                    if not Config:GetSetting('DoMelee') then return false end
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return avatarBuff() and avatarRemaining >= AVATAR_MIN_SECONDS and not mq.TLO.Me.Bandolier("dual").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate dual")
+                end,
+            },
+            {
                 name = "ArrowOpener",
                 type = "Spell",
                 tooltip = Tooltips.ArrowOpener,
@@ -1312,6 +1491,31 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "SnareSpells",
+                type = "Spell",
+                tooltip = Tooltips.SnareSpells,
+                cond = function(self, spell, target)
+                    local snareSpellName = spell and spell.RankName and spell.RankName.Name and spell.RankName.Name() or ""
+                    local raceName = target and target() and target.Race and target.Race.Name and (target.Race.Name() or ""):lower() or ""
+                    if raceName == "skeleton" or raceName == "sekeleton" then return false end
+                    if TargetHasAnySnareDebuff(target, snareSpellName) then return false end
+                    if CountNearbyXTHaters(60) >= 2 then return false end
+                    if target and target() and target.Fleeing() and not Casting.SnareImmuneTarget(target) then
+                        return Casting.DetSpellCheck(spell)
+                    end
+                    if Targeting.GetXTHaterCount() >= 2 and CountNearbyAggroNpcs(60) >= 2 then return false end
+                    return Config:GetSetting('DoSnare') and Casting.DetSpellCheck(spell) and not Casting.SnareImmuneTarget(target)
+                end,
+            },
+            {
+                name = "SummerNuke",
+                type = "Spell",
+                tooltip = Tooltips.SummerNuke,
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
+                end,
+            },
+            {
                 name = "Fireboon",
                 type = "Spell",
                 tooltip = Tooltips.Fireboon,
@@ -1332,15 +1536,17 @@ local _ClassConfig = {
                 tooltip = Tooltips.Entrap,
                 type = "AA",
                 cond = function(self, aaName, target)
+                    local snareSpell = Core.GetResolvedActionMapItem('SnareSpells')
+                    local snareSpellName = snareSpell and snareSpell() and snareSpell.RankName and snareSpell.RankName.Name and snareSpell.RankName.Name() or ""
+                    local raceName = target and target() and target.Race and target.Race.Name and (target.Race.Name() or ""):lower() or ""
+                    if raceName == "skeleton" or raceName == "sekeleton" then return false end
+                    if TargetHasAnySnareDebuff(target, snareSpellName) then return false end
+                    if CountNearbyXTHaters(60) >= 2 then return false end
+                    if target and target() and target.Fleeing() and not Casting.SnareImmuneTarget(target) then
+                        return Casting.DetAACheck(aaName)
+                    end
+                    if Targeting.GetXTHaterCount() >= 2 and CountNearbyAggroNpcs(60) >= 2 then return false end
                     return Config:GetSetting('DoSnare') and Casting.DetAACheck(aaName) and not Casting.SnareImmuneTarget(target)
-                end,
-            },
-            {
-                name = "SnareSpells",
-                type = "Spell",
-                tooltip = Tooltips.SnareSpells,
-                cond = function(self, spell, target)
-                    return Config:GetSetting('DoSnare') and Casting.DetSpellCheck(spell) and not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
@@ -1352,11 +1558,19 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "FireDoT",
+                type = "Spell",
+                tooltip = Tooltips.FireDoT,
+                cond = function(self, spell, target)
+                    return Targeting.AggroCheckOkay() and Casting.HaveManaToDot() and Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
+                end,
+            },
+            {
                 name = "SwarmDot",
                 type = "Spell",
                 tooltip = Tooltips.SwarmDot,
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
+                    return Targeting.AggroCheckOkay() and Casting.HaveManaToDot() and Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
                 end,
             },
             {
@@ -1364,11 +1578,19 @@ local _ClassConfig = {
                 type = "Spell",
                 tooltip = Tooltips.ShortSwarmDot,
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
+                    return Targeting.AggroCheckOkay() and Casting.HaveManaToDot() and Casting.DotSpellCheck(spell) and Config:GetSetting('DoDot')
                 end,
             },
             {
-                name = "Firenuke",
+                name = "Firenuke1",
+                type = "Spell",
+                tooltip = Tooltips.Firenuke,
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
+                end,
+            },
+            {
+                name = "Firenuke2",
                 type = "Spell",
                 tooltip = Tooltips.Firenuke,
                 cond = function(self, spell)
@@ -1389,6 +1611,23 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     return Casting.DetAACheck(aaName)
+                end,
+            },
+            {
+                name = "SnaprollRearOnLowAggroFront",
+                type = "CustomFunc",
+                custom_func = function(self, targetId)
+                    local target = mq.TLO.Target
+                    if not (target and target() and not target.Dead()) then return false end
+                    if not Config:GetSetting('DoMelee') then return false end
+                    if (target.PctAggro() or 0) >= 99 then return false end
+                    if not Targeting.MeInTargetFrontArc(target, 120) then return false end
+                    if Targeting.GetTargetDistance() > 50 then return false end
+                    if HasNearbyUnaggroNpcExceptTarget(50) then return false end
+                    if Globals.GetTimeSeconds() - Movement:GetLastStickTimer() < 0.5 then return false end
+
+                    Movement:DoStickCmd("12 snaproll rear loose uw")
+                    return false
                 end,
             },
             {
@@ -1416,11 +1655,27 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "Kick",
+                type = "Ability",
+                tooltip = Tooltips.Kick,
+                cond = function(self)
+                    return Targeting.GetTargetDistance() < 30
+                end,
+            },
+            {
                 name = "EndRegenDisc",
                 type = "Disc",
                 tooltip = Tooltips.EndRegenDisc,
                 cond = function(self, discSpell)
                     return Casting.NoDiscActive() and not Casting.IHaveBuff(discSpell.RankName.Name() or "") and mq.TLO.Me.PctEndurance() < 30
+                end,
+            },
+            {
+                name = "Firenuke(LowLevel)",
+                type = "Spell",
+                tooltip = Tooltips.Firenuke,
+                cond = function(self, spell)
+                    return Casting.OkayToNuke()
                 end,
             },
         },
@@ -1523,14 +1778,6 @@ local _ClassConfig = {
                     return mq.TLO.Me.PctAggro() > 70 and mq.TLO.Me.PctHPs() < 50
                 end,
             },
-            {
-                name = "SummerNuke",
-                type = "Spell",
-                tooltip = Tooltips.SummerNuke,
-                cond = function(self, spell)
-                    return mq.TLO.Me.PctAggro() < 60
-                end,
-            },
         },
     },
     ['Spells']            = {
@@ -1539,20 +1786,6 @@ local _ClassConfig = {
             spells = {
                 { name = "Fastheal", },
                 { name = "Heal", },
-            },
-        },
-        { -- SpellGem2 - Is Our Standard Fire Nuke 3-115
-            gem = 2,
-            cond = function(self, gem) return mq.TLO.Me.NumGems() >= gem end,
-            spells = {
-                { name = "Firenuke", },
-            },
-        },
-        { -- SpellGem 3 - This is Our Swarm Dot From 25 to 115
-            gem = 3,
-            cond = function(self, gem) return mq.TLO.Me.NumGems() >= gem end,
-            spells = {
-                { name = "SwarmDot", },
             },
         },
         { -- Use ArrowOpener if enabled or Snare if no AASnare
@@ -1568,6 +1801,7 @@ local _ClassConfig = {
             cond = function(self, gem) return mq.TLO.Me.NumGems() >= gem end,
             spells = {
                 { name = "DichoSpell", cond = function(self) return mq.TLO.Me.Level() >= 101 end, },
+                { name = "SummerNuke", },
                 { name = "Icenuke", },
             },
         },

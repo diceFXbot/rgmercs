@@ -508,13 +508,49 @@ function Rotation.SetSpellLoadOutByPriority(caller, spellList, enabledRotationEn
         if l ~= nil and (not l.cond or Core.SafeCallFunc(string.format("List Condition Check %s", l.name), l.cond, caller)) then
             Logger.log_debug("\ayList \am%s\ay will be loaded.", l.name)
             listName = l.name
-            for i = 1, mq.TLO.Me.NumGems() do
+            local numGems = mq.TLO.Me.NumGems()
+
+            -- Pass 1: honor explicitly pinned gems for SpellList entries (s.gem).
+            for _, s in ipairs(l.spells) do
+                if s.name_func then
+                    s.name = Core.SafeCallFunc("Spell Name Func", s.name_func, caller) or
+                        "Error in name_func!"
+                end
+                local spellName = s.name
+                local preferredGem = tonumber(s.gem or 0) or 0
+                local entryEnabled = IsLoadoutEntryEnabled(spellName)
+                if preferredGem >= 1 and preferredGem <= numGems and entryEnabled then
+                    local bestSpell = Core.GetResolvedActionMapItem(spellName)
+                    if bestSpell then
+                        local bookSpell = mq.TLO.Me.Book(bestSpell.RankName())()
+                        local pass = Core.SafeCallFunc(
+                            string.format("Spell Condition Check: %s", bestSpell() or "None"), s.cond, caller, bestSpell)
+                        local loadedSpell = spellsToLoad[bestSpell.RankName()] or false
+                        local gemOccupied = spellLoadOut[preferredGem] ~= nil
+                        if pass and bookSpell and not loadedSpell and not gemOccupied then
+                            Logger.log_debug("    ==> \ayPinned Gem \am%d\ay will load \at%s\ax ==> \ag%s", preferredGem, s.name, bestSpell.RankName())
+                            spellLoadOut[preferredGem] = { selectedSpellData = s, spell = bestSpell, }
+                            spellsToLoad[bestSpell.RankName()] = true
+                        end
+                    end
+                end
+            end
+
+            for i = 1, numGems do
+                if spellLoadOut[i] then
+                    Logger.log_debug("\aw  ==> Gem \am%d\aw already reserved by pinned spell.", i)
+                    goto continue_gem
+                end
                 for _, s in ipairs(l.spells) do
                     if s.name_func then
                         s.name = Core.SafeCallFunc("Spell Name Func", s.name_func, caller) or
                             "Error in name_func!"
                     end
                     local spellName = s.name
+                    local preferredGem = tonumber(s.gem or 0) or 0
+                    if preferredGem > 0 and preferredGem ~= i then
+                        goto continue_spell
+                    end
                     local entryEnabled = IsLoadoutEntryEnabled(spellName)
                     Logger.log_debug("\aw  ==> Testing \at%s\aw for Gem \am%d", spellName, i)
                     if entryEnabled then
@@ -549,7 +585,9 @@ function Rotation.SetSpellLoadOutByPriority(caller, spellList, enabledRotationEn
                             "    ==> \ayGem \am%d\ay will \arNOT\ay load \at%s\ax ==> \arDisabled via Rotation Enable toggle.",
                             s.name)
                     end
+                    ::continue_spell::
                 end
+                ::continue_gem::
             end
             break --we only want the first valid spellset
         else

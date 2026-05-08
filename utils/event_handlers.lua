@@ -91,7 +91,8 @@ mq.event("TooClose", "Your target is too close to use a ranged weapon!", functio
             Logger.log_debug("TooClose: Attempting to Throw Stone.")
             Casting.UseDisc(discSpell, mq.TLO.Target.ID())
         else
-            if Casting.AbilityReady("Taunt") then
+            local myAggro = mq.TLO.Me.PctAggro() or 0
+            if Casting.AbilityReady("Taunt") and myAggro < 100 then
                 Logger.log_debug("TooCloseHandler: Naving to target to use Taunt.")
                 Movement:DoNav(false, "id %d distance=%d lineofsight=on log=off", Targeting.GetTargetID(), (Targeting.GetTargetMaxRangeTo() * .8))
                 mq.delay("2s", function() return mq.TLO.Navigation.Active() end)

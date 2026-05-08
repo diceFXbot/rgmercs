@@ -6,6 +6,68 @@ local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
 local Logger       = require("utils.logger")
 
+local function CountFullAggroXTargets()
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    local fullAggro = 0
+    for i = 1, xtCount do
+        local xtarg = mq.TLO.Me.XTarget(i)
+        if xtarg and xtarg() then
+            local okType, targetType = pcall(function() return (xtarg.TargetType() or ""):lower() end)
+            local okAggro, pctAggro = pcall(function() return xtarg.PctAggro() end)
+            if okType and okAggro and targetType == "auto hater" and (pctAggro or 0) >= 100 then
+                fullAggro = fullAggro + 1
+            end
+        end
+    end
+    return fullAggro
+end
+
+local function CountAutoHaterXTargets()
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    local autoHaters = 0
+    for i = 1, xtCount do
+        local xtarg = mq.TLO.Me.XTarget(i)
+        if xtarg and xtarg() and (xtarg.ID() or 0) > 0 and not xtarg.Dead() then
+            local ok, targetType = pcall(function() return (xtarg.TargetType() or ""):lower() end)
+            if ok and targetType == "auto hater" then
+                autoHaters = autoHaters + 1
+            end
+        end
+    end
+    return autoHaters
+end
+
+local function PassAutoHaterCountGate()
+    local useGate = Config:GetSetting('UseAutoHaterCountGate')
+    if useGate == nil then useGate = true end
+    if not useGate then return true end
+    return CountAutoHaterXTargets() < (Config:GetSetting('AutoHaterMaxCount') or 3)
+end
+
+local function SyncDoMeleeByAutoHaters()
+    local shouldMelee = PassAutoHaterCountGate()
+    if Config:GetSetting('DoMelee') ~= shouldMelee then
+        Config:SetSetting('DoMelee', shouldMelee)
+    end
+    if not shouldMelee and mq.TLO.Me.Combat() then
+        Core.DoCmd("/attack off")
+    end
+    return false
+end
+
+local function SyncUndeadBandolier()
+    local target = mq.TLO.Target
+    local isUndead = target and target() and Targeting.TargetBodyIs(target, "Undead")
+    local wantedBandolier = isUndead and "UND" or "nonUND"
+    local bandolier = mq.TLO.Me.Bandolier(wantedBandolier)
+
+    if bandolier and bandolier.Index() and not bandolier.Active() then
+        Core.DoCmd("/bandolier activate %s", wantedBandolier)
+    end
+
+    return false
+end
+
 local _ClassConfig = {
     _version              = "2.1 - Live",
     _author               = "Algar, Derple",
@@ -195,6 +257,12 @@ local _ClassConfig = {
             "Ecliptic Blessing",
             "Reciprocal Blessing",
         },
+        ["Divine Barrier"] = {
+            "Divine Barrier",
+        },
+        ["Divine Aura"] = {
+            "Divine Aura",
+        },
         ['GroupFastHeal'] = {        -- Level 98
             "Syllable of Wellbeing", -- 128
             "Syllable of Acceptance",
@@ -361,7 +429,6 @@ local _ClassConfig = {
         ['AegoBuff'] = {
             ----Use HP Type one until Temperance at 40... Group Buff at 45 (Blessing of Temperance)
             "Unified Hand of Aegolism XV", -- Level 130
-            "Courage",
             "Center",
             "Daring",
             "Bravery",
@@ -384,23 +451,44 @@ local _ClassConfig = {
             "Unified Hand of Righteousness",
             "Unified Hand of Persistence",
             "Unified Hand of Infallibility",
+            "Heroic Bond",
         },
-        ['ACBuff'] = { --Sometimes single, sometimes group, used on tank before Aego or until it is rolled into Unified (Symbol)
-            "Order of the Earnest",
+        ['SingleHPBuff'] = {
+            -- Courage line (single-target HP/AC buff)
+            "Confidence",
+            "Faith",
+            "Resolution",
+            "Valor",
+            "Bravery",
+            "Daring",
+            "Center",
+            "Courage",
+        },
+        ['SingleACBuff'] = { -- Ward of the Holy (single target AC line)
+            "Ward of Eminence",
+            "Ward of the Avowed",
+            "Ward of the Guileless",
+            "Ward of Sincerity",
+            "Ward of the Merciful",
+            "Ward of the Ardent",
+            "Ward of the Reverent",
+            "Ward of the Zealous",
             "Ward of the Earnest",
-            "Order of the Devout",
             "Ward of the Devout",
-            "Order of the Resolute",
             "Ward of the Resolute",
-            "Ward of the Dauntless",
-            "Ward of Valliance",
+            "Ward of Valiance",
+            "Ward of Valliance", -- emu/local naming variant
             "Ward of Gallantry",
-            "Bulwark of Faith",
+            "Spirit Armor",
             "Shield of Words",
             "Armor of Faith",
             "Guard",
-            "Spirit Armor",
             "Holy Armor",
+            -- Fallback aliases observed on some servers/eras
+            "Order of the Earnest",
+            "Order of the Devout",
+            "Order of the Resolute",
+            "Ward of the Dauntless",
         },
         ['ShiningBuff'] = {
             --Tank Buff Traditionally Shining Series of Buffs
@@ -437,11 +525,6 @@ local _ClassConfig = {
         },
         ['GroupSymbolBuff'] = {
             ----Group Symbols
-            "Symbol of Transal",
-            "Symbol of Ryltan",
-            "Symbol of Pinzarn",
-            "Symbol of Naltron",
-            "Symbol of Marzin",
             "Naltron's Mark",
             "Marzin's Mark",
             "Kazad's Mark",
@@ -458,6 +541,28 @@ local _ClassConfig = {
             "Unified Hand of Assurance",
             "Unified Hand of the Diabo",
             "Unified Hand of Helmsbane",
+        },
+        ['SingleSymbol'] = {
+            -- Single-target Symbol line
+            "Symbol of Sharosh",
+            "Symbol of Helmsbane",
+            "Symbol of Sanguineous",
+            "Symbol of Jorlleag",
+            "Symbol of Emra",
+            "Symbol of Nonia",
+            "Symbol of Gezat",
+            "Symbol of the Triumvirate",
+            "Symbol of Ealdun",
+            "Symbol of Darianna",
+            "Symbol of Kaerra",
+            "Symbol of Elushar",
+            "Symbol of Balikor",
+            "Symbol of Kazad",
+            "Symbol of Marzin",
+            "Symbol of Naltron",
+            "Symbol of Pinzarn",
+            "Symbol of Ryltan",
+            "Symbol of Transal",
         },
         ['AbsorbAura'] = {
             ----Aura Buffs - Aura Name is seperate than the buff name
@@ -496,6 +601,9 @@ local _ClassConfig = {
             "Unyielding Censure",
             "Unyielding Rebuke",
             "Unyielding Admonition",
+        },
+        ['Dispel'] = {
+            "Annul Magic",
         },
         ['RezSpell'] = {
             "Reviviscence",
@@ -685,6 +793,24 @@ local _ClassConfig = {
             "Expulse Undead",
             "Ward Undead",
         },
+        ['PBAENuke'] = {
+            "Tectonic Quake XVI", -- 129
+            "Tectonic Bedlam",
+            "Tectonic Shadowvent",
+            "Tectonic Frostheave",
+            "Tectonic Eruption",
+            "Tectonic Destruction",
+            "Tectonic Temblor",
+            "Tectonic Tremor",
+            "Tectonic Shock",
+            "Tectonic Tumult",
+            "Tectonic Upheaval",
+            "Tectonic Quake",
+            "Calamity",
+            "Catastrophe",
+            "Upheaval",
+            "Earthquake",
+        },
         ['MagicNuke'] = {
             "Veto", -- 127
             "Strike",
@@ -694,6 +820,7 @@ local _ClassConfig = {
             "Retribution",
             "Judgment",
             "Condemnation",
+            "Reckoning",
             "Order",
             "Reproach",
             "Reproval",
@@ -1152,6 +1279,15 @@ local _ClassConfig = {
             end,
         },
         {
+            name = 'Emergency',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return { mq.TLO.Me.ID(), } end,
+            cond = function(self, combat_state)
+                return combat_state == "Combat"
+            end,
+        },
+        {
             name = 'DPS',
             state = 1,
             steps = 1,
@@ -1272,7 +1408,51 @@ local _ClassConfig = {
                 end,
             },
         },
+        ['Emergency'] = {
+            {
+                name = "Divine Barrier",
+                type = "CustomFunc",
+                load_cond = function(self) return Config:GetSetting('DoDivineBarrier') end,
+                cond = function(self, aaName, target)
+                    return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and CountFullAggroXTargets() >= 2
+                end,
+                custom_func = function(self, targetId)
+                    if Casting.AAReady("Divine Barrier") then
+                        return Casting.UseAA("Divine Barrier", targetId)
+                    end
+                    return Casting.UseSpell("Divine Barrier", targetId, true)
+                end,
+            },
+            {
+                name = "Divine Aura",
+                type = "CustomFunc",
+                load_cond = function(self) return Config:GetSetting('DoDivineAura') end,
+                cond = function(self, aaName, target)
+                    return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and CountFullAggroXTargets() >= 2
+                end,
+                custom_func = function(self, targetId)
+                    if Casting.AAReady("Divine Aura") then
+                        return Casting.UseAA("Divine Aura", targetId)
+                    end
+                    return Casting.UseSpell("Divine Aura", targetId, true)
+                end,
+            },
+        },
         ['DPS'] = {
+            {
+                name = "AutoMeleeByAutoHaters",
+                type = "CustomFunc",
+                custom_func = function(self, targetId)
+                    return SyncDoMeleeByAutoHaters()
+                end,
+            },
+            {
+                name = "UndeadBandolierSwap",
+                type = "CustomFunc",
+                custom_func = function(self, targetId)
+                    return SyncUndeadBandolier()
+                end,
+            },
             {
                 name = "TwinHealNuke",
                 type = "Spell",
@@ -1280,6 +1460,20 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoTwinHeal') end,
                 cond = function(self, spell)
                     return not Casting.IHaveBuff("Healing Twincast")
+                end,
+            },
+            {
+                name = "Dispel",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return (target.PctHPs() or 0) > 25 and mq.TLO.Target.Beneficial() ~= nil
+                end,
+            },
+            {
+                name = "PBAENuke",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return Config:GetSetting('DoAEDamage') and (target.Distance3D() or 999) <= 30
                 end,
             },
             {
@@ -1345,7 +1539,7 @@ local _ClassConfig = {
                 cond = function(self, spell, target)
                     local targetLevel = Targeting.GetAutoTargetLevel()
                     if targetLevel == 0 or targetLevel > 55 then return false end
-                    return Targeting.TargetNotStunned() and Casting.DetSpellCheck(spell) and Casting.HaveManaToDebuff() and not Casting.StunImmuneTarget(target)
+                    return Targeting.TargetNotStunned() and Targeting.AggroCheckOkay() and Casting.DetSpellCheck(spell) and Casting.HaveManaToDebuff() and not Casting.StunImmuneTarget(target)
                 end,
             },
             {
@@ -1358,17 +1552,18 @@ local _ClassConfig = {
             {
                 name = "UndeadNuke",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoUndeadNuke') end,
                 cond = function(self, aaName, target)
-                    if not Targeting.TargetBodyIs(target, "Undead") then return false end
+                    if not (Targeting.TargetBodyIs(target, "Undead") or Targeting.TargetBodyIs(target, "Vampyre")) then return false end
+                    if not PassAutoHaterCountGate() then return false end
                     return Casting.OkayToNuke(true)
                 end,
             },
             {
                 name = "MagicNuke",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoMagicNuke') end,
-                cond = function(self)
+                cond = function(self, spell, target)
+                    if Targeting.TargetBodyIs(target, "Undead") or Targeting.TargetBodyIs(target, "Vampyre") then return false end
+                    if not PassAutoHaterCountGate() then return false end
                     return Casting.OkayToNuke(true)
                 end,
             },
@@ -1448,6 +1643,9 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('AegoSymbol') <= 2 end,
                 cond = function(self, spell, target)
+                    if Targeting.TargetIsMyself(target) then
+                        return Casting.SelfBuffCheck(spell)
+                    end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1460,6 +1658,21 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "SingleSymbol",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
+                name = "SingleHPBuff",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('AegoSymbol') <= 2 end,
+                cond = function(self, spell, target)
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
                 name = "SpellBlessing",
                 type = "Spell",
                 load_cond = function(self) return mq.TLO.Me.Level() <= 95 end, -- could check to make sure we know a unified. This is cheaper.
@@ -1468,11 +1681,9 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "ACBuff",
+                name = "SingleACBuff",
                 type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoACBuff') end,
                 cond = function(self, spell, target)
-                    if (spell.TargetType() or ""):lower() == "single" and not Targeting.TargetIsATank(target) then return false end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
@@ -1525,6 +1736,8 @@ local _ClassConfig = {
                 { name = "RemedyHeal",      cond = function(self) return mq.TLO.Me.Level() < 70 end, },
                 { name = "CompleteHeal",    cond = function(self) return Config:GetSetting('DoCompleteHeal') and mq.TLO.Me.Level() < 80 end, }, -- Level 39
                 { name = "ClutchHeal", },                                                                                                       -- Level 77+
+                { name = "Divine Barrier",  gem = 6, cond = function(self) return Config:GetSetting('DoDivineBarrier') end, },
+                { name = "Divine Aura",     gem = 7, cond = function(self) return Config:GetSetting('DoDivineAura') end, },
                 { name = "SingleElixir",    cond = function(self) return Config:GetSetting('DoHealOverTime') and mq.TLO.Me.Level() < 83 end, }, -- Level 19-79
                 { name = "GroupElixir",     cond = function(self) return Config:GetSetting('DoHealOverTime') end, },                            -- Level 60+, gets better from 70 on, this may be overwritten before 75
                 { name = "GroupFastHeal", },                                                                                                    -- Syllable, 98+
@@ -1540,14 +1753,10 @@ local _ClassConfig = {
                 { name = "CureDisease",     cond = function(self) return Config:GetSetting('KeepCureMemmed') == 2 and not Core.GetResolvedActionMapItem('CureAll') end, },
                 { name = "CureCurse",       cond = function(self) return Config:GetSetting('KeepCureMemmed') == 2 and not Core.GetResolvedActionMapItem('CureAll') end, },
                 { name = "GroupHealCure",   cond = function(self) return Config:GetSetting('KeepCureMemmed') == 3 end, },
-                { name = "StunTimer6",      cond = function(self) return Config:GetSetting('DoHealStun') end, },                          -- Level 16 - 76 (moved gems after)
-                { name = "LowLevelStun",    cond = function(self) return Config:GetSetting('DoLLStun') and mq.TLO.Me.Level() < 59 end, }, -- Level 2-58
                 { name = "WardBuff", },                                                                                                   -- Level 97
                 { name = "ReverseDS", },                                                                                                  -- Level 85+
                 { name = "TwinHealNuke",    cond = function(self) return Config:GetSetting('DoTwinHeal') end, },                          -- 84+
                 { name = "YaulpSpell",      cond = function(self) return not Casting.CanUseAA("Yaulp") end, },                            -- Level 56-75
-                { name = "MagicNuke",       cond = function(self) return Config:GetSetting('DoMagicNuke') end, },
-                { name = "UndeadNuke",      cond = function(self) return Config:GetSetting('DoUndeadNuke') end, },
                 --fallback
                 { name = "ShiningBuff", },
                 { name = "HealNuke", },
@@ -1559,7 +1768,6 @@ local _ClassConfig = {
                 { name = "HealNuke3",       cond = function(self) return Config:GetSetting('InterContraChoice') == 1 end, },
                 { name = "NukeHeal3",       cond = function(self) return Config:GetSetting('InterContraChoice') == 3 end, },
                 { name = "Renewal3",        cond = function(self) return mq.TLO.Me.Level() < 101 end, },
-                { name = "RezSpell",        cond = function(self) return not Casting.CanUseAA('Blessing of Resurrection') end, },
             },
         },
     },
@@ -1640,6 +1848,28 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
+        ['DoDivineBarrier']   = {
+            DisplayName = "Use Divine Barrier",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Emergency",
+            Index = 103,
+            Tooltip = "Keep Divine Barrier loaded and allow emergency use when conditions are met.",
+            RequiresLoadoutChange = true,
+            Default = true,
+            ConfigType = "Advanced",
+        },
+        ['DoDivineAura']      = {
+            DisplayName = "Use Divine Aura",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Emergency",
+            Index = 104,
+            Tooltip = "Keep Divine Aura loaded and allow emergency use when conditions are met.",
+            RequiresLoadoutChange = true,
+            Default = true,
+            ConfigType = "Advanced",
+        },
         ['DoVetAA']           = {
             DisplayName = "Use Vet AA",
             Group = "Abilities",
@@ -1678,25 +1908,27 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
-        ['DoUndeadNuke']      = {
-            DisplayName = "Do Undead Nuke",
+        ['UseAutoHaterCountGate'] = {
+            DisplayName = "Use Auto Hater Gate",
             Group = "Abilities",
             Header = "Damage",
             Category = "Direct",
             Index = 103,
-            Tooltip = "Use the Undead nuke line.",
-            RequiresLoadoutChange = true,
-            Default = false,
+            Tooltip = "When enabled, melee and nuke usage obey the Auto Hater count limit.",
+            Default = true,
+            ConfigType = "Advanced",
         },
-        ['DoMagicNuke']       = {
-            DisplayName = "Do Magic Nuke",
+        ['AutoHaterMaxCount'] = {
+            DisplayName = "Auto Hater Max Count",
             Group = "Abilities",
             Header = "Damage",
             Category = "Direct",
             Index = 104,
-            Tooltip = "Use the Magic nuke line.",
-            RequiresLoadoutChange = true,
-            Default = false,
+            Tooltip = "Disable melee and nukes when Auto Hater count is this value or higher.",
+            Default = 3,
+            Min = 0,
+            Max = 10,
+            ConfigType = "Advanced",
         },
         ['DoHealStun']        = {
             DisplayName = "ToT-Heal Stun",
@@ -1795,6 +2027,18 @@ local _ClassConfig = {
             ConfigType = "Advanced",
             FAQ = "How can I stagger my clerics to use Complete Heal at different times?",
             Answer = "Adjust the Complete Heal Pct on the Spells and Abilities tab to different amounts to help stagger Complete Heals.",
+        },
+        ['EmergencyStart']    = {
+            DisplayName = "Emergency HP%",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 102,
+            Tooltip = "Use emergency defenses at or below this HP when 2+ XT mobs are at 100 aggro on you.",
+            Default = 35,
+            Min = 1,
+            Max = 99,
+            ConfigType = "Advanced",
         },
         ['KeepCureMemmed']    = {
             DisplayName = "Mem Cure:",

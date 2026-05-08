@@ -51,6 +51,11 @@ function Base:Init()
     self.ModuleLoaded = true
 end
 
+-- Compatibility helper used by some legacy module code paths.
+function Base:SaveSettings(_)
+    Config:SaveModuleSettings(self._name, Config:GetModuleSettings(self._name))
+end
+
 function Base:ShouldRender()
     return true
 end

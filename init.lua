@@ -473,6 +473,33 @@ local function Main()
     Combat.SetMainAssist()
     Ui.GetAssistWarningString()
 
+    -- Hard safety guard: never keep attacking charmed/PC-owned pets.
+    do
+        local target = mq.TLO.Target
+        if target and target() and (target.ID() or 0) > 0 then
+            local okCharmed, charmed = pcall(function() return target.Charmed() end)
+            local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
+            local isCharmed = okCharmed and charmed and okCharmId and charmId ~= nil
+
+            local targetType = (target.Type() or ""):lower()
+            local masterType = ""
+            if targetType == "pet" and target.Master() then
+                masterType = (target.Master.Type() or ""):lower()
+            end
+            local isPCOwnedPet = targetType == "pet" and masterType == "pc"
+
+            if isCharmed or isPCOwnedPet then
+                Logger.log_debug("\ayCharmed/PC-owned pet target detected -- forcing attack off and clearing target.")
+                Core.DoCmd("/attack off")
+                Targeting.ClearTarget()
+                -- Clear target even when DoAutoTarget is disabled (Targeting.ClearTarget() is no-op then).
+                if not Config:GetSetting('DoAutoTarget') then
+                    Core.DoCmd("/squelch /target clear")
+                end
+            end
+        end
+    end
+
     if not Globals.BackOffFlag then
         -- This will find a valid target and set it to : Globals.AutoTargetID
         Combat.FindBestAutoTarget(Combat.OkToEngagePreValidateId)
@@ -486,6 +513,19 @@ local function Main()
         Combat.EngageTarget(Globals.AutoTargetID)
     else
         if Globals.CurrentState == "Combat" then
+            local target = mq.TLO.Target
+            local targetCharmed = false
+            if target and target() then
+                local okCharmed, charmed = pcall(function() return target.Charmed() end)
+                local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
+                targetCharmed = okCharmed and charmed and okCharmId and charmId ~= nil
+            end
+
+            if targetCharmed then
+                Logger.log_debug("\ayTarget is charmed while in combat state -- forcing attack off and clearing target.")
+                Core.DoCmd("/attack off")
+                Targeting.ClearTarget()
+            else
             local targetId = Targeting.GetTargetID()
             local ignored = Globals.IgnoredTargetIDs:contains(targetId)                         -- don't target something in our ignore list
             local pullTarget = Config:GetSetting('DoPull') and targetId == Globals.LastPulledID -- don't clear your pull target while its traveling to you
@@ -494,6 +534,7 @@ local function Main()
             if ignored or (not pullTarget and not assistHater) then
                 Logger.log_debug("\ayClearing Target because we are not OkToEngage() and we are in combat!")
                 Targeting.ClearTarget()
+            end
             end
         elseif mq.TLO.Me.Combat() and (Config:GetSetting('AutoAttackSafetyCheck') or not mq.TLO.Target()) then
             Logger.log_debug("\ayTurning off attack because we don't have a target or we are not OkToEngage the current target!")

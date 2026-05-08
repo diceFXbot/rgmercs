@@ -651,9 +651,6 @@ function Module:GetAllRotationNames()
 end
 
 function Module:GetRotationTable(mode)
-    if self.ClassConfig and not self.TempSettings.RotationTable[mode] then
-        printf("\ayGetRotationTable(%s) found %d entries", mode, #self.TempSettings.RotationTable[mode])
-    end
     return self.ClassConfig and self.TempSettings.RotationTable[mode] or {}
 end
 
@@ -1062,6 +1059,42 @@ function Module:RunHealRotation()
     else
         self:HealById(Combat.FindWorstHurtXT(Config:GetSetting('MaxHealPoint')))
     end
+end
+
+function Module:RunEmergencyRotation(combat_state, enabledRotations)
+    if combat_state ~= "Combat" then return false end
+    if enabledRotations and enabledRotations["Emergency"] == false then return false end
+    if not self:GetRotationTable("Emergency") then return false end
+
+    local targetTable = { mq.TLO.Me.ID(), }
+    local rotationCond = nil
+    local steps = 1
+    local state = 1
+
+    for idx, r in ipairs(self.TempSettings.RotationStates or {}) do
+        if r.name == "Emergency" then
+            targetTable = Core.SafeCallFunc("Emergency Rotation Target Table", r.targetId) or targetTable
+            rotationCond = r.cond
+            steps = r.steps or 1
+            state = r.state or 1
+            self.TempSettings.CurrentRotationStateType = 1
+            self.TempSettings.CurrentRotationStateId = idx
+            break
+        end
+    end
+
+    if not targetTable or #targetTable == 0 then return false end
+    if rotationCond and not Core.SafeCallFunc("Emergency Rotation Condition", rotationCond, self, combat_state) then
+        return false
+    end
+
+    self.CurrentRotation = { name = "Emergency", state = state, }
+    Rotation.Run(self, self:GetRotationTable("Emergency"), targetTable,
+        self.ResolvedActionMap, steps, state, self.CombatState == "Downtime", false, rotationCond,
+        Config:GetSetting('EnabledRotationEntries') or {})
+
+    self.TempSettings.CurrentRotationStateType = 0
+    return true
 end
 
 function Module:ClearCureFromList(id)
@@ -1583,6 +1616,7 @@ function Module:GiveTime()
     -- Healing happens first and anytime we aren't in downtime while invis and set not to break it.
     if self:IsHealing() then
         if not (combat_state == "Downtime" and mq.TLO.Me.Invis() and not Config:GetSetting('BreakInvisForHealing')) then
+            self:RunEmergencyRotation(combat_state, enabledRotations)
             self:RunHealRotation()
         end
     end
@@ -1642,7 +1676,18 @@ function Module:GiveTime()
                 if Globals.GetTimeSeconds() - Movement:GetLastStickTimer() < 0.5 then
                     Logger.log_debug("\ayIgnoring moveback because we just stuck a second ago - let's give it some time.")
                 else
-                    Movement:DoStickCmd("moveback %d", Config:GetSetting('MovebackDistance'))
+                    local behindMode = Config:GetSetting('MovebackWhenBehindMode') or 1
+                    if behindMode == 2 then
+                        local targetID = mq.TLO.Target.ID() or 0
+                        if targetID > 0 and not mq.TLO.Target.Dead() then
+                            Movement:DoStickCmd("id %d snaproll rear loose uw", targetID)
+                            Core.DoCmd("/face fast")
+                        else
+                            Movement:DoStickCmd("moveback %d", Config:GetSetting('MovebackDistance'))
+                        end
+                    else
+                        Movement:DoStickCmd("moveback %d", Config:GetSetting('MovebackDistance'))
+                    end
                     Movement:SetLastStickTimer(Globals.GetTimeSeconds())
                 end
             end

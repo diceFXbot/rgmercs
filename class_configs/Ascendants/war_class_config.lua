@@ -9,6 +9,10 @@ local Logger      = require("utils.logger")
 local Set         = require('mq.set')
 local Combat      = require("utils.combat")
 
+local AVATAR_SPELL_ID = 2434
+local AVATAR_MIN_SECONDS = 60
+local BATTLE_LEAP_LOCKOUT_UNTIL = 0
+
 
 local _ClassConfig = {
     _version          = "2.2 - Live",
@@ -455,6 +459,13 @@ local _ClassConfig = {
                     return Casting.SelfBuffAACheck(aaName)
                 end,
             },
+            {
+                name = "Elemental Form: Fire",
+                type = "AA",
+                cond = function(self, aaName)
+                    return Casting.SelfBuffAACheck(aaName)
+                end,
+            },
             { --Charm Click, name function stops errors in rotation window when slot is empty
                 name_func = function() return mq.TLO.Me.Inventory("Charm").Name() or "CharmClick(Missing)" end,
                 type = "Item",
@@ -474,10 +485,19 @@ local _ClassConfig = {
                 type = "AA",
             },
             {
+                name_func = function(self) return Casting.GetFirstAA({ "Enhanced Area Taunt", "Area Taunt", }) end,
+                type = "AA",
+                load_cond = function(self) return Casting.CanUseAA("Enhanced Area Taunt") or Casting.CanUseAA("Area Taunt") end,
+                cond = function(self, aaName, target)
+                    return Config:GetSetting('DoAETaunt') and Combat.AETauntCheck(true)
+                end,
+            },
+            {
                 name = "Taunt",
                 type = "Ability",
                 cond = function(self, abilityName, target)
-                    return Targeting.GetTargetDistance(target) < 30
+                    local myAggro = mq.TLO.Me.PctAggro() or (target and target.PctAggro and target.PctAggro() or 100)
+                    return Targeting.GetTargetDistance(target) < 30 and myAggro < 100
                 end,
             },
             {
@@ -733,6 +753,30 @@ local _ClassConfig = {
         },
         ['Combat'] = {
             {
+                name = "Avatar 2HPrimal",
+                type = "CustomFunc",
+                cond = function(self)
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return (not avatarBuff() or avatarRemaining < AVATAR_MIN_SECONDS) and not mq.TLO.Me.Bandolier("2HPrimal").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate 2HPrimal")
+                end,
+            },
+            {
+                name = "Avatar Dual",
+                type = "CustomFunc",
+                cond = function(self)
+                    local avatarBuff = mq.TLO.Me.FindBuff("id " .. AVATAR_SPELL_ID)
+                    local avatarRemaining = avatarBuff() and (avatarBuff.Duration.TotalSeconds() or 0) or 0
+                    return avatarBuff() and avatarRemaining >= AVATAR_MIN_SECONDS and not mq.TLO.Me.Bandolier("dual").Active()
+                end,
+                custom_func = function(self)
+                    Core.DoCmd("/bandolier activate dual")
+                end,
+            },
+            {
                 name = "ShieldHit",
                 type = "Disc",
             },
@@ -748,7 +792,14 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Config:GetSetting('DoBattleLeap') then return false end
-                    return not mq.TLO.Me.HeadWet() --Stops Leap from launching us above the water's surface
+                    if Globals.GetTimeSeconds() < BATTLE_LEAP_LOCKOUT_UNTIL then return false end
+                    return not mq.TLO.Me.HeadWet() and Casting.AAReady(aaName) --Stops Leap from launching us above the water's surface
+                end,
+                post_activate = function(self, aaName, success)
+                    local now = Globals.GetTimeSeconds()
+                    local timerMs = mq.TLO.Me.AltAbilityTimer(aaName)() or 0
+                    local lockoutSeconds = timerMs > 0 and math.ceil(timerMs / 1000) or Config:GetSetting('BattleLeapFallbackLockout')
+                    BATTLE_LEAP_LOCKOUT_UNTIL = now + math.max(1, lockoutSeconds)
                 end,
             },
             {
@@ -845,6 +896,17 @@ local _ClassConfig = {
             Category = "Direct",
             Tooltip = "Do Battle Leap",
             Default = true,
+        },
+        ['BattleLeapFallbackLockout'] = {
+            DisplayName = "Battle Leap Fallback Lockout",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Tooltip = "Fallback lockout in seconds when server AA cooldown info is unreliable (common on emu).",
+            Default = 12,
+            Min = 1,
+            Max = 120,
+            ConfigType = "Advanced",
         },
         ['DoPress']          = {
             DisplayName = "Do Press the Attack",
