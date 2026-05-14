@@ -18,7 +18,9 @@ Module.CommandHandlers = {}
 Module.NamedList       = {}
 Module.LastNamedCheck  = 0
 
-Module.DefNamed        = Globals.CurServer == "EQ Might" and (NamedEQMight or {}) or (NamedDefault or {})
+local serverNormalized = (Globals.CurServer or ""):gsub("%s+", ""):lower()
+local useEQMightNamedList = serverNormalized == "eqmight" or serverNormalized == "projectmight"
+Module.DefNamed        = useEQMightNamedList and (NamedEQMight or {}) or (NamedDefault or {})
 
 Module.DefaultConfig   = {
     [string.format("%s_Popped", Module._name)] = {
@@ -72,12 +74,14 @@ function Module:RefreshNamedCache()
 
         for _, n in ipairs(self.DefNamed[zoneName] or {}) do
             self.NamedList[n] = true
+            self.NamedList[n:lower()] = true
         end
 
         zoneName = mq.TLO.Zone.ShortName():lower()
 
         for _, n in ipairs(self.DefNamed[zoneName] or {}) do
             self.NamedList[n] = true
+            self.NamedList[n:lower()] = true
         end
     end
 end
@@ -124,7 +128,9 @@ function Module:IsNamed(spawn)
 
     self:RefreshNamedCache()
 
-    local cleanNameFixed = spawn.CleanName()
+    local spawnName = spawn.Name() or ""
+    local cleanName = spawn.CleanName() or ""
+    local cleanNameFixed = cleanName
     if cleanNameFixed then
         -- if first or last character is a space then remove it.
         while cleanNameFixed:sub(1, 1) == " " do
@@ -135,7 +141,19 @@ function Module:IsNamed(spawn)
         end
     end
 
-    if self.NamedList[spawn.Name()] or self.NamedList[spawn.CleanName()] or self.NamedList[cleanNameFixed] then return true end
+    local spawnNameLower = spawnName:lower()
+    local cleanNameLower = cleanName:lower()
+    local cleanNameFixedLower = cleanNameFixed:lower()
+
+    if self.NamedList[spawnName]
+        or self.NamedList[cleanName]
+        or self.NamedList[cleanNameFixed]
+        or self.NamedList[spawnNameLower]
+        or self.NamedList[cleanNameLower]
+        or self.NamedList[cleanNameFixedLower]
+    then
+        return true
+    end
 
     ---@diagnostic disable-next-line: undefined-field
     if Config:GetSetting('CheckSMForNamed') and mq.TLO.Plugin("MQ2SpawnMaster").IsLoaded() and mq.TLO.SpawnMaster.HasSpawn ~= nil and mq.TLO.SpawnMaster.HasSpawn(spawn.ID())() then return true end

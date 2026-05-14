@@ -251,6 +251,8 @@ Module.CombatTargetTypes                   = { 'Self', 'Pet', 'Main Assist', 'Au
 Module.NonCombatTargetTypes                = { 'Self', 'Pet', 'Main Assist', 'Mercs Peer', 'Rotation Target', }
 Module.RotationTargetTypes                 = { 'Rotation Target', }
 Module.MercPeerTargetTypes                 = { 'Mercs Peer', }
+Module.ClickyCombatTargetTypes             = { 'Self', 'Pet', 'Main Assist', 'Auto Target', 'Group Members', 'Mercs Peer', 'Rotation Target', }
+Module.ClickyNonCombatTargetTypes          = { 'Self', 'Pet', 'Main Assist', 'Group Members', 'Mercs Peer', 'Rotation Target', }
 Module.CombatStates                        = { 'Downtime', 'Combat', 'Any', 'During Rotation', 'During Heal Rotation', }
 Module.ImpliedCondition                    = {
     render_header_text = function(_, _)
@@ -712,6 +714,26 @@ Module.LogicBlocks                         = {
     },
 
     {
+        name = "Spell Gems Are In Global Cooldown",
+        cond = function(self, target, peerData, negate)
+            local inGlobalCooldown = mq.TLO.Me.SpellInCooldown() or false
+            if negate then
+                return not inGlobalCooldown
+            else
+                return inGlobalCooldown
+            end
+        end,
+        tooltip = "Only use when spell gems are (not) in global cooldown. (Optional Negate)",
+        render_header_text = function(self, cond)
+            return string.format("Spell gems are %sin global cooldown.", cond.args[1] and "not " or "")
+        end,
+        cond_targets = { "Self", },
+        args = {
+            { name = "Negate", type = "boolean", default = false, },
+        },
+    },
+
+    {
         name = "No Disc is Active",
         cond = function(self, target, peerData, negate)
             if negate then
@@ -745,6 +767,28 @@ Module.LogicBlocks                         = {
         end,
         args = {
             { name = "Negate", type = "boolean", default = false, },
+        },
+    },
+    {
+        name = "Target Con Is At Least ...",
+        cond = function(self, target, peerData, minCon, negate)
+            if not (target and target()) then return false end
+            local conName = (target.ConColor and target.ConColor() or "Grey"):upper()
+            local conLevel = Globals.Constants.ConColorsNameToId[conName] or 1
+            local threshold = tonumber(minCon) or 1
+            local pass = conLevel >= threshold
+            return negate and not pass or pass
+        end,
+        cond_targets = { "Auto Target", "Rotation Target", "Main Assist", },
+        tooltip = "Only use when the target Con color is at/above the selected threshold (e.g. Blue and higher).",
+        render_header_text = function(self, cond)
+            local threshold = tonumber(cond.args[1]) or 1
+            local conName = Globals.Constants.ConColors[threshold] or "Grey"
+            return string.format("Target Con is %s%s", cond.args[2] and "below " or "at least ", conName)
+        end,
+        args = {
+            { name = ">= Con ID (Grey=1 ... Red=7)", type = "number",  default = 4, min = 1, max = #Globals.Constants.ConColors, },
+            { name = "Negate",                       type = "boolean", default = false, },
         },
     },
 
@@ -1062,6 +1106,14 @@ Module.MercPeerTargetTypeIDs = {}
 for k, v in pairs(Module.MercPeerTargetTypes) do
     Module.MercPeerTargetTypeIDs[v] = k
 end
+Module.ClickyCombatTargetTypeIDs = {}
+for k, v in pairs(Module.ClickyCombatTargetTypes) do
+    Module.ClickyCombatTargetTypeIDs[v] = k
+end
+Module.ClickyNonCombatTargetTypeIDs = {}
+for k, v in pairs(Module.ClickyNonCombatTargetTypes) do
+    Module.ClickyNonCombatTargetTypeIDs[v] = k
+end
 Module.CombatStateIDs = {}
 for k, v in pairs(Module.CombatStates) do
     Module.CombatStateIDs[v] = k
@@ -1307,6 +1359,14 @@ function Module:RenderConditionTargetCombo(cond, condIdx, combatState)
     if not condBlock or not condBlock.cond_targets then
         return
     end
+    if #condBlock.cond_targets <= 1 then
+        local forcedTarget = condBlock.cond_targets[1] or "Self"
+        if cond.target ~= forcedTarget then
+            cond.target = forcedTarget
+            Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
+        end
+        return
+    end
     if ImGui.BeginTable("##clicky_cond_target_table_" .. condIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 50)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
@@ -1360,12 +1420,12 @@ function Module:RenderClickyTargetCombo(clicky, clickyIdx)
         else
             local targetTypeIDs, targetTypes, defaultTarget
             if clicky.combat_state == "Downtime" then
-                targetTypeIDs = self.NonCombatTargetTypeIDs
-                targetTypes   = self.NonCombatTargetTypes
+                targetTypeIDs = self.ClickyNonCombatTargetTypeIDs
+                targetTypes   = self.ClickyNonCombatTargetTypes
                 defaultTarget = "Self"
             else
-                targetTypeIDs = self.CombatTargetTypeIDs
-                targetTypes   = self.CombatTargetTypes
+                targetTypeIDs = self.ClickyCombatTargetTypeIDs
+                targetTypes   = self.ClickyCombatTargetTypes
                 defaultTarget = "Self"
             end
 
@@ -1378,7 +1438,7 @@ function Module:RenderClickyTargetCombo(clicky, clickyIdx)
         end
         ImGui.EndTable()
         Ui.Tooltip(
-            "Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target\nMercs Peer - A character running RGMercs on the same network\nRotation Target - The target passed in by the active rotation")
+            "Target Types\nSelf - This PC\nPet - This PC's pet\nMain Assist - The current RGMercs Main Assist\nAuto Target - The current RGMercs Combat Auto Target\nGroup Members - This PC + in-zone group members (first valid target)\nMercs Peer - A character running RGMercs on the same network\nRotation Target - The target passed in by the active rotation")
     end
 
     if clicky.target == "Mercs Peer" then
@@ -1400,23 +1460,25 @@ end
 
 function Module:RenderClickyNoTargetChangeToggle(clicky, clickyIdx)
     local isRotationTarget = clicky.target == "Rotation Target"
+    local isGroupMembers = clicky.target == "Group Members"
+    local forceTargetChange = isRotationTarget or isGroupMembers
     if ImGui.BeginTable("##clicky_target_no_change_table_" .. clickyIdx, 2, bit32.bor(ImGuiTableFlags.None)) then
         ImGui.TableSetupColumn("Key", ImGuiTableColumnFlags.WidthFixed, 140)
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0)
         ImGui.TableNextColumn()
         Ui.RenderText("Don't Change Target")
         ImGui.TableNextColumn()
-        ImGui.BeginDisabled(isRotationTarget)
+        ImGui.BeginDisabled(forceTargetChange)
         local new_no_target_change, clicked = Ui.RenderOptionToggle("##clicky_no_target_change_" .. clickyIdx, "",
             clicky.no_target_change)
         ImGui.EndDisabled()
 
-        if isRotationTarget and clicky.no_target_change then
+        if forceTargetChange and clicky.no_target_change then
             clicky.no_target_change = false
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
         end
 
-        if not isRotationTarget and clicked then
+        if not forceTargetChange and clicked then
             clicky.no_target_change = new_no_target_change
             Config:SetSetting('Clickies', Config:GetSetting('Clickies'))
         end
@@ -1996,6 +2058,43 @@ function Module:GiveTime()
                             elseif clicky.target == "Auto Target" then
                                 target = Targeting.GetAutoTarget()
                                 buffCheckPassed = target and Casting.DetItemCheck(clicky.itemName, target)
+                            elseif clicky.target == "Group Members" then
+                                buffCheckPassed = false
+
+                                local groupTargets = { mq.TLO.Me, }
+                                local groupCount = mq.TLO.Group.Members() or 0
+                                for i = 1, groupCount do
+                                    local member = mq.TLO.Group.Member(i)
+                                    if member and member() and (member.ID() or 0) > 0 and member.ID() ~= mq.TLO.Me.ID() then
+                                        local memberSpawn = mq.TLO.Spawn(member.ID())
+                                        if memberSpawn and memberSpawn() then
+                                            table.insert(groupTargets, memberSpawn)
+                                        end
+                                    end
+                                end
+
+                                for _, candidate in ipairs(groupTargets) do
+                                    if candidate and candidate() and not candidate.Dead() then
+                                        local candidateId = candidate.ID() or 0
+                                        local candidateBuffCheck = false
+                                        if candidateId == mq.TLO.Me.ID() then
+                                            candidateBuffCheck = Casting.GroupBuffItemCheck(clicky.itemName, candidate) or
+                                                Casting.SelfBuffItemCheck(clicky.itemName)
+                                        elseif candidateId == (mq.TLO.Me.Pet.ID() or 0) then
+                                            candidateBuffCheck = Casting.PetBuffItemCheck(clicky.itemName)
+                                        elseif (candidate.Type() or ""):lower() == "pc" then
+                                            candidateBuffCheck = Casting.GroupBuffItemCheck(clicky.itemName, candidate)
+                                        else
+                                            candidateBuffCheck = Casting.DetItemCheck(clicky.itemName, candidate)
+                                        end
+
+                                        if candidateBuffCheck then
+                                            target = candidate
+                                            buffCheckPassed = true
+                                            break
+                                        end
+                                    end
+                                end
                             elseif clicky.target == "Mercs Peer" then
                                 targetPeer = Comms.GetPeerHeartbeatByName(clicky.mercs_peer_name or "")
                                 local peerFound = (targetPeer and targetPeer.Data and targetPeer.Data.ID and (targetPeer.Data.Zone or "") == mq.TLO.Zone.Name()) or false

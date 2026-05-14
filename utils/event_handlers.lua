@@ -62,7 +62,7 @@ mq.event("CantSee", "You cannot see your target.", function()
                             end
 
                             Logger.log_debug("CantSee: Can't See target (%s [%d]). Naving to %d away.", target.CleanName() or "", target.ID(), desiredDistance)
-                            Movement:NavInCombat(target.ID(), desiredDistance, false, true)
+                            Movement:NavInCombat(target.ID(), desiredDistance, false, true, { allowCastBypass = true })
                         end
                     end
                 end

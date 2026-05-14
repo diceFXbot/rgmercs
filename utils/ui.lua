@@ -3283,7 +3283,12 @@ function Ui.RenderLogo(textureId)
 end
 
 function Ui.RenderText(text, ...)
-    local formattedText = string.format(text, ...)
+    local formattedText
+    if select('#', ...) > 0 then
+        formattedText = string.format(text, ...)
+    else
+        formattedText = tostring(text)
+    end
     local afConfig = Config:GetSetting('EnableAFUI')
     local textSizeX, textSizeY = ImGui.CalcTextSize(formattedText)
     local startPos = ImGui.GetCursorPosVec()
@@ -3296,7 +3301,12 @@ function Ui.RenderText(text, ...)
 end
 
 function Ui.RenderColoredText(color, text, ...)
-    local formattedText = string.format(text, ...)
+    local formattedText
+    if select('#', ...) > 0 then
+        formattedText = string.format(text, ...)
+    else
+        formattedText = tostring(text)
+    end
     local afConfig = Config:GetSetting('EnableAFUI')
     local textSizeX, textSizeY = ImGui.CalcTextSize(formattedText)
     local startPos = ImGui.GetCursorPosVec()

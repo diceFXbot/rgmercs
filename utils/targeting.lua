@@ -647,18 +647,18 @@ function Targeting.MobHasLowHP(target)
     return threshold > Targeting.GetTargetPctHPs(target)
 end
 
---- Returns true if the target's HP% is below the BigHealPoint setting.
+--- Returns true if the target's HP% is below the EmergencyHealPoint setting.
 --- @param target MQSpawn|groupmember
 --- @return boolean
 function Targeting.BigHealsNeeded(target)
-    return (target.PctHPs() or 999) < Config:GetSetting('BigHealPoint')
+    return (target.PctHPs() or 999) < Config:GetSetting('EmergencyHealPoint')
 end
 
---- Returns true if the target's HP% is below the MainHealPoint setting.
+--- Returns true if the target's HP% is below the SingleHealPoint setting.
 --- @param target MQSpawn|groupmember
 --- @return boolean
 function Targeting.MainHealsNeeded(target)
-    return (target.PctHPs() or 999) < Config:GetSetting('MainHealPoint')
+    return (target.PctHPs() or 999) < Config:GetSetting('SingleHealPoint')
 end
 
 --- Returns true if the target's HP% is below the LightHealPoint setting.
@@ -668,16 +668,16 @@ function Targeting.LightHealsNeeded(target)
     return (target.PctHPs() or 999) < Config:GetSetting('LightHealPoint')
 end
 
---- Returns true if enough group members are below GroupHealPoint to warrant a group heal.
+--- Returns true if enough group members are below GroupHealStartPoint to warrant a group heal.
 --- @return boolean
 function Targeting.GroupHealsNeeded()
-    return (mq.TLO.Group.Injured(Config:GetSetting('GroupHealPoint'))() or 0) >= Config:GetSetting('GroupInjureCnt')
+    return (mq.TLO.Group.Injured(Config:GetSetting('GroupHealStartPoint'))() or 0) >= Config:GetSetting('GroupHealMinInjured')
 end
 
---- Returns true if enough group members are below BigHealPoint to warrant a big group heal.
+--- Returns true if enough group members are below EmergencyHealPoint to warrant a big group heal.
 --- @return boolean
 function Targeting.BigGroupHealsNeeded()
-    return (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) >= Config:GetSetting('GroupInjureCnt')
+    return (mq.TLO.Group.Injured(Config:GetSetting('EmergencyHealPoint'))() or 0) >= Config:GetSetting('GroupHealMinInjured')
 end
 
 --- Returns a single-element list with the AutoTargetID if it matches the current target, else empty.

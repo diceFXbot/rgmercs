@@ -83,6 +83,7 @@ end
 function Core.DoCmd(cmd, ...)
     local formatted = cmd
     if ... ~= nil then formatted = string.format(cmd, ...) end
+
     Logger.log_debug("\atRGMercs \awsent MQ \amCommand\aw: >> \ag%s\aw <<", formatted)
     mq.cmd(formatted)
 end
@@ -467,7 +468,7 @@ function Core.OkayToNotHeal()
         Logger.log_verbose("OkayToNotHeal: We have a queued cure to process! Skipping.")
         return false
     end
-    return (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) == 0
+    return (mq.TLO.Group.Injured(Config:GetSetting('EmergencyHealPoint'))() or 0) == 0
 end
 
 --- Retrieves the resolved action map item for a given action.

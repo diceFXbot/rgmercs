@@ -13,6 +13,8 @@ local Core      = require("utils.core")
 local Logger    = require("utils.logger")
 local Combat    = require("utils.combat")
 
+local lastPetEquipInteractionId = 0
+
 return {
     _version          = "2.0 - Live",
     _author           = "Derple, Algar",
@@ -353,6 +355,9 @@ return {
             "Familiar",
             "Lesser Familiar",
             "Minor Familiar",
+        },
+        ['EciIcyFamiliar'] = {
+            "E'ci's Icy Familiar",
         },
         ['SelfRune1'] = {
             "Aegis of Feish",
@@ -1190,6 +1195,56 @@ return {
         },
         ['Downtime'] = {
             {
+                name = "PetEquipHail",
+                type = "CustomFunc",
+                cond = function(self)
+                    local petId = mq.TLO.Me.Pet.ID() or 0
+                    return petId > 0 and petId ~= lastPetEquipInteractionId
+                end,
+                custom_func = function(self)
+                    local me = mq.TLO.Me
+                    local petId = me.Pet.ID() or 0
+                    if petId <= 0 then return false end
+                    if petId == lastPetEquipInteractionId then return false end
+
+                    local oldTargetId = mq.TLO.Target.ID() or 0
+                    local function targetPetForInteract()
+                        Targeting.SetTarget(petId, true)
+                        local waitMs = 500
+                        while waitMs > 0 do
+                            if (mq.TLO.Target.ID() or 0) == petId then
+                                return true
+                            end
+                            mq.delay(20)
+                            waitMs = waitMs - 20
+                        end
+                        return false
+                    end
+
+                    if not targetPetForInteract() then
+                        Logger.log_debug("PetEquipHail: failed to target pet %d (likely target contention), will retry later.", petId)
+                        return false
+                    end
+
+                    Core.DoCmd("/hail")
+                    mq.delay(1000)
+
+                    if not targetPetForInteract() then
+                        Logger.log_debug("PetEquipHail: lost pet target %d before /say equip, will retry later.", petId)
+                        return false
+                    end
+
+                    Core.DoCmd("/say equip")
+                    lastPetEquipInteractionId = petId
+
+                    if oldTargetId > 0 and oldTargetId ~= petId and mq.TLO.Spawn(oldTargetId)() then
+                        Targeting.SetTarget(oldTargetId, true)
+                    end
+
+                    return true
+                end,
+            },
+            {
                 name = "SelfHPBuff",
                 type = "Spell",
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
@@ -1227,6 +1282,15 @@ return {
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell)
                     return (spell.Level() or 0) > (mq.TLO.Me.AltAbility("Improved Familiar").Spell.Level() or 0) and Casting.SelfBuffCheck(spell)
+                end,
+            },
+            {
+                name = "E'ci's Icy Familiar",
+                type = "AA",
+                load_cond = function(self) return Casting.CanUseAA("E'ci's Icy Familiar") end,
+                active_cond = function(self, aaName) return Casting.IHaveBuff(mq.TLO.Me.AltAbility(aaName).Spell.ID()) end,
+                cond = function(self, aaName)
+                    return Casting.SelfBuffAACheck(aaName)
                 end,
             },
             {

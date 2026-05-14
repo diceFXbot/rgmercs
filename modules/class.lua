@@ -1052,12 +1052,12 @@ end
 
 function Module:RunHealRotation()
     Logger.log_verbose("\ao[Heals] Checking for injured friends...")
-    self:HealById(Combat.FindWorstHurtGroupMember(Config:GetSetting('MaxHealPoint')))
+    self:HealById(Combat.FindWorstHurtGroupMember(Config:GetSetting('HealStartPoint')))
 
     if Config:GetSetting('UseHealList') then
-        self:HealById(Combat.FindWorstHurtHealList(Config:GetSetting('MaxHealPoint')))
+        self:HealById(Combat.FindWorstHurtHealList(Config:GetSetting('HealStartPoint')))
     else
-        self:HealById(Combat.FindWorstHurtXT(Config:GetSetting('MaxHealPoint')))
+        self:HealById(Combat.FindWorstHurtXT(Config:GetSetting('HealStartPoint')))
     end
 end
 
@@ -1613,11 +1613,24 @@ function Module:GiveTime()
         return
     end
 
+    local shouldSkipStandardRotations = false
+
     -- Healing happens first and anytime we aren't in downtime while invis and set not to break it.
     if self:IsHealing() then
         if not (combat_state == "Downtime" and mq.TLO.Me.Invis() and not Config:GetSetting('BreakInvisForHealing')) then
             self:RunEmergencyRotation(combat_state, enabledRotations)
             self:RunHealRotation()
+
+            local healStartPoint = Config:GetSetting('HealStartPoint')
+            local hasGroupHealTarget = Combat.FindWorstHurtGroupMember(healStartPoint) > 0
+            local hasExternalHealTarget = false
+            if Config:GetSetting('UseHealList') then
+                hasExternalHealTarget = Combat.FindWorstHurtHealList(healStartPoint) > 0
+            else
+                hasExternalHealTarget = Combat.FindWorstHurtXT(healStartPoint) > 0
+            end
+
+            shouldSkipStandardRotations = hasGroupHealTarget or hasExternalHealTarget
         end
     end
 
@@ -1663,16 +1676,22 @@ function Module:GiveTime()
         self:RunCounterRotation()
     end
 
-    if self:IsTanking() and Config:GetSetting('MovebackWhenBehind') then
-        -- make sure nothing is behind us when tanking.
+    if Config:GetSetting('MovebackWhenBehind') then
+        -- make sure nothing is behind us when this setting is enabled.
         -- Maybe spawn search is failing us -- look through the xtarget list
-        local xtCount = mq.TLO.Me.XTarget()
+        local xtCount = mq.TLO.Me.XTarget() or 0
 
         for i = 1, xtCount do
             local xtSpawn = mq.TLO.Me.XTarget(i)
-            if xtSpawn and xtSpawn.ID() > 0 and not xtSpawn.Dead() and not xtSpawn.Fleeing() and (math.ceil(xtSpawn.PctHPs() or 0)) > 0 and (xtSpawn.Aggressive() or xtSpawn.TargetType():lower() == "auto hater" or xtSpawn.ID() == Globals.ForceTargetID) and Globals.Constants.RGNotMezzedAnims:contains(xtSpawn.Animation()) and math.abs((mq.TLO.Me.Heading.Degrees() - (xtSpawn.Heading.Degrees() or 0))) < 100 then
-                Logger.log_debug("\arXT(%s) is behind us! \atTaking evasive maneuvers! \awMyHeader(\am%d\aw) ThierHeading(\am%d\aw)", xtSpawn.DisplayName() or "",
-                    mq.TLO.Me.Heading.Degrees(), (xtSpawn.Heading.Degrees() or 0))
+            local myHeading = mq.TLO.Me.Heading.DegreesCCW() or 0
+            -- Heading from me -> spawn. This indicates where the mob is positioned around me.
+            local spawnRelativeHeading = xtSpawn and xtSpawn.HeadingTo.DegreesCCW() or myHeading
+            local headingDelta = math.abs(((spawnRelativeHeading - myHeading + 180) % 360) - 180)
+            -- Behind check must use relative position (delta from my facing), not mob's own facing.
+            local isBehindMe = headingDelta > 100
+            if xtSpawn and xtSpawn.ID() > 0 and not xtSpawn.Dead() and not xtSpawn.Fleeing() and (math.ceil(xtSpawn.PctHPs() or 0)) > 0 and (xtSpawn.Aggressive() or xtSpawn.TargetType():lower() == "auto hater" or xtSpawn.ID() == Globals.ForceTargetID) and Globals.Constants.RGNotMezzedAnims:contains(xtSpawn.Animation()) and isBehindMe then
+                Logger.log_debug("\arXT(%s) is behind us! \atTaking evasive maneuvers! \awMyHeading(\am%d\aw) Relative(\am%d\aw) Delta(\am%d\aw)", xtSpawn.DisplayName() or "",
+                    myHeading, spawnRelativeHeading, headingDelta)
                 if Globals.GetTimeSeconds() - Movement:GetLastStickTimer() < 0.5 then
                     Logger.log_debug("\ayIgnoring moveback because we just stuck a second ago - let's give it some time.")
                 else
@@ -1697,6 +1716,12 @@ function Module:GiveTime()
     -- stop singing after pause so we can take over again (if we are active, we will stop our own songs). If paused, allow user to manage their own songs.
     if Core.MyClassIs("BRD") and not Globals.PauseMain and mq.TLO.Me.Casting() ~= nil and not mq.TLO.Window("CastingWindow").Open() then
         Core.DoCmd("/stopsong")
+    end
+
+    if shouldSkipStandardRotations then
+        Logger.log_verbose("\aySkipping standard rotations because heal-eligible targets remain below HealStartPoint.")
+        self.TempSettings.CurrentRotationStateType = 0
+        return
     end
 
     -- Downtime rotation will just run a full rotation to completion

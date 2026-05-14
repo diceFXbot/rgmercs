@@ -12,6 +12,7 @@ local Combat      = require("utils.combat")
 local AVATAR_SPELL_ID = 2434
 local AVATAR_MIN_SECONDS = 60
 local BATTLE_LEAP_LOCKOUT_UNTIL = 0
+local lastPetEquipInteractionId = 0
 
 
 local _ClassConfig = {
@@ -375,6 +376,56 @@ local _ClassConfig = {
     },
     ['Rotations']     = {
         ['Downtime'] = {
+            {
+                name = "PetEquipHail",
+                type = "CustomFunc",
+                cond = function(self)
+                    local petId = mq.TLO.Me.Pet.ID() or 0
+                    return petId > 0 and petId ~= lastPetEquipInteractionId
+                end,
+                custom_func = function(self)
+                    local me = mq.TLO.Me
+                    local petId = me.Pet.ID() or 0
+                    if petId <= 0 then return false end
+                    if petId == lastPetEquipInteractionId then return false end
+
+                    local oldTargetId = mq.TLO.Target.ID() or 0
+                    local function targetPetForInteract()
+                        Targeting.SetTarget(petId, true)
+                        local waitMs = 500
+                        while waitMs > 0 do
+                            if (mq.TLO.Target.ID() or 0) == petId then
+                                return true
+                            end
+                            mq.delay(20)
+                            waitMs = waitMs - 20
+                        end
+                        return false
+                    end
+
+                    if not targetPetForInteract() then
+                        Logger.log_debug("PetEquipHail: failed to target pet %d (likely target contention), will retry later.", petId)
+                        return false
+                    end
+
+                    Core.DoCmd("/hail")
+                    mq.delay(1000)
+
+                    if not targetPetForInteract() then
+                        Logger.log_debug("PetEquipHail: lost pet target %d before /say equip, will retry later.", petId)
+                        return false
+                    end
+
+                    Core.DoCmd("/say equip")
+                    lastPetEquipInteractionId = petId
+
+                    if oldTargetId > 0 and oldTargetId ~= petId and mq.TLO.Spawn(oldTargetId)() then
+                        Targeting.SetTarget(oldTargetId, true)
+                    end
+
+                    return true
+                end,
+            },
             {
                 name = "EndRegen",
                 type = "Disc",
@@ -753,6 +804,19 @@ local _ClassConfig = {
         },
         ['Combat'] = {
             {
+                name = "Dire Charm (ENC)",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    local targetLevel = mq.TLO.Target.Level() or (target and target.Level() or 0)
+                    local shouldUseDireCharm = Config:GetSetting('CharmOn', true) and Config:GetSetting('DireCharm', true)
+                    local direCharmTargetLevel = Config:GetSetting('DireCharmMaxLvl', true) or 46
+                    return Casting.CanUseAA(aaName) and
+                        shouldUseDireCharm and
+                        mq.TLO.Me.Pet.ID() == 0 and
+                        targetLevel == direCharmTargetLevel
+                end,
+            },
+            {
                 name = "Avatar 2HPrimal",
                 type = "CustomFunc",
                 cond = function(self)
@@ -818,7 +882,20 @@ local _ClassConfig = {
                 type = "AA",
                 cond = function(self, aaName, target)
                     if not Config:GetSetting("DoAEDamage") then return false end
-                    return Combat.AETargetCheck(true)
+                    local minCount = Config:GetSetting('AETargetCnt')
+                    local maxCount = Config:GetSetting('MaxAETargetCnt')
+                    local haters = mq.TLO.SpawnCount("NPC xtarhater radius 40 zradius 50")()
+                    local haterPets = mq.TLO.SpawnCount("NPCpet xtarhater radius 40 zradius 50")()
+                    local totalHaters = haters + haterPets
+                    if totalHaters < minCount or totalHaters > maxCount then return false end
+
+                    if Config:GetSetting('SafeAEDamage') then
+                        local npcs = mq.TLO.SpawnCount("NPC radius 40 zradius 50")()
+                        local npcPets = mq.TLO.SpawnCount("NPCpet radius 40 zradius 50")()
+                        if totalHaters < (npcs + npcPets) then return false end
+                    end
+
+                    return true
                 end,
             },
             {

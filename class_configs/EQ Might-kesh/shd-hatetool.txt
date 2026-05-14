@@ -1,0 +1,70 @@
+・HateTools(AutoTarget)
+AutoTargetのヘイトを維持
+回転が起動する条件（入口）※以下はすべてAND
+自分 が Tankモード（Core.IsTanking()）
+対象は AutoTarget と現在ターゲットが一致している時だけ
+自分のHP が HPCritical より上
+戦闘中
+さらに HateToolsNeeded() が true
+（= AutoTarget相手で以下のどれか）
+自分のAggro < 100
+敵のSecondaryAggro > 60
+敵がNamed
+※ ここは「HateTools回転を評価する入口条件」。Namedであっても、各アクション条件が不成立なら実行成功はせず、
+後段ローテーションへ進む。
+
+中の各アクション条件
+Taunt: LostAutoTargetAggro() かつ 距離<30
+Terror/Terror2: DoTerror ON かつ 敵SecondaryAggro>60
+Terror3: DoTerror ON かつ 敵SecondaryAggro>80
+Xeno's Faceguard: アイテム所持時（明示condなし）
+
+
+
+・HateTools(AggroTarget)　複数アグロのAutoHaterにHateをばら撒く
+回転が起動する条件（入口）
+自分 が Tankモード
+TankAggroScan が ON
+対象は AggroTargetID（XTから拾った漏れ敵）がある時
+自分のHP が HPCritical より上
+戦闘中
+（※ HateToolsNeeded() は見ない）
+中の各アクション条件
+Taunt: 追加condなし（使えるなら使う）
+Terror/Terror2/Terror3: DoTerror ONなら候補（追加condなし）
+Xeno's Faceguard: アイテム所持時
+ForPower: 追加condなし
+
+AggroTargetID
+XT を1件ずつ見る
+xtId > 0
+xtId ~= AutoTargetID（主目標は除外）
+xtarg.Aggressive() == true または IsAutoHater(xtarg) == true
+xtarg.PctAggro() < 100（その敵のヘイトを完全維持できてない）
+距離が AssistRange 以内
+アニメ状態が有効（mez等除外）
+OkToEngagePreValidateId(xtId) を通る
+これを満たした最初の対象を AggroTargetID に設定します。
+なので質問の答えは、
+
+XTを見ている: はい
+その中のAuto Haterを見るか: はい（Aggressive と AutoHater の両方を対象）
+
+
+・Respect Forced Target は、TankAggroScan 時の動きを制御する設定です。
+ON（true）
+ForceTarget が指定されている間、TankAggroScan を中止
+つまり AggroTarget を探しに行かず、強制ターゲットを優先
+
+OFF（false）
+ForceTarget 中でも TankAggroScan を実行
+横漏れ敵の回収（AggroTargetID 更新）も行う
+
+現在ターゲットを ForceTarget にする
+/rgl forcetarget
+ID指定で ForceTarget にする
+/rgl forcetarget <id>
+解除する
+/rgl forcetargetclear
+自分の現在ターゲットIDを、受信側でも forcetarget に設定
+/dgae /rgl forcetarget ${Target.ID}

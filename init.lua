@@ -59,6 +59,58 @@ Globals.CurrentState  = "Downtime"
 
 local initPctComplete = 0
 local initMsg         = "Initializing RGMercs..."
+local deferredPeerMoveCmds = {}
+
+local function IsMovementPeerCommand(cmd)
+    if not cmd or cmd == "" then return false end
+    local lowerCmd = cmd:lower()
+    return lowerCmd:find("/nav[%s$]") ~= nil or
+        lowerCmd:find("/stick[%s$]") ~= nil or
+        lowerCmd:find("/afollow[%s$]") ~= nil or
+        lowerCmd:find("/moveto[%s$]") ~= nil
+end
+
+local function IsStandPeerCommand(cmd)
+    if not cmd or cmd == "" then return false end
+    -- Also matches wrapped forms like "/dgae /stand" or "/timed 5 /stand".
+    return cmd:lower():find("/stand[%s$]") ~= nil
+end
+
+local function IsBusyCastingForMoveGuard()
+    -- Me.Casting can briefly flicker nil; CastingWindow is a more stable client-side signal.
+    return mq.TLO.Me.Casting() ~= nil or mq.TLO.Window("CastingWindow").Open()
+end
+
+local function DeferPeerMoveCommand(from, cmd)
+    -- Keep only the latest queued move command per sender.
+    for i = #deferredPeerMoveCmds, 1, -1 do
+        if deferredPeerMoveCmds[i].From == from then
+            table.remove(deferredPeerMoveCmds, i)
+            break
+        end
+    end
+
+    table.insert(deferredPeerMoveCmds, {
+        From = from,
+        Cmd = cmd,
+        QueuedAt = Globals.GetTimeMS(),
+    })
+end
+
+local function ProcessDeferredPeerMoveCommands()
+    if #deferredPeerMoveCmds == 0 then return end
+    if Config:GetSetting('CastMovePriority') ~= 1 then return end
+    if IsBusyCastingForMoveGuard() then return end
+
+    local cmdsToRun = deferredPeerMoveCmds
+    deferredPeerMoveCmds = {}
+
+    for _, queued in ipairs(cmdsToRun) do
+        Logger.log_debug("Running deferred movement command from \am%s\aw after cast (%dms queued): \ag%s",
+            queued.From, Globals.GetTimeMS() - queued.QueuedAt, queued.Cmd)
+        Core.DoCmd(queued.Cmd)
+    end
+end
 
 -- UI --
 local SimpleUI        = require("ui.simple")
@@ -398,6 +450,7 @@ local function Main()
     Core.UpdateBuffs()
 
     Events.DoEvents()
+    ProcessDeferredPeerMoveCommands()
 
     Config:ValidatePeers()
 
@@ -478,8 +531,7 @@ local function Main()
         local target = mq.TLO.Target
         if target and target() and (target.ID() or 0) > 0 then
             local okCharmed, charmed = pcall(function() return target.Charmed() end)
-            local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
-            local isCharmed = okCharmed and charmed and okCharmId and charmId ~= nil
+            local isCharmed = okCharmed and charmed
 
             local targetType = (target.Type() or ""):lower()
             local masterType = ""
@@ -487,8 +539,10 @@ local function Main()
                 masterType = (target.Master.Type() or ""):lower()
             end
             local isPCOwnedPet = targetType == "pet" and masterType == "pc"
+            local myPetId = mq.TLO.Me.Pet.ID() or 0
+            local isMyPet = targetType == "pet" and myPetId > 0 and (target.ID() or 0) == myPetId
 
-            if isCharmed or isPCOwnedPet then
+            if (isCharmed or isPCOwnedPet) and not isMyPet then
                 Logger.log_debug("\ayCharmed/PC-owned pet target detected -- forcing attack off and clearing target.")
                 Core.DoCmd("/attack off")
                 Targeting.ClearTarget()
@@ -517,8 +571,7 @@ local function Main()
             local targetCharmed = false
             if target and target() then
                 local okCharmed, charmed = pcall(function() return target.Charmed() end)
-                local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
-                targetCharmed = okCharmed and charmed and okCharmId and charmId ~= nil
+                targetCharmed = okCharmed and charmed
             end
 
             if targetCharmed then
@@ -649,7 +702,26 @@ local script_actor = Comms.Actors.register(function(message)
     if msg.Event == "DoCmd" then
         --Logger.log_debug("Received Heartbeat from \am%s\aw: \ag%s", msg.From, Strings.TableToString(msg.Data))
         Logger.log_debug("Received Command from \am%s\aw: \ag%s", msg.From, msg.Data.cmd or "nil")
-        Core.DoCmd(msg.Data.cmd)
+        local peerCmd = msg.Data and msg.Data.cmd or ""
+        local shouldIgnoreStandCmd = Config:GetSetting('CastMovePriority') == 1 and
+            IsBusyCastingForMoveGuard() and
+            IsStandPeerCommand(peerCmd)
+        local shouldDeferMoveCmd = Config:GetSetting('CastMovePriority') == 1 and
+            IsBusyCastingForMoveGuard() and
+            IsMovementPeerCommand(peerCmd)
+
+        if shouldIgnoreStandCmd then
+            Logger.log_debug("Ignoring stand command from \am%s\aw while casting: \ag%s", msg.From, peerCmd)
+            return
+        end
+
+        if shouldDeferMoveCmd then
+            Logger.log_debug("Deferring movement command from \am%s\aw while casting: \ag%s", msg.From, peerCmd)
+            DeferPeerMoveCommand(msg.From, peerCmd)
+            return
+        end
+
+        Core.DoCmd(peerCmd)
         return
     end
 

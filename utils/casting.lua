@@ -1002,6 +1002,20 @@ function Casting.OkayToNuke(bRestrictBurns)
     return lowAggro and enoughMana
 end
 
+--- Checks if target meets configured minimum con color for DoTs.
+--- @param target MQSpawn|nil Optional target spawn; falls back to auto target/current target.
+--- @return boolean
+function Casting.OkayToDotByCon(target)
+    if not target then target = Targeting.GetAutoTarget() or mq.TLO.Target end
+    if not (target and target()) then return false end
+
+    local minCon = tonumber(Config:GetSetting('DotMinCon')) or 1
+    local conName = (target.ConColor and target.ConColor() or "Grey"):upper()
+    local conLevel = Globals.Constants.ConColorsNameToId[conName] or 1
+
+    return conLevel >= minCon
+end
+
 --- Determines if the PC can/should use buffs if their corpse is nearby.
 --- @return boolean True if the entity can be buffed, false otherwise.
 function Casting.AmIBuffable()
@@ -1341,6 +1355,27 @@ function Casting.NoDiscActive()
     return not mq.TLO.Me.ActiveDisc.ID()
 end
 
+--- Returns true when a discipline line is not currently usable (i.e. on cooldown or unavailable).
+--- Accepts an action-map key (e.g. "Protective") or a direct disc spell name.
+--- @param discName string
+--- @return boolean
+function Casting.DiscOnCoolDown(discName)
+    if not discName or discName == "" then return false end
+
+    local resolvedDisc = Core.GetResolvedActionMapItem(discName)
+    if not (resolvedDisc and resolvedDisc()) then
+        local rawSpell = mq.TLO.Spell(discName)
+        if rawSpell and rawSpell() and rawSpell.IsSkill() then
+            resolvedDisc = rawSpell
+        else
+            -- Strict mode: unresolved disc names are not treated as cooldown.
+            return false
+        end
+    end
+
+    return not Casting.DiscReady(resolvedDisc)
+end
+
 -- Check if an item has a clicky effect.
 function Casting.ItemHasClicky(itemName)
     local item = mq.TLO.FindItem(string.format("=%s", itemName or "None"))
@@ -1423,6 +1458,7 @@ function Casting.DotSpellCheck(spell, target)
     if not target then target = Targeting.GetAutoTarget() or mq.TLO.Target end
 
     if Targeting.MobHasLowHP(target) then return false end
+    if not Casting.OkayToDotByCon(target) then return false end
 
     return Casting.TargetBuffCheck(Casting.GetUseableSpellId(spell), target, true, false)
 end
@@ -1433,6 +1469,7 @@ function Casting.DotItemCheck(itemName, target)
     if not target then target = Targeting.GetAutoTarget() or mq.TLO.Target end
 
     if Targeting.MobHasLowHP(target) then return false end
+    if not Casting.OkayToDotByCon(target) then return false end
 
     return Casting.TargetBuffCheck(clickySpell.ID(), target, true, true)
 end
@@ -1550,8 +1587,9 @@ function Casting.CastCheck(spell, bAllowMove, bAllowCast)
     if not spell or not spell() then return false end
 
     local me = mq.TLO.Me
+    local castMovePriority = Config:GetSetting('CastMovePriority')
     local castingCheck = bAllowCast or (not (me.Casting() or mq.TLO.Window("CastingWindow").Open()))
-    local movingCheck = bAllowMove or Core.MyClassIs("brd") or not (me.Moving() and (spell.MyCastTime() or -1) > 0)
+    local movingCheck = bAllowMove or castMovePriority == 1 or Core.MyClassIs("brd") or not (me.Moving() and (spell.MyCastTime() or -1) > 0)
 
     local currentMana = me.CurrentMana()
     local currentEnd = me.CurrentEndurance()
@@ -1683,8 +1721,6 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
 
         Casting.ActionPrep()
 
-        retryCount = retryCount or 2
-
         local oldTargetId = mq.TLO.Target.ID()
         if targetId > 0 and targetId ~= oldTargetId then
             if Config:GetSetting('StopAttackForPCs') and me.Combat() and (targetSpawn.Type() or ""):lower() == "pc" then -- don't use helper here, don't want fallback to current target
@@ -1705,16 +1741,12 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
             cmd = string.format("/cast \"%s%s\"", Config:GetSetting('UseExactSpellNames') and "=" or "", spellName)
         end
 
-        Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
-
         local spellRange = spell.MyRange() > 0 and spell.MyRange() or (spell.AERange() > 0 and spell.AERange() or 250)
-        local castAttemptStart = Globals.GetTimeMS()
-        local maxCastAttemptMs = 5000
 
         if useMQ2CastForSpell then
             Logger.log_verbose("\ayUseSpell(): Attempting to cast via MQ2Cast: %s", spellName)
             Core.DoCmd(cmd)
-            mq.delay(500, function() return mq.TLO.Me.Casting() ~= nil end)
+            mq.delay(10)
             if mq.TLO.Me.Casting() ~= nil then
                 Logger.log_verbose("\ayUseSpell(): MQ2Cast started cast: %s - monitoring finish", spellName)
                 Casting.WaitCastFinish(targetSpawn, bAllowDead or false, spellRange)
@@ -1727,31 +1759,15 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
             return true
         end
 
-        repeat
-            if mq.TLO.Me.SpellReady(spellName)() or mq.TLO.Me.GemTimer(spellName)() == 0 then
-                Logger.log_verbose("\ayUseSpell(): Attempting to cast: %s", spellName)
-                Core.DoCmd(cmd)
-            end
-
+        if mq.TLO.Me.SpellReady(spellName)() or mq.TLO.Me.GemTimer(spellName)() == 0 then
+            Logger.log_verbose("\ayUseSpell(): Attempting to cast: %s", spellName)
+            Core.DoCmd(cmd)
             mq.delay(10)
-            mq.doevents()
-            Events.DoEvents()
-
             if mq.TLO.Me.Casting() ~= nil then
                 Logger.log_verbose("\ayUseSpell(): Started to cast: %s - waiting to finish", spellName)
                 Casting.WaitCastFinish(targetSpawn, bAllowDead or false, spellRange)
-                mq.doevents()
-                Events.DoEvents()
-                mq.delay(1)
-                Logger.log_verbose("\atUseSpell(): Finished waiting on cast: %s result = %s retries left = %d", spellName, Casting.GetLastCastResultName(), retryCount)
-
-                if Casting.GetLastCastResultName() == "CAST_NOTREADY" or Casting.GetLastCastResultName() == "CAST_RESULT_NONE" then
-                    Logger.log_verbose("\ayUseSpell(): Cast not ready yet, retrying without consuming retry count.")
-                else
-                    retryCount = retryCount - 1
-                end
             end
-        until Globals.Constants.CastCompleted:contains(Casting.GetLastCastResultName()) or retryCount < 0 or (Globals.GetTimeMS() - castAttemptStart) >= maxCastAttemptMs
+        end
 
         Globals.LastUsedSpell = spellName
         if mq.TLO.Target.ID() ~= oldTargetId and Combat.ValidCombatTarget(oldTargetId) and (oldTargetId == Globals.AutoTargetID or not Config:GetSetting('DoAutoTarget')) then
@@ -1850,66 +1866,47 @@ function Casting.UseSong(songName, targetId, bAllowMem, retryCount)
             classConfig.HelperFunctions.SwapInst(spell.Skill())
         end
 
-        retryCount = retryCount or 0
-
         local spellRange = spell.MyRange() > 0 and spell.MyRange() or (spell.AERange() > 0 and spell.AERange() or 250)
         local cmd = string.format("/cast \"%s%s\"", Config:GetSetting('UseExactSpellNames') and "=" or "", songName)
 
-        Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
+        Logger.log_verbose("\ayUseSong(): Attempting to sing: %s", songName)
+        Core.DoCmd(cmd)
+        mq.delay(10)
+        mq.doevents()
+        Events.DoEvents()
 
-        local castAttemptStart = Globals.GetTimeMS()
-        local maxCastAttemptMs = 5000
+        if mq.TLO.Window("CastingWindow").Open() then
+            -- If we /stopsong too soon after a cast, the server will re-open the cast window.
+            local cancelWait = 500
 
-        repeat
-            if Core.OnEMU() then
-                Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_SUCCESS)
-            end
-            Logger.log_verbose("\ayUseSong(): Attempting to sing: %s", songName)
-            Core.DoCmd(cmd)
-
-            mq.delay(10)
-            mq.doevents()
-            Events.DoEvents()
-
-            if mq.TLO.Window("CastingWindow").Open() then
-                -- If we /stopsong too soon after a cast, the server will re-open the cast window.
-                local cancelWait = 500
-
-                while mq.TLO.Window("CastingWindow").Open() do
-                    if not Globals.PauseMain or Config:GetSetting('RunMovePaused') then
-                        Modules:ExecModule("Movement", "GiveTime")
-                    end
-
-                    if cancelWait <= 0 then
-                        if (not targetSpawn or not targetSpawn() or Targeting.TargetIsType("corpse", targetSpawn)) and spell.SpellType() == "Detrimental" then
-                            Core.DoCmd("/stopsong")
-                            Logger.log_debug("UseSong(): Canceled singing %s because target is dead or no longer exists.", songName)
-                            break
-                        elseif targetSpawn() and Targeting.GetTargetID() > 0 and targetSpawn.ID() ~= Targeting.GetTargetID() and spell.SpellType() == "Detrimental" then
-                            Core.DoCmd("/stopsong")
-                            Logger.log_debug("UseSong(): Canceled singing %s because spellTarget(%s/%d) is no longer myTarget(%s/%d)", songName, targetSpawn.CleanName() or "",
-                                targetSpawn.ID(), Targeting.GetTargetCleanName(), Targeting.GetTargetID())
-                            break
-                        elseif targetSpawn() and Targeting.GetTargetDistance(targetSpawn) > (spellRange * 1.1) then
-                            Core.DoCmd("/stopsong")
-                            Logger.log_debug("UseSong(): Canceled singing %s because spellTarget(%d, range %d) is out of spell range(%d)", songName, targetSpawn.ID(),
-                                Targeting.GetTargetDistance(), spellRange)
-                            break
-                        end
-                    end
-                    mq.delay(20)
-                    mq.doevents()
-                    Events.DoEvents()
-                    cancelWait = cancelWait - 20
+            while mq.TLO.Window("CastingWindow").Open() do
+                if not Globals.PauseMain or Config:GetSetting('RunMovePaused') then
+                    Modules:ExecModule("Movement", "GiveTime")
                 end
 
-                if Casting.GetLastCastResultName() == "CAST_NOTREADY" or Casting.GetLastCastResultName() == "CAST_RESULT_NONE" then
-                    Logger.log_verbose("\ayUseSong(): Cast not ready yet, retrying without consuming retry count.")
-                else
-                    retryCount = retryCount - 1
+                if cancelWait <= 0 then
+                    if (not targetSpawn or not targetSpawn() or Targeting.TargetIsType("corpse", targetSpawn)) and spell.SpellType() == "Detrimental" then
+                        Core.DoCmd("/stopsong")
+                        Logger.log_debug("UseSong(): Canceled singing %s because target is dead or no longer exists.", songName)
+                        break
+                    elseif targetSpawn() and Targeting.GetTargetID() > 0 and targetSpawn.ID() ~= Targeting.GetTargetID() and spell.SpellType() == "Detrimental" then
+                        Core.DoCmd("/stopsong")
+                        Logger.log_debug("UseSong(): Canceled singing %s because spellTarget(%s/%d) is no longer myTarget(%s/%d)", songName, targetSpawn.CleanName() or "",
+                            targetSpawn.ID(), Targeting.GetTargetCleanName(), Targeting.GetTargetID())
+                        break
+                    elseif targetSpawn() and Targeting.GetTargetDistance(targetSpawn) > (spellRange * 1.1) then
+                        Core.DoCmd("/stopsong")
+                        Logger.log_debug("UseSong(): Canceled singing %s because spellTarget(%d, range %d) is out of spell range(%d)", songName, targetSpawn.ID(),
+                            Targeting.GetTargetDistance(), spellRange)
+                        break
+                    end
                 end
+                mq.delay(20)
+                mq.doevents()
+                Events.DoEvents()
+                cancelWait = cancelWait - 20
             end
-        until Globals.Constants.CastCompleted:contains(Casting.GetLastCastResultName()) or retryCount < 0 or (Globals.GetTimeMS() - castAttemptStart) >= maxCastAttemptMs
+        end
 
         -- if we interrupted ourselves earlier, we don't need to do this
         if mq.TLO.Me.Casting() then
@@ -1954,7 +1951,7 @@ function Casting.UseSong(songName, targetId, bAllowMem, retryCount)
             Targeting.SetTarget(oldTargetId, true)
         end
 
-        return Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS
+        return true
     end
 
     return false
@@ -2094,7 +2091,6 @@ function Casting.UseAA(aaName, targetId, bAllowDead, retryCount)
         Targeting.SetTarget(targetId, true)
     end
 
-    retryCount = retryCount or 2
     local useMQ2CastForAA = castMovePriority == 1
     local cmd = useMQ2CastForAA and string.format("/casting \"%s\" alt -targetid|%d", aaName, targetId) or string.format("/alt act %d", aaAbility.ID())
 
@@ -2102,7 +2098,7 @@ function Casting.UseAA(aaName, targetId, bAllowDead, retryCount)
 
     if useMQ2CastForAA then
         Core.DoCmd(cmd)
-        mq.delay(500, function() return mq.TLO.Me.Casting() ~= nil end)
+        mq.delay(10)
         if mq.TLO.Me.Casting() ~= nil then
             local aaRange = aaAbility.Spell.MyRange() > 0 and aaAbility.Spell.MyRange() or (aaAbility.Spell.AERange() > 0 and aaAbility.Spell.AERange() or 250)
             Logger.log_verbose("\ayUseAA(): MQ2Cast started cast: %s - monitoring finish", aaName)
@@ -2116,23 +2112,14 @@ function Casting.UseAA(aaName, targetId, bAllowDead, retryCount)
     end
 
     if aaCastTime > 0 then
-        Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
-
         local spellRange = aaAbility.Spell.MyRange() > 0 and aaAbility.Spell.MyRange() or (aaAbility.Spell.AERange() > 0 and aaAbility.Spell.AERange() or 250)
-
-        repeat
-            Logger.log_verbose("\ayUseAA(): Attempting to cast: %s", aaName)
-            Core.DoCmd(cmd)
-            Logger.log_verbose("\ayUseAA(): Waiting to start cast: %s", aaName)
-            mq.delay("1s", function() return mq.TLO.Me.Casting() ~= nil end)
+        Logger.log_verbose("\ayUseAA(): Attempting to cast: %s", aaName)
+        Core.DoCmd(cmd)
+        mq.delay(10)
+        if mq.TLO.Me.Casting() ~= nil then
             Logger.log_verbose("\ayUseAA(): Started to cast: %s - waiting to finish", aaName)
             Casting.WaitCastFinish(targetSpawn, bAllowDead or false, spellRange)
-            mq.doevents()
-            Events.DoEvents()
-            mq.delay(1)
-            Logger.log_verbose("\atUseAA(): Finished waiting on cast: %s result = %s retries left = %d", aaName, Casting.GetLastCastResultName(), retryCount)
-            retryCount = retryCount - 1
-        until Globals.Constants.CastCompleted:contains(Casting.GetLastCastResultName()) or retryCount < 0
+        end
     else
         Core.DoCmd(cmd)
         mq.delay(5)
@@ -2210,19 +2197,20 @@ function Casting.UseItem(itemName, targetId)
     end
 
     local oldTargetId = mq.TLO.Target.ID()
+    local explicitTargetId = (targetId and targetId > 0 and targetId ~= mq.TLO.Me.ID()) and targetId or nil
 
-    if targetId then
-        local targetSpawn = mq.TLO.Spawn(targetId)
+    if explicitTargetId then
+        local targetSpawn = mq.TLO.Spawn(explicitTargetId)
 
-        if targetId > 0 and targetId ~= oldTargetId then
+        if explicitTargetId ~= oldTargetId then
             if Config:GetSetting('StopAttackForPCs') and me.Combat() and (targetSpawn.Type() or ""):lower() == "pc" then -- don't use helper here, don't want fallback to current target
                 Logger.log_debug("\awUseItem():NOTICE:\ax Turning off autoattack to cast on a PC.")
                 Core.DoCmd("/attack off")
                 mq.delay("2s", function() return not me.Combat() end)
             end
 
-            Logger.log_debug("\awUseItem():NOTICE:\ax Swapping target to %s [%d] to use %s", targetSpawn.DisplayName(), targetId, itemName)
-            Targeting.SetTarget(targetId, true)
+            Logger.log_debug("\awUseItem():NOTICE:\ax Swapping target to %s [%d] to use %s", targetSpawn.DisplayName(), explicitTargetId, itemName)
+            Targeting.SetTarget(explicitTargetId, true)
         end
     end
 
@@ -2236,14 +2224,14 @@ function Casting.UseItem(itemName, targetId)
     Logger.log_debug("\awUseItem(\ag%s\aw): Using Item!", itemName)
 
     local useMQ2CastForItem = castMovePriority == 1
-    local cmd = useMQ2CastForItem and string.format("/casting \"%s\" item -targetid|%d", itemName, targetId or 0) or string.format("/useitem \"%s\"", itemName)
+    local cmd = useMQ2CastForItem and string.format("/casting \"%s\" item -targetid|%d", itemName, explicitTargetId or 0) or string.format("/useitem \"%s\"", itemName)
     Core.DoCmd(cmd)
     Logger.log_debug("Running: \at'%s' [%d]", cmd, castTime or 0)
 
     if useMQ2CastForItem then
-        mq.delay(500, function() return mq.TLO.Me.Casting() ~= nil end)
+        local monitorTarget = explicitTargetId and mq.TLO.Spawn(explicitTargetId) or nil
+        mq.delay(10)
         if mq.TLO.Me.Casting() ~= nil then
-            local monitorTarget = targetId and mq.TLO.Spawn(targetId) or nil
             Logger.log_verbose("\awUseItem(): MQ2Cast started cast: %s - monitoring finish", itemName)
             Casting.WaitCastFinish(monitorTarget, monitorTarget and monitorTarget() and false or true, 250)
         end
@@ -2330,6 +2318,38 @@ function Casting.ActionPrep()
     end
 end
 
+local function HasPendingHealTargets()
+    local healStartPoint = Config:GetSetting('HealStartPoint')
+    if not healStartPoint then return false end
+
+    if Combat.FindWorstHurtGroupMember(healStartPoint) > 0 then return true end
+
+    if Config:GetSetting('UseHealList') then
+        return Combat.FindWorstHurtHealList(healStartPoint) > 0
+    end
+
+    return Combat.FindWorstHurtXT(healStartPoint) > 0
+end
+
+local function CurrentCastLooksLikeHeal(target)
+    if not target or not target() then return false end
+    if not (Targeting.TargetIsType("pc", target) or Targeting.TargetIsType("pet", target) or Targeting.TargetIsType("mercenary", target)) then
+        return false
+    end
+
+    local healStartPoint = Config:GetSetting('HealStartPoint') or 0
+    local targetHp = target.PctHPs() or 100
+    return targetHp > 0 and targetHp < healStartPoint
+end
+
+local function ShouldInterruptForHeals(target)
+    if not Config:GetSetting('InterruptForHeals') then return false end
+    if not Core.IsHealing() then return false end
+    if not HasPendingHealTargets() then return false end
+    if CurrentCastLooksLikeHeal(target) then return false end
+    return true
+end
+
 --- Waits for the casting to finish on the specified target.
 --- @param target MQSpawn The target to wait for the casting to finish.
 --- @param bAllowDead boolean Whether to allow the target to be dead.
@@ -2343,50 +2363,76 @@ function Casting.WaitCastFinish(target, bAllowDead, spellRange) --I am not veste
         local currentCast = mq.TLO.Me.Casting()
         Logger.log_super_verbose("WaitCastFinish(): Waiting to Finish Casting...")
         mq.delay(20)
+        local hasTarget = target and target()
+        local currentTargetId = Targeting.GetTargetID()
+
+        if ShouldInterruptForHeals(target) then
+            mq.TLO.Me.StopCast()
+            Globals.StopCast = true
+            Logger.log_debug("WaitCastFinish(): Canceled casting %s to prioritize healing.", currentCast)
+            return
+        end
+
         if castMovePriority == 2 and mq.TLO.Me.Moving() then
             mq.TLO.Me.StopCast()
             Logger.log_debug("WaitCastFinish(): Canceled casting %s because Move priority is active and character is moving.", currentCast)
             return
-        elseif target and target() then
+        elseif not bAllowDead and (not hasTarget or target.Dead() or Targeting.TargetIsType("corpse", target)) then
+            mq.TLO.Me.StopCast()
+            Logger.log_debug("WaitCastFinish(): Canceled casting %s because target is dead or no longer exists.", currentCast)
+            return
+        elseif not bAllowDead and hasTarget and currentTargetId == 0 and not Targeting.TargetIsMyself(target) then
+            mq.TLO.Me.StopCast()
+            Logger.log_debug("WaitCastFinish(): Canceled casting %s because current target is now empty.", currentCast)
+            return
+        elseif hasTarget and currentTargetId > 0 and target.ID() ~= currentTargetId then
+            mq.TLO.Me.StopCast()
+            Logger.log_debug("WaitCastFinish(): Canceled casting %s because spellTarget(%s/%d) is no longer myTarget(%s/%d)", currentCast, target.CleanName() or "",
+                target.ID(), Targeting.GetTargetCleanName(), currentTargetId)
+            return
+        elseif hasTarget and not Targeting.TargetIsMyself(target) and Targeting.GetTargetDistance(target) > (spellRange * 1.1) then --allow for slight movement in and out of range, if the target runs off, this is still easily triggered
+            mq.TLO.Me.StopCast()
+            Logger.log_debug("WaitCastFinish(): Canceled casting %s because spellTarget(%d, range %d) is out of spell range(%d)", currentCast, target.ID(),
+                Targeting.GetTargetDistance(), spellRange)
+            return
+        elseif hasTarget then
             local currentSpell = mq.TLO.Spell(currentCast)
-            local isDDOrDoT = false
+            local isDetrimental = false
             if currentSpell and currentSpell() then
-                local okDamageSPA, damageSPA = pcall(function() return currentSpell.HasSPA(0)() end)
-                isDDOrDoT = okDamageSPA and damageSPA
+                local okSpellType, spellType = pcall(function() return currentSpell.SpellType() end)
+                isDetrimental = okSpellType and spellType == "Detrimental"
             end
 
-            if isDDOrDoT then
+            if isDetrimental then
+                if not Targeting.GetTargetLOS(target) then
+                    mq.TLO.Me.StopCast()
+                    Logger.log_debug("WaitCastFinish(): Canceled damage cast %s because target(%s/%d) is out of line of sight.", currentCast,
+                        target.CleanName() or "", target.ID() or 0)
+                    return
+                end
+
                 local okMezzed, mezzed = pcall(function() return target.Mezzed() end)
                 local okMezId, mezId = pcall(function() return target.Mezzed.ID() end)
                 local targetMezzed = okMezzed and mezzed and okMezId and mezId ~= nil
 
                 local okCharmed, charmed = pcall(function() return target.Charmed() end)
-                local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
-                local targetCharmed = okCharmed and charmed and okCharmId and charmId ~= nil
+                local targetCharmed = okCharmed and charmed
+                local targetType = (target.Type() or ""):lower()
+                local masterType = ""
+                if targetType == "pet" and target.Master() then
+                    masterType = (target.Master.Type() or ""):lower()
+                end
+                local targetPCOwnedPet = targetType == "pet" and masterType == "pc"
 
-                if targetMezzed or targetCharmed then
+                if targetMezzed or targetCharmed or targetPCOwnedPet then
                     mq.TLO.Me.StopCast()
-                    Logger.log_debug("WaitCastFinish(): Canceled damage cast %s because target(%s/%d) is mezzed or charmed.", currentCast,
+                    Logger.log_debug("WaitCastFinish(): Canceled damage cast %s because target(%s/%d) is mezzed, charmed, or PC-owned pet.", currentCast,
                         target.CleanName() or "", target.ID() or 0)
                     return
                 end
             end
-        elseif (not target or not target() or Targeting.TargetIsType("corpse", target)) and not bAllowDead then
-            mq.TLO.Me.StopCast()
-            Logger.log_debug("WaitCastFinish(): Canceled casting %s because target is dead or no longer exists.", currentCast)
-            return
-        elseif target() and Targeting.GetTargetID() > 0 and target.ID() ~= Targeting.GetTargetID() then
-            mq.TLO.Me.StopCast()
-            Logger.log_debug("WaitCastFinish(): Canceled casting %s because spellTarget(%s/%d) is no longer myTarget(%s/%d)", currentCast, target.CleanName() or "",
-                target.ID(), Targeting.GetTargetCleanName(), Targeting.GetTargetID())
-            return
-        elseif target() and not Targeting.TargetIsMyself(target) and Targeting.GetTargetDistance(target) > (spellRange * 1.1) then --allow for slight movement in and out of range, if the target runs off, this is still easily triggered
-            mq.TLO.Me.StopCast()
-            Logger.log_debug("WaitCastFinish(): Canceled casting %s because spellTarget(%d, range %d) is out of spell range(%d)", currentCast, target.ID(),
-                Targeting.GetTargetDistance(), spellRange)
-            return
-        elseif target() and target.ID() ~= Targeting.GetTargetID() then
-            Logger.log_debug("WaitCastFinish(): Warning your spellTarget(%d) for %s is no longer your currentTarget(%d)", target.ID(), currentCast, Targeting.GetTargetID())
+        elseif hasTarget and target.ID() ~= currentTargetId then
+            Logger.log_debug("WaitCastFinish(): Warning your spellTarget(%d) for %s is no longer your currentTarget(%d)", target.ID(), currentCast, currentTargetId)
         end
 
         if (maxWaitOrig - maxWait) % 200 == 0 then

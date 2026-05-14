@@ -64,8 +64,21 @@ Config.TempSettings.PeerSettingToModuleCache             = {}
 Config.TempSettings.PeerSettingsCategoryToSettingMapping = {}
 Config.TempSettings.LastPeerConfigReceivedTime           = 0
 Config.TempSettings.ResetOptionsUIPosition               = false
+Config.TempSettings.SettingAliasLowerToNameCache         = {}
 
 Config.TempSettings.HighlightedModules                   = Set.new({})
+
+Config.SettingAliases                                    = {
+    MaxHealPoint = "HealStartPoint",
+    MainHealPoint = "SingleHealPoint",
+    BigHealPoint = "EmergencyHealPoint",
+    GroupHealPoint = "GroupHealStartPoint",
+    GroupInjureCnt = "GroupHealMinInjured",
+}
+
+for legacyName, canonicalName in pairs(Config.SettingAliases) do
+    Config.TempSettings.SettingAliasLowerToNameCache[legacyName:lower()] = canonicalName
+end
 
 -- Legacy Support
 Config.Globals                                           = Globals
@@ -1281,6 +1294,20 @@ Config.DefaultConfig                                     = {
         Max = 100,
         ConfigType = "Advanced",
     },
+    ['DotMinCon']                  = {
+        DisplayName = "Dot Min Con",
+        Group = "Abilities",
+        Header = "Damage",
+        Category = "Over Time",
+        Index = 2,
+        Tooltip = "Minimum con color to use DoTs on enemies.",
+        Default = 4,
+        Min = 1,
+        Max = #Globals.Constants.ConColors,
+        Type = "Combo",
+        ComboOptions = Globals.Constants.ConColors,
+        ConfigType = "Advanced",
+    },
     -- Damage/AE
     ['DoAEDamage']                 = {
         DisplayName = "Do AE Damage",
@@ -1529,9 +1556,19 @@ Config.DefaultConfig                                     = {
         Default = false,
         ConfigType = "Advanced",
     },
+    ['InterruptForHeals']          = {
+        DisplayName = "Interrupt for Heals",
+        Group = "Abilities",
+        Header = "Recovery",
+        Category = "General Healing",
+        Index = 3,
+        Tooltip = "Interrupt non-heal casts when heal-eligible targets remain under Heal Start Point.",
+        Default = false,
+        ConfigType = "Advanced",
+    },
     -- Recovery/Thresholds
-    ['MaxHealPoint']               = {
-        DisplayName = "Healing Threshold",
+    ['HealStartPoint']             = {
+        DisplayName = "Heal Start Point",
         Group = "Abilities",
         Header = "Recovery",
         Category = "Healing Thresholds",
@@ -1554,8 +1591,8 @@ Config.DefaultConfig                                     = {
         Max = 99,
         ConfigType = "Advanced",
     },
-    ['MainHealPoint']              = {
-        DisplayName = "Main Heal Point",
+    ['SingleHealPoint']            = {
+        DisplayName = "Single Heal Point",
         Group = "Abilities",
         Header = "Recovery",
         Category = "Healing Thresholds",
@@ -1566,8 +1603,8 @@ Config.DefaultConfig                                     = {
         Max = 100,
         ConfigType = "Advanced",
     },
-    ['BigHealPoint']               = {
-        DisplayName = "Big Heal Point",
+    ['EmergencyHealPoint']         = {
+        DisplayName = "Emergency Heal Point",
         Group = "Abilities",
         Header = "Recovery",
         Category = "Healing Thresholds",
@@ -1578,8 +1615,8 @@ Config.DefaultConfig                                     = {
         Max = 100,
         ConfigType = "Advanced",
     },
-    ['GroupHealPoint']             = {
-        DisplayName = "Group Heal Point",
+    ['GroupHealStartPoint']        = {
+        DisplayName = "Group Heal Start Point",
         Group = "Abilities",
         Header = "Recovery",
         Category = "Healing Thresholds",
@@ -1590,8 +1627,8 @@ Config.DefaultConfig                                     = {
         Max = 100,
         ConfigType = "Advanced",
     },
-    ['GroupInjureCnt']             = {
-        DisplayName = "Group Injured Count",
+    ['GroupHealMinInjured']        = {
+        DisplayName = "Group Heal Min Injured",
         Group = "Abilities",
         Header = "Recovery",
         Category = "Healing Thresholds",
@@ -2609,7 +2646,6 @@ Config.DefaultConfig                                     = {
         Default = false,
         ConfigType = "Advanced",
     },
-
     ['LootModuleType']                   = {
         DisplayName = "Loot Module Type",
         Group = "General",
@@ -3075,6 +3111,7 @@ end
 --- @param failOk boolean? If true, the function will not raise an error if the setting is not found.
 --- @return any The value of the setting, or nil if the setting is not found and failOk is true.
 function Config:PeerGetSetting(peer, setting, failOk)
+    setting = Config.SettingAliases[setting] or setting
     if peer == nil or peer == Comms.GetPeerName() then
         return self:GetSetting(setting, failOk)
     end
@@ -3099,6 +3136,7 @@ end
 --- @param failOk boolean? If true, the function will not raise an error if the setting is not found.
 --- @return any The value of the setting, or nil if the setting is not found and failOk is true.
 function Config:GetSetting(setting, failOk)
+    setting = Config.SettingAliases[setting] or setting
     if not Config.TempSettings.SettingToModuleCache[setting] then
         if not failOk then
             Logger.log_error("Setting %s was not found in the module cache!", setting)
@@ -3112,6 +3150,7 @@ end
 --- @param setting string The name of the setting to retrieve.
 --- @return any The value of the setting, or nil if the setting is not found and failOk is true.
 function Config:GetSettingDefaults(setting)
+    setting = Config.SettingAliases[setting] or setting
     if not Config.TempSettings.SettingToModuleCache[setting] then
         Logger.log_error("Setting %s was not found in the module cache!", setting)
         return nil
@@ -3124,6 +3163,7 @@ end
 --- @param setting string The name of the setting to retrieve.
 --- @return any The value of the setting, or nil if the setting is not found and failOk is true.
 function Config:PeerGetSettingDefaults(peer, setting)
+    setting = Config.SettingAliases[setting] or setting
     if peer == nil or peer == Comms.GetPeerName() then
         return self:GetSettingDefaults(setting)
     end
@@ -3183,7 +3223,9 @@ end
 --- @param setting string The original setting name that needs to be validated and formatted.
 --- @return string, string The module of the setting and The validated and formatted setting name.
 function Config:MakeValidSettingName(setting)
-    local validSetting = self.TempSettings.SettingsLowerToNameCache[setting:lower()] or "None"
+    local normalizedSetting = Config.SettingAliases[setting] or setting
+    local validSetting = self.TempSettings.SettingsLowerToNameCache[normalizedSetting:lower()] or
+        self.TempSettings.SettingAliasLowerToNameCache[normalizedSetting:lower()] or "None"
 
     return Config.TempSettings.SettingToModuleCache[validSetting] or "None", validSetting
 end
@@ -3293,6 +3335,17 @@ function Config.ResolveDefaults(defaults, settings)
         settings = {}
         changed = true
         Logger.log_error("\arSettings file was empty or corrupt -- creating a new one with default values.")
+    end
+
+    for legacyName, canonicalName in pairs(Config.SettingAliases) do
+        if defaults[canonicalName] and settings[legacyName] ~= nil then
+            if settings[canonicalName] == nil then
+                settings[canonicalName] = settings[legacyName]
+            end
+            settings[legacyName] = nil
+            changed = true
+            Logger.log_info("\aySetting [\am%s\ay] has been renamed to [\ag%s\ay] -- migrating value.", legacyName, canonicalName)
+        end
     end
 
     for k, v in pairs(defaults) do

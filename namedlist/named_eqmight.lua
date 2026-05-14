@@ -56,7 +56,6 @@ return {
     ["soldungb"] = {
         "Efreeti Lord Djarn",
         "Lord Nagafen",
-        "King Tranix",
         "The Fabled Death Beetle",
         "The Fabled Efreeti Lord Djarn",
         "The Fabled King Tranix",

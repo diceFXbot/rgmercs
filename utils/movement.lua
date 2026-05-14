@@ -20,6 +20,11 @@ Movement.LastMove.Heading    = mq.TLO.Me.Heading.Degrees()
 Movement.LastMove.Sitting    = mq.TLO.Me.Sitting()
 Movement.LastMove.TimeAtMove = Globals.GetTimeSeconds()
 
+local function CastingMoveGuardActive()
+    return Config:GetSetting('CastMovePriority') == 1 and
+        (mq.TLO.Me.Casting() ~= nil or mq.TLO.Window("CastingWindow").Open())
+end
+
 --- Sticks the player to the specified target.
 --- @param targetId number The ID of the target to stick to.
 function Movement:DoStick(targetId)
@@ -45,6 +50,10 @@ function Movement:DoStickCmd(params, ...)
     if not Config:GetSetting('DoAutoStick') then return end
     local formatted = params
     if ... ~= nil then formatted = string.format(params, ...) end
+    if CastingMoveGuardActive() then
+        Logger.log_super_verbose("DoStickCmd blocked while casting: %s", formatted)
+        return
+    end
     Core.DoCmd("/stick %s", formatted)
     self:SetLastStickTimer(Globals.GetTimeSeconds())
     self.LastDoStickCmd = formatted
@@ -53,6 +62,13 @@ end
 function Movement:DoNav(squelch, params, ...)
     local formatted = params
     if ... ~= nil then formatted = string.format(params, ...) end
+    local lower = formatted:lower()
+    local isStopLike = lower:match("^%s*stop") or lower:match("^%s*pause")
+    local allowCastBypass = self.TempSettings and self.TempSettings.AllowNavCastBypass
+    if CastingMoveGuardActive() and not isStopLike and not allowCastBypass then
+        Logger.log_super_verbose("DoNav blocked while casting: %s", formatted)
+        return
+    end
 
     if mq.TLO.Navigation.Active() and formatted == self.LastDoNavCmd then
         Logger.log_verbose("\ayIgnoring DoNav (%s) because the last nav command is the same - let's not spam it.", formatted)
@@ -123,8 +139,10 @@ end
 --- @param distance number The distance to maintain from the target.
 --- @param bDontStick boolean Whether to avoid sticking to the target.
 --- @param bCalledFromInsideEvent? boolean Whether to avoid processing events during navigation.
-function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideEvent)
+function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideEvent, options)
     if bCalledFromInsideEvent == nil then bCalledFromInsideEvent = false end
+    options = options or {}
+    self.TempSettings = self.TempSettings or {}
 
     if not Config:GetSetting('DoAutoEngage') then return end
     if not Config:GetSetting('DoAutoNav') then return end
@@ -134,7 +152,13 @@ function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideE
     end
 
     if mq.TLO.Navigation.PathExists("id " .. tostring(targetId) .. " distance " .. tostring(distance))() then
+        local prevBypass = self.TempSettings.AllowNavCastBypass
+        self.TempSettings.AllowNavCastBypass = options.allowCastBypass == true
+        if self.TempSettings.AllowNavCastBypass then
+            Logger.log_super_verbose("NavInCombat allowing cast-move bypass for nav command.")
+        end
         Movement:DoNav(false, "id %d distance=%d log=off lineofsight=on", targetId, distance or 15)
+        self.TempSettings.AllowNavCastBypass = prevBypass
         while mq.TLO.Navigation.Active() and mq.TLO.Navigation.Velocity() > 0 do
             mq.delay(100)
             if not bCalledFromInsideEvent then

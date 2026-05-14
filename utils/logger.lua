@@ -18,6 +18,7 @@ local filters                = {}
 local logTimestampsToConsole = false
 local enableTracer           = true
 local logFileHandle          = nil
+local maxLogFileBytes        = 3 * 1024 * 1024
 
 actions.ToastStates          = {}
 
@@ -77,6 +78,37 @@ local function openLogFile()
 	end
 end
 
+local function resetLogFile()
+	if not logFileOpened then return end
+	local backupPath = string.format("%s.1", logFileOpened)
+
+	if logFileHandle then
+		logFileHandle:close()
+		logFileHandle = nil
+	end
+
+	-- Keep only two files total: current log + one backup.
+	os.remove(backupPath)
+	local renamed, renameErr = os.rename(logFileOpened, backupPath)
+	if not renamed and renameErr then
+		print(string.format("Could not rotate log file to backup: %s", renameErr))
+	end
+
+	logFileHandle = io.open(logFileOpened, "a")
+	if not logFileHandle then
+		print("Could not reopen log file after rotating.")
+	end
+end
+
+local function ensureLogFileCapacity(nextLineLen)
+	openLogFile()
+	if not logFileHandle then return end
+	local currentSize = logFileHandle:seek("end") or 0
+	if (currentSize + nextLineLen) > maxLogFileBytes then
+		resetLogFile()
+	end
+end
+
 local function getCallStack()
 	local info = debug.getinfo(4, "Snl")
 
@@ -123,10 +155,11 @@ local function log(logLevel, output, ...)
 	if logLevels[logLevel].level <= 2 or logToFileAlways then
 		local fileHeader = logLevels[logLevel].header:gsub("\a.", "")
 		local fileTracer = callerTracer:gsub("\a.", "")
+		local logLine = string.format("[%s:%s%s] <%s> %s\n", mq.TLO.Me.Name(), fileHeader, fileTracer, now, plainOutput)
 
-		openLogFile()
+		ensureLogFileCapacity(#logLine)
 		if logFileHandle then
-			logFileHandle:write(string.format("[%s:%s%s] <%s> %s\n", mq.TLO.Me.Name(), fileHeader, fileTracer, now, plainOutput))
+			logFileHandle:write(logLine)
 			logFileHandle:flush() -- Ensure the output is immediately written to the file
 		end
 	end

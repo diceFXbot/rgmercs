@@ -28,8 +28,8 @@ local _ClassConfig = {
 
             -- Find the map for each cure spell we need
             local neededCures = {
-                ['Poison'] = Casting.GetFirstMapItem({ "GroupCure", "SingleTgtCure", }),
-                ['Disease'] = Casting.GetFirstMapItem({ "GroupCure", "SingleTgtCure", }),
+                ['Poison'] = Casting.GetFirstMapItem({ "GroupCure", "SingleTgtCure", "PoisonCure", }),
+                ['Disease'] = Casting.GetFirstMapItem({ "GroupCure", "SingleTgtCure", "DiseaseCure", }),
                 ['Curse'] = Casting.GetFirstMapItem({ "GroupCure", "SingleTgtCure", }),
                 ['Corruption'] = Casting.GetFirstMapItem({ "CureCorrupt", "SingleTgtCure", }),
             }
@@ -120,6 +120,16 @@ local _ClassConfig = {
             "Purged Blood",
             "Purified Blood",
             "Sanctified Blood",
+        },
+        ['DiseaseCure'] = {
+            -- Disease cure fallback for lower levels where multi-cure lines are unavailable.
+            "Counteract Disease",
+            "Cure Disease",
+        },
+        ['PoisonCure'] = {
+            -- Poison cure fallback for lower levels where multi-cure lines are unavailable.
+            "Counteract Poison",
+            "Cure Poison",
         },
         ['CureCorrupt'] = {
             "Mastery: Chant of the Zelniak",
@@ -1057,7 +1067,7 @@ local _ClassConfig = {
                 name = "WinterFireDD",
                 type = "Spell",
                 cond = function(self, spell)
-                    return Core.IsModeActive("Mana") and Casting.DetSpellCheck(spell) and Config:GetSetting('DoFire') and Casting.OkayToNuke()
+                    return Casting.DetSpellCheck(spell) and Config:GetSetting('DoFire') and Casting.OkayToNuke()
                 end,
             },
             {

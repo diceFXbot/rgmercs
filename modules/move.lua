@@ -357,6 +357,15 @@ function Module:RunCmd(cmd, ...)
         formattedCmd = string.format(cmd, ...)
     end
 
+    local lowerCmd = formattedCmd:lower()
+    local isMoveCmd = lowerCmd:find("/moveto[%s$]") ~= nil or lowerCmd:find("/afollow[%s$]") ~= nil
+    local isStopCmd = lowerCmd:find("/moveto%s+off[%s$]") ~= nil or lowerCmd:find("/afollow%s+off[%s$]") ~= nil
+    if isMoveCmd and not isStopCmd and Config:GetSetting('CastMovePriority') == 1 and
+        (mq.TLO.Me.Casting() ~= nil or mq.TLO.Window("CastingWindow").Open()) then
+        Logger.log_super_verbose("RunCmd blocked while casting: %s", formattedCmd)
+        return
+    end
+
     self.TempSettings.LastCmd = formattedCmd
     Core.DoCmd(formattedCmd)
 end
@@ -658,7 +667,8 @@ function Module:OnDeath()
 end
 
 function Module:ShouldFollow()
-    return not mq.TLO.MoveTo.Moving() and (not mq.TLO.Me.Casting() or Core.MyClassIs("brd"))
+    local isCasting = mq.TLO.Me.Casting() ~= nil or mq.TLO.Window("CastingWindow").Open()
+    return not mq.TLO.MoveTo.Moving() and (not isCasting or Core.MyClassIs("brd"))
 end
 
 function Module:OnZone()
@@ -761,6 +771,21 @@ function Module:GiveTime()
     end
 
     if Config:GetSetting('ChaseOn') and Config:GetSetting('ChaseTarget') then
+        local castMovePriority = Config:GetSetting('CastMovePriority')
+        local isCasting = mq.TLO.Me.Casting() ~= nil or mq.TLO.Window("CastingWindow").Open()
+        if castMovePriority == 1 and isCasting then
+            local Nav = mq.TLO.Navigation
+            if Nav.Active() then
+                -- Stop chase nav entirely while casting; paused nav may continue in some edge cases.
+                Movement:DoNav(false, "stop log=off")
+            end
+            -- Chase can also fallback to moveto/afollow, so explicitly stop those too.
+            self:RunCmd("/squelch /moveto off")
+            self:RunCmd("/squelch /afollow off")
+            Logger.log_super_verbose("Stopping chase movement while casting due to Cast/Move Priority setting.")
+            return
+        end
+
         local chaseTarg = Config:GetSetting('ChaseTarget')
         local chaseSpawn = mq.TLO.Spawn("pc =" .. chaseTarg)
         local chaseId = chaseSpawn.ID()

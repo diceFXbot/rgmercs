@@ -684,8 +684,7 @@ function Combat.OkToEngagePreValidateId(targetId)
     end
 
     local okCharmed, charmed = pcall(function() return target.Charmed() end)
-    local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
-    if okCharmed and charmed and okCharmId and charmId then
+    if okCharmed and charmed then
         Logger.log_verbose("\ayOkToEngagePrevalidate check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
         return false
     end
@@ -762,8 +761,7 @@ function Combat.OkToEngage(autoTargetId)
     end
 
     local okCharmed, charmed = pcall(function() return target.Charmed() end)
-    local okCharmId, charmId = pcall(function() return target.Charmed.ID() end)
-    if okCharmed and charmed and okCharmId and charmId then
+    if okCharmed and charmed then
         Logger.log_verbose("\ayOkToEngage check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
         return false
     end
@@ -1007,7 +1005,7 @@ function Combat.FindWorstHurtGroupMember(minHPs)
     local worstId = myHP < minHPs and mq.TLO.Me.ID() or 0
     local worstPct = myHP < minHPs and myHP or minHPs
     local tankId = 0
-    local tankPct = Config:GetSetting('MainHealPoint')
+    local tankPct = Config:GetSetting('SingleHealPoint')
 
     Logger.log_verbose("\ayChecking for worst Hurt Group Members. Group Count: %d", groupSize)
 
