@@ -18,6 +18,27 @@ return {
     ['Modes']         = {
         'DPS',
     },
+    ['Themes']        = {
+        ['DPS'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.55, g = 0.05, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.55, g = 0.05, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.22, g = 0.02, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.55, g = 0.05, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.55, g = 0.05, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.22, g = 0.02, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.55, g = 0.05, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.55, g = 0.05, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.55, g = 0.05, b = 0.05, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.36, g = 0.03, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.55, g = 0.05, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.55, g = 0.05, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.55, g = 0.05, b = 0.05, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.22, g = 0.02, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 1.00, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 1.00, g = 0.35, b = 0.05, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.55, g = 0.05, b = 0.05, a = 1.0, }, },
+        },
+    },
     ['ItemSets']      = {
         ['Epic'] = {
             "Vengeful Taelosian Blood Axe",
@@ -728,7 +749,7 @@ return {
             },
             {
                 name = "Alliance",
-                type = "spell",
+                type = "Spell",
                 cond = function(self, spell)
                     return Config:GetSetting('DoAlliance') and Casting.CanAlliance() and
                         not Casting.TargetHasBuff(spell)
@@ -827,7 +848,7 @@ return {
             if mq.TLO.Cursor.ID() ~= nil then Core.DoCmd("/autoinv") end
             local ret = Casting.UseDisc(axeDisc, mq.TLO.Me.ID())
             Logger.log_verbose("\aySummonAxe(): Waiting for Summon to Finish")
-            Casting.WaitCastFinish(mq.TLO.Me, false, axeDisc.Range() or 0)
+            Casting.WaitCastFinish(mq.TLO.Me.ID(), false, axeDisc.Range() or 0)
             Logger.log_verbose("\agSummonAxe(): Done!")
             mq.delay(500, function() return mq.TLO.Cursor.ID() ~= nil end)
             while mq.TLO.Cursor.ID() ~= nil do Core.DoCmd("/autoinv") end

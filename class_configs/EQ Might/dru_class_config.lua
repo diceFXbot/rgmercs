@@ -25,10 +25,16 @@ local _ClassConfig = {
             --(re)initialize the table for loadout changes
             self.TempSettings.CureSpells = {}
 
+            -- Choose whether we should be trying to resolve the groupheal based on our settings and whether it cures at its level
+            local ghealSpell = Core.GetResolvedActionMapItem('GroupHeal')
+            local groupHeal = (Config:GetSetting('GroupHealAsCure') and (ghealSpell and ghealSpell.Level() or 0) >= 66) and "GroupHeal"
+
+            -- Find the map for each cure spell we need, given availability of groupheal, groupcure. fallback to curespell
+            -- Curse is convoluted: If Keepmemmed, always use cure, if not, use groupheal if available and fallback to cure
             local neededCures = {
-                ['Poison'] = "CurePoison",
-                ['Disease'] = "CureDisease",
-                ['Curse'] = "CureCurse",
+                ['Poison'] = Casting.GetFirstMapItem({ groupHeal, "CurePoison", }),
+                ['Disease'] = Casting.GetFirstMapItem({ groupHeal, "CureDisease", }),
+                ['Curse'] = not Config:GetSetting('KeepCurseMemmed') and (groupHeal or 'CureCurse') or 'CureCurse',
                 ['Corruption'] = "CureCorrupt",
             }
 
@@ -75,6 +81,27 @@ local _ClassConfig = {
             Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
             return false, false
         end,
+    },
+    ['Themes']            = {
+        ['Heal'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.08, g = 0.40, b = 0.08, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.05, g = 0.26, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.08, g = 0.40, b = 0.08, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.40, g = 0.90, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.40, g = 0.90, b = 0.20, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+        },
     },
     ['ItemSets']          = {
         ['RezStaff'] = {
@@ -155,11 +182,12 @@ local _ClassConfig = {
             "Twilight Breath",
         },
         ['ReptileBuff'] = {
-            "Skin of the Green Dragon", -- EQM Custom
+            "Skin of the Green Dragon",     -- EQM Custom
+            "Ancient: Skin of the Reptile", -- EQM Custom
             "Skin of the Reptile",
-            "Skin of the Serpent",      -- EQM Custom
+            "Skin of the Serpent",          -- EQM Custom
         },
-        ['SwarmDot'] = {                -- Magic Dot, 54s
+        ['SwarmDot'] = {                    -- Magic Dot, 54s
             "Swarm of Fireants",
             "Wasp Swarm",
             "Swarming Death",
@@ -297,8 +325,9 @@ local _ClassConfig = {
             "Nature Wanderer's Behest",
             "Hierophant's Behest", -- EQM Custom
             "Nature Walker's Behest",
+            "Wanderer's Behest",   -- EQM Custom lvl 42
         },
-        ['Dawnstrike'] = { -- I think better to just spam solstice strike
+        ['Dawnstrike'] = {         -- I think better to just spam solstice strike
             "Dawnstrike",
         },
         -- ['BurstDS'] = { -- Laz specific, short duration 210pt damge shield
@@ -366,6 +395,12 @@ local _ClassConfig = {
             "Ancient: Permafrost Veil",
         },
     },
+    ['AASets']            = {
+        ['FireDebuffAA'] = {
+            "Blessing of Ro",
+            "Hand of Ro",
+        },
+    },
     ['HealRotationOrder'] = {
         {
             name  = 'BigHealPoint',
@@ -388,6 +423,14 @@ local _ClassConfig = {
     },
     ['HealRotations']     = {
         ['BigHealPoint'] = {
+            {
+                name = "Balance of the Grove",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    if not Targeting.GroupedWithTarget(target) then return false end
+                    return Targeting.TargetIsATank(target)
+                end,
+            },
             {
                 name = "Convergence of Spirits",
                 type = "AA",
@@ -476,6 +519,17 @@ local _ClassConfig = {
             end,
         },
         {
+            name = 'Emergency',
+            state = 1,
+            steps = 1,
+            doFullRotation = true,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                return Targeting.GetXTHaterCount() > 0 and
+                    (mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') or (Globals.AutoTargetIsNamed and mq.TLO.Me.PctAggro() > 99))
+            end,
+        },
+        {
             name = 'Slow',
             state = 1,
             steps = 1,
@@ -524,7 +578,10 @@ local _ClassConfig = {
             name = 'DPS(AE)',
             state = 1,
             steps = 1,
-            load_cond = function(self) return Config:GetSetting('DoPBAE') and self:GetResolvedActionMapItem('PBAEMagic') end,
+            load_cond = function(self)
+                return (Config:GetSetting('DoPBAE') and Core.GetResolvedActionMapItem('PBAEMagic')) or
+                    (Config:GetSetting('DoRain') and Core.GetResolvedActionMapItem('IceRain'))
+            end,
             doFullRotation = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
@@ -544,7 +601,7 @@ local _ClassConfig = {
         },
     },
     ['Rotations']         = {
-        ['DPS'] = {
+        ['DPS']       = {
             {
                 name = "Epic",
                 type = "Item",
@@ -632,11 +689,12 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['DPS(AE)'] = {
+        ['DPS(AE)']   = {
             {
                 name = "PBAEMagic",
                 type = "Spell",
                 allowDead = true,
+                load_cond = function(self) return Config:GetSetting('DoPBAE') end,
                 cond = function(self, spell, target)
                     return Casting.HaveManaToNuke(true) and Targeting.InSpellRange(spell, target)
                 end,
@@ -644,13 +702,14 @@ local _ClassConfig = {
             {
                 name = "IceRain",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoRain') end,
                 cond = function(self, spell, target)
                     if not self.Helpers.RainCheck(target) then return false end
                     return Casting.HaveManaToNuke(true)
                 end,
             },
         },
-        ['Burn'] = {
+        ['Burn']      = {
             {
                 name = "Improved Twincast",
                 type = "AA",
@@ -706,7 +765,13 @@ local _ClassConfig = {
                 type = "Item",
             },
         },
-        ['Slow'] = {
+        ['Emergency'] = {
+            {
+                name = "Cover Tracks",
+                type = "AA",
+            },
+        },
+        ['Slow']      = {
             {
                 name = "ColdSlow",
                 type = "Spell",
@@ -715,13 +780,11 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Debuff'] = {
+        ['Debuff']    = {
             { -- Fire Debuff AA, will use the first(best) available
-                name_func = function(self)
-                    return Casting.GetFirstAA({ "Blessing of Ro", "Hand of Ro", })
-                end,
+                name = "FireDebuffAA",
                 type = "AA",
-                load_cond = function() return Config:GetSetting('DoFireDebuff') and Casting.CanUseAA("Hand of Ro") end,
+                load_cond = function() return Config:GetSetting('DoFireDebuff') and Core.GetResolvedActionMapItem('FireDebuffAA') end,
                 cond = function(self, aaName, target)
                     return Casting.DetAACheck(aaName)
                 end,
@@ -729,7 +792,7 @@ local _ClassConfig = {
             {
                 name = "FireDebuff",
                 type = "Spell",
-                load_cond = function() return Config:GetSetting('DoFireDebuff') and not Casting.CanUseAA("Hand of Ro") end,
+                load_cond = function() return Config:GetSetting('DoFireDebuff') and not Core.GetResolvedActionMapItem('FireDebuffAA') end,
                 cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell)
                 end,
@@ -751,7 +814,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Snare'] = {
+        ['Snare']     = {
             {
                 name = "Entrap",
                 type = "AA",
@@ -855,7 +918,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Downtime'] = {
+        ['Downtime']  = {
             {
                 name = "Communion of the Cheetah",
                 type = "AA",
@@ -925,7 +988,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['PetBuff'] = {
+        ['PetBuff']   = {
             {
                 name = "PetHaste",
                 type = "Spell",
@@ -1341,15 +1404,38 @@ local _ClassConfig = {
             Default = false,
             ConfigType = "Advanced",
         },
+        ['GroupHealAsCure']   = {
+            DisplayName = "Use Group Heal to Cure",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Curing",
+            Index = 105,
+            Tooltip = "If Word of Reconstitution is available, use this to cure instead of individual cure spells. \n" ..
+                "Please note that we will prioritize Remove Greater Curse if you have selected to keep it memmed as above (due to the counter disparity).",
+            Default = true,
+            ConfigType = "Advanced",
+        },
         ['KeepEvacMemmed']    = {
             DisplayName = "Memorize Evac",
             Group = "Abilities",
             Header = "Utility",
             Category = "Emergency",
-            Index = 101,
+            Index = 102,
             Tooltip = "Keep (Lesser) Succor memorized.",
             Default = false,
             RequiresLoadoutChange = true,
+        },
+        ['EmergencyStart']    = {
+            DisplayName = "Emergency HP%",
+            Group = "Abilities",
+            Header = "Utility",
+            Category = "Emergency",
+            Index = 101,
+            Tooltip = "Your HP % before we begin to use emergency mitigation abilities.",
+            Default = 50,
+            Min = 1,
+            Max = 100,
+            ConfigType = "Advanced",
         },
         ['UseDonorPet']       = {
             DisplayName = "Summon Nature Spirit",

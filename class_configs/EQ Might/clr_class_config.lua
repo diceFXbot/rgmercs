@@ -83,6 +83,27 @@ local _ClassConfig = {
             return false, false
         end,
     },
+    ['Themes']            = {
+        ['Heal'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.70, g = 0.65, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.70, g = 0.65, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.30, g = 0.28, b = 0.21, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.70, g = 0.65, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.70, g = 0.65, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.30, g = 0.28, b = 0.21, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.70, g = 0.65, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.70, g = 0.65, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.70, g = 0.65, b = 0.50, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.48, g = 0.44, b = 0.34, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.70, g = 0.65, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.70, g = 0.65, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.70, g = 0.65, b = 0.50, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.30, g = 0.28, b = 0.21, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 1.00, g = 0.99, b = 0.90, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 1.00, g = 0.99, b = 0.90, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.70, g = 0.65, b = 0.50, a = 1.0, }, },
+        },
+    },
     ['ItemSets']          = {
         ['RezStaff'] = {
             "Legendary Fabled Staff of Forbidden Rites",
@@ -952,7 +973,7 @@ local _ClassConfig = {
                 type = "Item",
                 load_cond = function() return Config:GetSetting('DoVieBuff') and mq.TLO.Me.Level() >= 69 and mq.TLO.FindItem("=Artifact of Aegis")() end,
                 cond = function(self, itemName, target)
-                    return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck("43037", target) -- Bulwark of the Pegasus
+                    return Casting.GroupBuffItemCheck(itemName, target) and Casting.AddedBuffCheck(43037, target) -- Bulwark of the Pegasus
                 end,
             },
             {
@@ -961,7 +982,7 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoVieBuff') and (mq.TLO.Me.Level() < 69 or not mq.TLO.FindItem("=Artifact of Aegis")()) end,
                 cond = function(self, spell, target)
                     if not Targeting.TargetIsATank(target) then return false end
-                    return Casting.GroupBuffCheck(spell, target) and Casting.AddedBuffCheck("43037", target) -- Bulwark of the Pegasus
+                    return Casting.GroupBuffCheck(spell, target) and Casting.AddedBuffCheck(43037, target) -- Bulwark of the Pegasus
                 end,
             },
             {
@@ -1061,6 +1082,7 @@ local _ClassConfig = {
             Category = "Group",
             Index = 103,
             Tooltip = "Use your Melee Damage absorb (Vie) line.",
+            RequiresLoadoutChange = true,
             Default = true,
         },
         ['UseAura']           = {
@@ -1179,6 +1201,12 @@ local _ClassConfig = {
             Min = 1,
             Max = 99,
             ConfigType = "Advanced",
+            Warning = function()
+                if Config:GetSetting('CompleteHealPct') > Config:GetSetting('MaxHealPoint') then
+                    return true, "Warning: CompleteHealPct exceeds MaxHealPoint - we will not check if heals are needed until health is under MaxHealPoint."
+                end
+                return false, ""
+            end,
         },
         ['DoSingleElixir']    = {
             DisplayName = "Single Elixir",

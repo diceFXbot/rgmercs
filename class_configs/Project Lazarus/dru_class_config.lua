@@ -80,6 +80,27 @@ local _ClassConfig = {
             return false, false
         end,
     },
+    ['Themes']            = {
+        ['Heal'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.08, g = 0.40, b = 0.08, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.05, g = 0.26, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.08, g = 0.40, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.08, g = 0.40, b = 0.08, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.03, g = 0.16, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.40, g = 0.90, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.40, g = 0.90, b = 0.20, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.08, g = 0.40, b = 0.08, a = 1.0, }, },
+        },
+    },
     ['ItemSets']          = {
         ['Epic'] = {
             "Staff of Living Brambles",
@@ -343,6 +364,12 @@ local _ClassConfig = {
             "Moon Shadow",
         },
     },
+    ['AASets']            = {
+        ['FireDebuffAA'] = {
+            "Blessing of Ro",
+            "Hand of Ro",
+        },
+    },
     ['HealRotationOrder'] = {
         {
             name  = 'BigHealPoint',
@@ -495,7 +522,10 @@ local _ClassConfig = {
             name = 'DPS(AE)',
             state = 1,
             steps = 1,
-            load_cond = function(self) return Config:GetSetting('DoPBAE') and self:GetResolvedActionMapItem('PBAEMagic') end,
+            load_cond = function(self)
+                return (Config:GetSetting('DoPBAE') and Core.GetResolvedActionMapItem('PBAEMagic')) or
+                    (Config:GetSetting('DoRain') and Core.GetResolvedActionMapItem('IceRain'))
+            end,
             doFullRotation = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
@@ -635,6 +665,7 @@ local _ClassConfig = {
                 name = "PBAEMagic",
                 type = "Spell",
                 allowDead = true,
+                load_cond = function(self) return Config:GetSetting('DoPBAE') end,
                 cond = function(self, spell, target)
                     return Casting.HaveManaToNuke(true) and Targeting.InSpellRange(spell, target)
                 end,
@@ -642,6 +673,7 @@ local _ClassConfig = {
             {
                 name = "IceRain",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoRain') end,
                 cond = function(self, spell, target)
                     if not self.Helpers.RainCheck(target) then return false end
                     return Casting.HaveManaToNuke(true)
@@ -701,11 +733,9 @@ local _ClassConfig = {
         },
         ['Debuff'] = {
             { -- Fire Debuff AA, will use the first(best) available
-                name_func = function(self)
-                    return Casting.GetFirstAA({ "Blessing of Ro", "Hand of Ro", })
-                end,
+                name = "FireDebuffAA",
                 type = "AA",
-                load_cond = function() return Config:GetSetting('DoFireDebuff') and Casting.CanUseAA("Hand of Ro") end,
+                load_cond = function() return Config:GetSetting('DoFireDebuff') and Core.GetResolvedActionMapItem('FireDebuffAA') end,
                 cond = function(self, aaName, target)
                     return Casting.DetAACheck(aaName)
                 end,
@@ -713,7 +743,7 @@ local _ClassConfig = {
             {
                 name = "FireDebuff",
                 type = "Spell",
-                load_cond = function() return Config:GetSetting('DoFireDebuff') and not Casting.CanUseAA("Hand of Ro") end,
+                load_cond = function() return Config:GetSetting('DoFireDebuff') and not Core.GetResolvedActionMapItem('FireDebuffAA') end,
                 cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell)
                 end,

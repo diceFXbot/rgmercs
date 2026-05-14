@@ -37,6 +37,46 @@ _ClassConfig    = {
             -- end
         end
     end,
+    ['Themes']            = {
+        ['DPS'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.60, g = 0.20, b = 0.02, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.40, g = 0.13, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.60, g = 0.20, b = 0.02, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 1.00, g = 0.55, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 1.00, g = 0.55, b = 0.05, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+        },
+        ['PetTank'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.05, g = 0.25, b = 0.55, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.03, g = 0.16, b = 0.36, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.05, g = 0.25, b = 0.55, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.20, g = 0.75, b = 1.00, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.20, g = 0.75, b = 1.00, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+        },
+    },
     ['ItemSets']          = {
         ['Epic'] = {
             "Focus of Primal Elements",
@@ -73,6 +113,7 @@ _ClassConfig    = {
             "Spear of Blistersteel",
             "Spear of Molten Steel",
             "Spear of Magma",
+            "Bolt of Molten Slag", -- Added for TLP without spear unlocked yet
             "Spear of Ro",
         },
         ['ChaoticNuke'] = {
@@ -173,6 +214,8 @@ _ClassConfig    = {
         --     "Iron Bolt",
         -- },
         ['FireDD'] = { --Mix of Fire Nukes and Bolts appropriate for use at lower levels.
+            "Scalding Sands",
+            "Burning Earth",
             "Burning Sand",
             "Scars of Sigil",
             "Lava Bolt",
@@ -1333,14 +1376,11 @@ _ClassConfig    = {
                 name = "SpearNuke",
                 type = "Spell",
             },
-            --   {
-            --       name = "AllianceBuff",
-            --       type = "Spell",
-            --      cond = function(self, spell, target)
-            --           return Globals.AutoTargetIsNamed and not Casting.TargetHasBuff(spell) and
-            --               Config:GetSetting('DoAlliance') and Casting.CanAlliance()
-            --       end,
-            --    },
+            {
+                name = "FireDD",
+                type = "Spell",
+                load_cond = function(self) return not Core.GetResolvedActionMapItem('SpearNuke') end,
+            },
         },
         ['DPS(LowLevel)'] = {
             {
@@ -1837,6 +1877,7 @@ _ClassConfig    = {
             Category = "Direct",
             Index = 102,
             Tooltip = "Memorize and use your anti-summoned mob nuke line ('x the Unnatural').",
+            RequiresLoadoutChange = true,
             Default = false,
         },
         ['DoChestClick']   = {

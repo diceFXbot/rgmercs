@@ -46,6 +46,10 @@ local _ClassConfig = {
     ['Modes']         = { --other modes to reorder spell priorities may be added back in at a later date.
         'General',
     },
+    ['OnModeChange']  = function(self, mode)
+        --not currently accounting for the "Tune Stuck In Your Head" AA
+        self.TempSettings.MarchDuration = Casting.CanUseAA("Extended Ingenuity") and 18 or 12
+    end,
 
     ['ModeChecks']    = {
         CanMez     = function() return true end,
@@ -69,6 +73,27 @@ local _ClassConfig = {
             Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
             return false, false
         end,
+    },
+    ['Themes']        = {
+        ['General'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.50, g = 0.08, b = 0.35, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.50, g = 0.08, b = 0.35, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.20, g = 0.03, b = 0.14, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.50, g = 0.08, b = 0.35, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.50, g = 0.08, b = 0.35, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.20, g = 0.03, b = 0.14, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.50, g = 0.08, b = 0.35, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.50, g = 0.08, b = 0.35, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.50, g = 0.08, b = 0.35, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.33, g = 0.05, b = 0.23, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.50, g = 0.08, b = 0.35, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.50, g = 0.08, b = 0.35, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.50, g = 0.08, b = 0.35, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.20, g = 0.03, b = 0.14, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 1.00, g = 0.80, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 1.00, g = 0.80, b = 0.10, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.50, g = 0.08, b = 0.35, a = 1.0, }, },
+        },
     },
     ['ItemSets']      = {
         ['RezStaff'] = {
@@ -252,6 +277,11 @@ local _ClassConfig = {
         ['Skals'] = {
             "Skal's Stance Discipline",
         },
+        ['Revitalize'] = {
+            "Iron Revitalize",
+            "Hardened Revitalize",
+            "Revitalize",
+        },
     },
     ['Helpers']       = {
         DoRez = function(self, corpseId)
@@ -316,23 +346,31 @@ local _ClassConfig = {
                 ItemManager.SwapItemToSlot("offhand", Config:GetSetting('Offhand'))
             end
         end,
-        CheckSongStateUse = function(self, config)   --determine whether a song should be song by comparing combat state to settings
+        CheckSongStateUse = function(self, config) --determine whether a song should be sung by comparing combat state to settings
             local usestate = Config:GetSetting(config)
-            if Targeting.GetXTHaterCount() == 0 then --I have tried this with combat_state nand XTHater, and both have their ups and downs. Keep an eye on this.
-                return usestate > 2                  --I think XTHater will work better if the bard autoassists at 99 or 100.
-            else
-                return usestate < 4
-            end
+            local inCombat = Globals.CurrentState == "Combat"
+            if usestate == 1 then return false end        -- Never
+            if usestate == 3 then return true end         -- Always
+            if usestate == 2 then return inCombat end     -- In-Combat Only
+            if usestate == 4 then return not inCombat end -- Out-of-Combat Only
+            return false
         end,
         RefreshBuffSong = function(songSpell) --determine how close to a buff's expiration we will resing to maintain full uptime
             if not songSpell or not songSpell() then return false end
             local me = mq.TLO.Me
-            local threshold = Targeting.GetXTHaterCount() == 0 and Config:GetSetting('RefreshDT') or Config:GetSetting('RefreshCombat')
+            local threshold = Globals.CurrentState == "Combat" and Config:GetSetting('RefreshCombat') or Config:GetSetting('RefreshDT')
             local duration = songSpell.DurationWindow() == 1 and (me.Song(songSpell.Name()).Duration.TotalSeconds() or 0) or (me.Buff(songSpell.Name()).Duration.TotalSeconds() or 0)
             local ret = duration <= threshold
             Logger.log_verbose("\ayRefreshBuffSong(%s) => memed(%s), duration(%d), threshold(%d), should refresh:(%s)", songSpell,
                 Strings.BoolToColorString(me.Gem(songSpell.RankName.Name())() ~= nil), duration, threshold, Strings.BoolToColorString(ret))
             return ret
+        end,
+        MarchTimer = function(self) --refresh duration of warmarch based on a timer when jonthan is being used
+            local jonthan = Core.GetResolvedActionMapItem('Jonthan')
+            if not (jonthan and Config:GetSetting('UseJonthan') > 1 and (mq.TLO.Me.Song(jonthan.Name()).ID() or 0) > 0) then return nil end
+            local threshold = Globals.CurrentState == "Combat" and Config:GetSetting('RefreshCombat') or Config:GetSetting('RefreshDT')
+            local interval = (self.TempSettings.MarchDuration or 12) - threshold
+            return (Globals.GetTimeSeconds() - (self.TempSettings.LastMarchCast or 0)) >= interval
         end,
         UnwantedAggroCheck = function(self) --Self-Explanatory. Add isTanking to this if you ever make a mode for bardtanks!
             if Targeting.GetXTHaterCount() == 0 or Core.IAmMA() or mq.TLO.Group.Puller.ID() == mq.TLO.Me.ID() then return false end
@@ -611,7 +649,13 @@ local _ClassConfig = {
                 type = "Song",
                 load_cond = function(self) return Config:GetSetting('UseMarch') > 1 end,
                 cond = function(self, songSpell)
-                    return self.Helpers.CheckSongStateUse(self, "UseMarch") and self.Helpers.RefreshBuffSong(songSpell)
+                    if not self.Helpers.CheckSongStateUse(self, "UseMarch") then return false end
+                    local marchTimer = self.Helpers.MarchTimer(self)
+                    if marchTimer ~= nil then return marchTimer end
+                    return self.Helpers.RefreshBuffSong(songSpell)
+                end,
+                post_activate = function(self, songSpell, success)
+                    if success then self.TempSettings.LastMarchCast = Globals.GetTimeSeconds() end
                 end,
             },
             {
@@ -728,6 +772,13 @@ local _ClassConfig = {
                     if not Config:GetSetting('UseFading') then return false end
                     return self.Helpers.UnwantedAggroCheck(self)
                     --I wanted to use XTAggroCount here but it doesn't include your current target in the number it returns and I don't see a good workaround. For Loop it is.
+                end,
+            },
+            {
+                name = "Revitalize",
+                type = "Disc",
+                cond = function(self, discSpell, target)
+                    return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart')
                 end,
             },
             {

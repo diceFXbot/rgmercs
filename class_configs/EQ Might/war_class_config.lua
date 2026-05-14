@@ -21,6 +21,46 @@ local _ClassConfig = {
         'Tank',
         'DPS',
     },
+    ['Themes']        = {
+        ['Tank'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.22, g = 0.25, b = 0.28, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.22, g = 0.25, b = 0.28, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.09, g = 0.10, b = 0.11, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.22, g = 0.25, b = 0.28, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.22, g = 0.25, b = 0.28, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.09, g = 0.10, b = 0.11, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.22, g = 0.25, b = 0.28, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.22, g = 0.25, b = 0.28, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.22, g = 0.25, b = 0.28, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.15, g = 0.17, b = 0.19, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.22, g = 0.25, b = 0.28, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.22, g = 0.25, b = 0.28, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.22, g = 0.25, b = 0.28, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.09, g = 0.10, b = 0.11, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.55, g = 0.60, b = 0.65, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.55, g = 0.60, b = 0.65, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.22, g = 0.25, b = 0.28, a = 1.0, }, },
+        },
+        ['DPS'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.35, g = 0.15, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.35, g = 0.15, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.14, g = 0.06, b = 0.04, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.35, g = 0.15, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.35, g = 0.15, b = 0.10, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.14, g = 0.06, b = 0.04, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.35, g = 0.15, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.35, g = 0.15, b = 0.10, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.35, g = 0.15, b = 0.10, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.23, g = 0.10, b = 0.07, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.35, g = 0.15, b = 0.10, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.35, g = 0.15, b = 0.10, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.35, g = 0.15, b = 0.10, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.14, g = 0.06, b = 0.04, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.80, g = 0.20, b = 0.15, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.80, g = 0.20, b = 0.15, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.35, g = 0.15, b = 0.10, a = 1.0, }, },
+        },
+    },
     ['ItemSets']      = {
         ['RezStaff'] = {
             "Legendary Fabled Staff of Forbidden Rites",
@@ -85,6 +125,7 @@ local _ClassConfig = {
             "Brutal Onslaught Discipline",
         },
         ['StrikeDisc'] = {
+            "Mighty Blow Discipline",
             "Fellstrike Discipline",
             "Mighty Strike Discipline",
         },
@@ -106,6 +147,21 @@ local _ClassConfig = {
             "Rejuvenating Will Discipline",
             "Healing Determination Discipline",
             "Healing Will Discipline",
+        },
+        ['Revitalize'] = {
+            "Steely Revitalize",
+            "Iron Revitalize",
+            "Hardened Revitalize",
+            "Revitalize",
+        },
+        ['BattlecryHeal'] = { -- EQM Custom, restores HP/End for group, 8m reuse
+            "Invigorating Battlecry Discipline",
+        },
+    },
+    ['AASets']        = {
+        ['AreaTaunt'] = {
+            "Enhanced Area Taunt",
+            "Area Taunt",
         },
     },
     ['Helpers']       = {
@@ -153,6 +209,15 @@ local _ClassConfig = {
             if Casting.NoDiscActive() then return true end
             local healingDisc = Core.GetResolvedActionMapItem('HealingDisc')
             return healingDisc and mq.TLO.Me.ActiveDisc.Name() == healingDisc.RankName()
+        end,
+        MeleeMitBuffCheck = function(self) -- Make sure we spread out our MeleeMit buffs because only the highest in slot 1 takes effect
+            local standDisc = Core.GetResolvedActionMapItem('StandDisc')
+            local protective = Core.GetResolvedActionMapItem('Protective')
+            local mitEffects = { (standDisc and standDisc.RankName() or ""), (protective and protective.RankName() or ""), "Guardian's Boon", "Guardian's Bravery", }
+            for _, buffName in ipairs(mitEffects) do
+                if Casting.IHaveBuff(buffName) then return false end
+            end
+            return true
         end,
     },
     ['RotationOrder'] = {
@@ -371,13 +436,20 @@ local _ClassConfig = {
                 end,
             },
             {
-                name_func = function(self) return Casting.GetFirstAA({ "Enhanced Area Taunt", "Area Taunt", }) end,
+                name = "AreaTaunt",
                 type = "AA",
             },
         },
         ['EmergencyDefenses'] = {
             --Note that in Tank Mode, defensive discs are preemptively cycled on named in the (non-emergency) Defenses rotation
             --Abilities should be placed in order of lowest to highest triggered HP thresholds
+            {
+                name = "Revitalize",
+                type = "Disc",
+                cond = function(self, discSpell, target)
+                    return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart')
+                end,
+            },
             {
                 name = "Fortitude",
                 type = "Disc",
@@ -387,6 +459,10 @@ local _ClassConfig = {
             },
             {
                 name = "Warlord's Tenacity",
+                type = "AA",
+            },
+            {
+                name = "Warlord's Resurgence",
                 type = "AA",
             },
             {
@@ -435,7 +511,7 @@ local _ClassConfig = {
                     return self.Helpers.DefenseBuffCheck(self)
                 end,
             },
-            { --shares effect with OoW Chest
+            { --shares effect with OoW Chest and Warlord's Bravery
                 name = "StandDisc",
                 type = "Disc",
                 cond = function(self, discSpell, target)
@@ -446,21 +522,28 @@ local _ClassConfig = {
                 name = "OoW_Chest",
                 type = "Item",
                 cond = function(self, itemName)
-                    return self.Helpers.DefenseBuffCheck(self) and Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
+                    return Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc') and self.Helpers.MeleeMitBuffCheck()
+                end,
+            },
+            { --shares effect with StandDisc and OoW Chest
+                name = "Warlord's Bravery",
+                type = "AA",
+                cond = function(self, aaName)
+                    return Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc') and self.Helpers.MeleeMitBuffCheck()
                 end,
             },
             {
                 name = "Hold the Line",
                 type = "AA",
                 cond = function(self, aaName)
-                    return self.Helpers.DefenseBuffCheck(self) and Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
+                    return Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
                 end,
             },
             {
                 name = "HealingDisc",
                 type = "Disc",
                 cond = function(self, discSpell, target)
-                    return self.Helpers.DefenseBuffCheck(self) and Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
+                    return Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
                 end,
             },
 
@@ -496,6 +579,13 @@ local _ClassConfig = {
             {
                 name = "Rage of Rallos Zek",
                 type = "AA",
+            },
+            {
+                name = "BattlecryHeal",
+                type = "Disc",
+                cond = function(self, discSpell, target)
+                    return mq.TLO.Me.PctHPs() < Config:GetSetting('EmergencyStart') or Targeting.BigGroupHealsNeeded()
+                end,
             },
         },
         ['Combat'] = {
@@ -680,6 +770,7 @@ local _ClassConfig = {
             Category = "Hate Tools",
             Index = 101,
             Tooltip = "Use the Area Taunt AA.",
+            RequiresLoadoutChange = true,
             Default = true,
             ConfigType = "Advanced",
         },

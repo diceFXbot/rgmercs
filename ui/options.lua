@@ -51,7 +51,20 @@ OptionsUI.Groups                = { --- Add a default of the same name for any k
             { Name = 'Following',  Categories = { "Chase", "Camp", }, },
             { Name = 'Meditation', Categories = { "Med Rules", "Med Thresholds", }, },
             { Name = 'Drag',       Categories = { "Drag", }, },
-            { Name = 'Pulling',    Categories = { "Pull Rules", "Puller Vitals", "Group Vitals", "Distance", "Targets", }, },
+            {
+                Name = 'Pulling',
+                Categories = { "Pull Rules", "Distance", "Targets", "Puller Vitals", "Peer and Group Vitals", },
+                RenderCategories = {
+                    {
+                        Render = function()
+                            Modules:ExecModule("Pull", "RenderWatchCombo")
+                        end,
+                        Search = function(searchFilter)
+                            return string.match("pull watch group", searchFilter:lower()) ~= nil
+                        end,
+                    },
+                },
+            },
         },
     },
     {
@@ -568,7 +581,7 @@ function OptionsUI:RenderCategorySettings(category)
                                 { text = "",             color = tooltipColor, },
                                 { text = "Variable: ",   color = Globals.Constants.Colors.LightBlue, padAfter = 4, },
                                 { text = settingName,    color = Globals.Constants.Colors.Orange,    sameLine = true, },
-                                { text = "Default: ",    color = Globals.Constants.Colors.LightBlue, padAfter = 4, },
+                                { text = "Default: ",    color = Globals.Constants.Colors.LightBlue, },
                                 {
                                     text = tostring(defaultValue),
                                     render = settingDefaults.Type == "Color" and
@@ -583,7 +596,16 @@ function OptionsUI:RenderCategorySettings(category)
                                         end or nil,
                                     color = Globals.Constants.Colors.Orange,
                                     sameLine = true,
+                                    padAfter = 4,
                                 },
+
+                                settingDefaults.Max and
+                                {
+                                    text = " [" .. string.format("%d", settingDefaults.Min) .. " - " .. string.format("%d", settingDefaults.Max) .. "]",
+                                    color = Globals.Constants
+                                        .Colors.LightGreen,
+                                    sameLine = true,
+                                } or nil,
                             })
 
                         if hasWarning then
@@ -801,6 +823,22 @@ function OptionsUI:RenderCurrentTab()
     self:RenderOptionsPanel(self.selectedGroup)
 end
 
+function OptionsUI:ValidateSelectedPeer()
+    if self.selectedCharacter == Comms.GetPeerName() then
+        return
+    end
+
+    if self.selectedCharacter == nil or self.selectedCharacter == "" then
+        Logger.log_error("\ayOptionsUI: \awSelected peer is invalid. Defaulting back to local character.")
+        self.selectedCharacter = Comms.GetPeerName()
+    end
+
+    if not next(Comms.GetPeerHeartbeat(self.selectedCharacter)) then
+        Logger.log_error("\ayOptionsUI: \awSelected peer '%s' is not valid. Defaulting back to local character.", self.selectedCharacter)
+        self.selectedCharacter = Comms.GetPeerName()
+    end
+end
+
 function OptionsUI:RenderMainWindow(_, openGUI, flags)
     local shouldDrawGUI = true
 
@@ -810,6 +848,8 @@ function OptionsUI:RenderMainWindow(_, openGUI, flags)
         Logger.log_debug("\ayOptionsUI: \awSettings re-sorted due to new module settings being registered.")
         self.FirstRender = false
     end
+
+    self:ValidateSelectedPeer()
 
     if Config.TempSettings.ResetOptionsUIPosition then
         ImGui.SetNextWindowPos(ImVec2(100, 100), ImGuiCond.Always)

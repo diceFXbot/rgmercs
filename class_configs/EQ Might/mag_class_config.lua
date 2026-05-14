@@ -19,6 +19,46 @@ _ClassConfig    = {
         'DPS',
         'PBAE',
     },
+    ['Themes']        = {
+        ['DPS'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.60, g = 0.20, b = 0.02, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.40, g = 0.13, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.60, g = 0.20, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.60, g = 0.20, b = 0.02, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.24, g = 0.08, b = 0.01, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 1.00, g = 0.55, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 1.00, g = 0.55, b = 0.05, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.60, g = 0.20, b = 0.02, a = 1.0, }, },
+        },
+        ['PBAE'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.05, g = 0.25, b = 0.55, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.03, g = 0.16, b = 0.36, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.05, g = 0.25, b = 0.55, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.05, g = 0.25, b = 0.55, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.02, g = 0.10, b = 0.22, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.20, g = 0.75, b = 1.00, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.20, g = 0.75, b = 1.00, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.05, g = 0.25, b = 0.55, a = 1.0, }, },
+        },
+    },
     ['ItemSets']      = {
         ['RezStaff'] = {
             "Legendary Fabled Staff of Forbidden Rites",
@@ -30,7 +70,7 @@ _ClassConfig    = {
             "Staff of Elemental Essence",
         },
         ['OoW_Chest'] = {
-            "Glyphwielder's Vest of the Summoner",
+            "Glyphwielder's Tunic of the Summoner",
             "Runemaster's Robe",
         },
     },
@@ -280,6 +320,13 @@ _ClassConfig    = {
         },
         ['EpicPetOrb'] = {
             "Summon Orb",
+        },
+    },
+    ['AASets']        = {
+        ['ModRod'] = {
+            "Large Modulation Shard",
+            "Medium Modulation Shard",
+            "Small Modulation Shard",
         },
     },
     ['RotationOrder'] = { -- TODO: Add emergency rotation, shared health, etc
@@ -848,11 +895,9 @@ _ClassConfig    = {
         },
         ['Summon ModRods'] = {
             { -- Mod Rod AA, will use the first(best) one found.
-                name_func = function(self)
-                    return Casting.GetFirstAA({ "Large Modulation Shard", "Medium Modulation Shard", "Small Modulation Shard", })
-                end,
+                name = "ModRod",
                 type = "AA",
-                load_cond = function() return Casting.CanUseAA("Small Modulation Shard") end,
+                load_cond = function() return Core.GetResolvedActionMapItem('ModRod') end,
                 cond = function(self, aaName, target)
                     if not Targeting.TargetIsACaster(target) then return false end
                     local modRodItem = mq.TLO.Spell(aaName).RankName.Base(1)()
@@ -868,7 +913,7 @@ _ClassConfig    = {
             {
                 name = "ManaRodSummon",
                 type = "Spell",
-                load_cond = function() return not Casting.CanUseAA("Small Modulation Shard") end,
+                load_cond = function() return not Core.GetResolvedActionMapItem('ModRod') end,
                 cond = function(self, spell, target)
                     if not Targeting.TargetIsACaster(target) then return false end
                     local modRodItem = spell.RankName.Base(1)()
@@ -898,7 +943,7 @@ _ClassConfig    = {
                 { name = "PetHealSpell",     cond = function(self) return Config:GetSetting('DoPetHealSpell') end, },
                 { name = "FireOrbSummon", },
                 { name = "SingleCotH", },
-                { name = "ManaRodSummon",    cond = function(self) return Config:GetSetting('SummonModRods') and not Casting.CanUseAA("Small Modulation Shard") end, },
+                { name = "ManaRodSummon",    cond = function(self) return Config:GetSetting('SummonModRods') and not Core.GetResolvedActionMapItem('ModRod') end, },
                 { name = "FireShroud", },
                 { name = "LongDurDmgShield", },
             },

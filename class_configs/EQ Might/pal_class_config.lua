@@ -74,6 +74,46 @@ return {
             return false, false
         end,
     },
+    ['Themes']            = {
+        ['Tank'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.40, g = 0.05, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.40, g = 0.05, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.15, g = 0.02, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.40, g = 0.05, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.40, g = 0.05, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.15, g = 0.02, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.40, g = 0.05, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.40, g = 0.05, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.40, g = 0.05, b = 0.50, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.25, g = 0.03, b = 0.32, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.40, g = 0.05, b = 0.50, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.40, g = 0.05, b = 0.50, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.40, g = 0.05, b = 0.50, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.15, g = 0.02, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.75, g = 0.20, b = 1.00, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.75, g = 0.20, b = 1.00, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.40, g = 0.05, b = 0.50, a = 1.0, }, },
+        },
+        ['DPS'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.30, g = 0.05, b = 0.40, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.30, g = 0.05, b = 0.40, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.12, g = 0.02, b = 0.16, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.30, g = 0.05, b = 0.40, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.30, g = 0.05, b = 0.40, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.12, g = 0.02, b = 0.16, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.30, g = 0.05, b = 0.40, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.30, g = 0.05, b = 0.40, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.30, g = 0.05, b = 0.40, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.20, g = 0.03, b = 0.26, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.30, g = 0.05, b = 0.40, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.30, g = 0.05, b = 0.40, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.30, g = 0.05, b = 0.40, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.12, g = 0.02, b = 0.16, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.75, g = 0.20, b = 1.00, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.75, g = 0.20, b = 1.00, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.30, g = 0.05, b = 0.40, a = 1.0, }, },
+        },
+    },
     ['ItemSets']          = {
         ['RezStaff'] = {
             "Legendary Fabled Staff of Forbidden Rites",
@@ -334,6 +374,18 @@ return {
         ["ForHonor"] = { -- Hate Over Time with small absorb recourse
             "Challenge for Honor",
         },
+        -- ['FlameLure'] = { -- eqm port of wizard fire lures, not quite sure what i'm going to do with these yet
+        --     "Lure of Ro",
+        --     "Lure of Flame",
+        --     "Lure of Fire", -- EQM Custom
+        -- },
+    },
+    ['AASets']            = {
+        ['Disruption'] = {
+            "Force of Disruption",
+            "Hand of Disruption",
+            "Divine Stun",
+        },
     },
     ['SpellList']         = {
         {
@@ -455,6 +507,13 @@ return {
                 name = "BlueBand",
                 type = "Item",
                 load_cond = function(self) return Core.GetResolvedActionMapItem("BlueBand") and (mq.TLO.Me.Level() < 68 or not Core.GetResolvedActionMapItem("VampiricBlueBand")) end,
+            },
+            { -- Changed on EQM: rank 1 heals all group members for 5k and puts a 2k DoT on the Paladin for 6 ticks.. 3 ranks.
+                name = "Act of Valor",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    return self.CombatState == "Combat" and Targeting.BigGroupHealsNeeded()
+                end,
             },
             {
                 name = "WaveHeal",
@@ -776,6 +835,14 @@ return {
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
+            {
+                name = "Marr's Salvation",
+                type = "AA",
+                load_cond = function() return Config:GetSetting('DoSalvation') end,
+                cond = function(self, aaName, target)
+                    return not Targeting.TargetIsATank(target) and Casting.GroupBuffAACheck(aaName, target)
+                end,
+            },
         },
         ['EmergencyDefenses'] = {
             --Note that in Tank Mode, defensive discs are preemptively cycled on named in the (non-emergency) Defenses rotation
@@ -822,7 +889,7 @@ return {
                 load_cond = function(self) return mq.TLO.FindItem("=Xeno's Faceguard")() end,
             },
             {
-                name = "Force of Disruption",
+                name = "Disruption",
                 type = "AA",
             },
             {
@@ -855,7 +922,7 @@ return {
                 load_cond = function(self) return mq.TLO.FindItem("=Xeno's Faceguard")() end,
             },
             {
-                name = "Force of Disruption",
+                name = "Disruption",
                 type = "AA",
             },
             {
@@ -1048,11 +1115,6 @@ return {
                 end,
             },
             {
-                name_func = function(self) return Casting.GetFirstAA({ "Hand of Disruption", "Divine Stun", }) end,
-                type = "AA",
-                load_cond = function(self) return not Core.IsTanking() or not Casting.CanUseAA("Force of Disruption") end,
-            },
-            {
                 name = "Bash",
                 type = "Ability",
                 cond = function(self)
@@ -1113,13 +1175,13 @@ return {
             end,
         },
         {
-            id = 'Force of Disruption',
+            id = 'Disruption',
             Type = "AA",
-            DisplayName = function() return Casting.CanUseAA("Force of Disruption") and "Force of Disruption" or "" end,
-            AbilityName = function() return Casting.CanUseAA("Force of Disruption") and "Force of Disruption" or "" end,
+            DisplayName = function() return Core.GetResolvedActionMapItem('Disruption') or "" end,
+            AbilityName = function() return Core.GetResolvedActionMapItem('Disruption') or "" end,
             AbilityRange = 150,
             cond = function(self)
-                return Casting.CanUseAA("Force of Disruption") and "Force of Disruption"
+                return Core.GetResolvedActionMapItem('Disruption')
             end,
         },
     },
@@ -1175,6 +1237,7 @@ return {
             Category = "Hate Tools",
             Index = 101,
             Tooltip = "Use Beacon of the Righteous to regain AE aggro in Tank Mode.",
+            RequiresLoadoutChange = true,
             Default = true,
             ConfigType = "Advanced",
         },

@@ -76,6 +76,46 @@ local _ClassConfig = {
             return false, false
         end,
     },
+    ['Themes']            = {
+        ['Heal'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.55, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.55, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.22, g = 0.14, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.55, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.55, g = 0.35, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.22, g = 0.14, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.55, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.55, g = 0.35, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.55, g = 0.35, b = 0.05, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.36, g = 0.23, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.55, g = 0.35, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.55, g = 0.35, b = 0.05, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.55, g = 0.35, b = 0.05, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.22, g = 0.14, b = 0.02, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.95, g = 0.70, b = 0.15, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.95, g = 0.70, b = 0.15, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.55, g = 0.35, b = 0.05, a = 1.0, }, },
+        },
+        ['Hybrid'] = {
+            { element = ImGuiCol.TitleBgActive,    color = { r = 0.25, g = 0.38, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TableHeaderBg,    color = { r = 0.25, g = 0.38, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.Tab,              color = { r = 0.10, g = 0.15, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.TabSelected,      color = { r = 0.25, g = 0.38, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.TabHovered,       color = { r = 0.25, g = 0.38, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.Header,           color = { r = 0.10, g = 0.15, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.HeaderActive,     color = { r = 0.25, g = 0.38, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.HeaderHovered,    color = { r = 0.25, g = 0.38, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.FrameBgHovered,   color = { r = 0.25, g = 0.38, b = 0.08, a = 0.7, }, },
+            { element = ImGuiCol.Button,           color = { r = 0.16, g = 0.25, b = 0.05, a = 0.8, }, },
+            { element = ImGuiCol.ButtonActive,     color = { r = 0.25, g = 0.38, b = 0.08, a = 0.8, }, },
+            { element = ImGuiCol.ButtonHovered,    color = { r = 0.25, g = 0.38, b = 0.08, a = 1.0, }, },
+            { element = ImGuiCol.TextSelectedBg,   color = { r = 0.25, g = 0.38, b = 0.08, a = 0.1, }, },
+            { element = ImGuiCol.FrameBg,          color = { r = 0.10, g = 0.15, b = 0.03, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrab,       color = { r = 0.55, g = 0.80, b = 0.20, a = 0.8, }, },
+            { element = ImGuiCol.SliderGrabActive, color = { r = 0.55, g = 0.80, b = 0.20, a = 0.9, }, },
+            { element = ImGuiCol.FrameBgActive,    color = { r = 0.25, g = 0.38, b = 0.08, a = 1.0, }, },
+        },
+    },
     ['ItemSets']          = {
         ['RezStaff'] = {
             "Legendary Fabled Staff of Forbidden Rites",
@@ -409,6 +449,9 @@ local _ClassConfig = {
             "Ancient: Talisman of Might", -- Level 70, Group
             "Talisman of Might",          -- Level 70, Group
             "Spirit of Might",            -- Level 68, Single Target
+        },
+        ['VirulentDot'] = {               -- waiting to see where this goes for now, this is worse than some lower level dots
+            "Virulent Bolt",
         },
     },
     ['Helpers']           = {
@@ -1563,6 +1606,7 @@ local _ClassConfig = {
             Index = 103,
             Tooltip = "Use your Regen buff (best of single or group versions).",
             Default = true,
+            RequiresLoadoutChange = true,
             FAQ = "Why am I spamming my Group Regen buff?",
             Answer = "Certain Shaman and Druid group regen buffs report cross-stacking. You should deselect the option on one of the PCs if they are grouped together.",
         },
@@ -1574,6 +1618,7 @@ local _ClassConfig = {
             Index = 104,
             Tooltip = "Do Haste Spells/AAs",
             Default = true,
+            RequiresLoadoutChange = true,
             ConfigType = "Advanced",
         },
         ['DoMeleeBuff']         = {
