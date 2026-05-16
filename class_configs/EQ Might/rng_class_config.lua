@@ -350,37 +350,45 @@ return {
             return false
         end,
         combatNav = function(forceMove)
-            if not Config:GetSetting('DoMelee') then
-                if not mq.TLO.Me.AutoFire() then
-                    Core.DoCmd('/squelch face fast')
-                    Core.DoCmd('/autofire on')
-                end
-
-                local targetDistance = Targeting.GetTargetDistance()
-                local chaseDistance = Config:GetSetting('ChaseDistance')
-                local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
-                local tooClose = targetDistance < 30
-                --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
-                local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
-
-                Logger.log_verbose("Custom Ranger combatNav engaged. TargetDistance: %d, LOS:%s, ChaseDistance: %d, forceMove: %s, tooClose: %s, tooFar: %s", targetDistance,
-                    mq.TLO.Target.LineOfSight(), chaseDistance, Strings.BoolToColorString(forceMove), Strings.BoolToColorString(tooClose), Strings.BoolToColorString(tooFar))
-                if Config:GetSetting('NavCircle') then
-                    if tooClose or tooFar or forceMove then
-                        Movement:NavAroundCircle(mq.TLO.Target, Config:GetSetting('BowNavDistance'))
-                    end
-                elseif tooClose then
-                    if chaseDistance < 30 then
-                        Logger.log_warning(
-                            "Custom Ranger combatNav: \arWarning! \awChase distance is %d. \ayThis may interfere with ranged combat, depending on chase target movement!",
-                            chaseDistance)
-                    end
-                    Core.DoCmd('/squelch face fast')
-                    Movement:DoStickCmd("10 moveback")
-                elseif tooFar or forceMove then
-                    Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, Config:GetSetting('BowNavDistance'))
+            if Config:GetSetting('DoMelee') then
+                if forceMove and (Globals.AutoTargetID or 0) > 0 then
+                    local chaseDistance = Config:GetSetting('ChaseDistance')
+                    Logger.log_verbose("Custom Ranger combatNav (melee forceMove): targetId=%d chaseDistance=%d", Globals.AutoTargetID, chaseDistance)
+                    Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, chaseDistance)
                     Core.DoCmd('/squelch /face fast')
                 end
+                return
+            end
+
+            if not mq.TLO.Me.AutoFire() then
+                Core.DoCmd('/squelch face fast')
+                Core.DoCmd('/autofire on')
+            end
+
+            local targetDistance = Targeting.GetTargetDistance()
+            local chaseDistance = Config:GetSetting('ChaseDistance')
+            local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
+            local tooClose = targetDistance < 30
+            --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
+            local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
+
+            Logger.log_verbose("Custom Ranger combatNav engaged. TargetDistance: %d, LOS:%s, ChaseDistance: %d, forceMove: %s, tooClose: %s, tooFar: %s", targetDistance,
+                mq.TLO.Target.LineOfSight(), chaseDistance, Strings.BoolToColorString(forceMove), Strings.BoolToColorString(tooClose), Strings.BoolToColorString(tooFar))
+            if Config:GetSetting('NavCircle') then
+                if tooClose or tooFar or forceMove then
+                    Movement:NavAroundCircle(mq.TLO.Target, Config:GetSetting('BowNavDistance'))
+                end
+            elseif tooClose then
+                if chaseDistance < 30 then
+                    Logger.log_warning(
+                        "Custom Ranger combatNav: \arWarning! \awChase distance is %d. \ayThis may interfere with ranged combat, depending on chase target movement!",
+                        chaseDistance)
+                end
+                Core.DoCmd('/squelch face fast')
+                Movement:DoStickCmd("10 moveback")
+            elseif tooFar or forceMove then
+                Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, Config:GetSetting('BowNavDistance'))
+                Core.DoCmd('/squelch /face fast')
             end
         end,
         --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities

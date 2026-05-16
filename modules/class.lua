@@ -1536,7 +1536,7 @@ function Module:GiveTime()
         self:RunCounterRotation()
     end
 
-    if self:IsTanking() and Config:GetSetting('MovebackWhenBehind') then
+    if Config:GetSetting('MovebackWhenBehind') then
         -- make sure nothing is behind us when tanking.
         -- Maybe spawn search is failing us -- look through the xtarget list
         local xtCount = mq.TLO.Me.XTarget()
@@ -1547,9 +1547,15 @@ function Module:GiveTime()
                 Logger.log_debug("\arXT(%s) is behind us! \atTaking evasive maneuvers! \awMyHeader(\am%d\aw) ThierHeading(\am%d\aw)", xtSpawn.DisplayName() or "",
                     mq.TLO.Me.Heading.Degrees(), (xtSpawn.Heading.Degrees() or 0))
                 if Globals.GetTimeSeconds() - Movement:GetLastStickTimer() < 0.5 then
-                    Logger.log_debug("\ayIgnoring moveback because we just stuck a second ago - let's give it some time.")
+                    Logger.log_debug("\ayIgnoring behind-adjust because we just stuck a second ago - let's give it some time.")
                 else
-                    Movement:DoStickCmd("moveback %d", Config:GetSetting('MovebackDistance'))
+                    local movebackMode = Config:GetSetting('MovebackWhenBehindMode') or 1
+                    if movebackMode == 2 then
+                        Logger.log_debug("\ayMovebackWhenBehindMode=Rear Snaproll. Attempting rear position on XT(%s [%d]).", xtSpawn.DisplayName() or "", xtSpawn.ID())
+                        Movement:DoStickCmd("snaproll rear loose uw")
+                    else
+                        Movement:DoStickCmd("moveback %d", Config:GetSetting('MovebackDistance'))
+                    end
                     Movement:SetLastStickTimer(Globals.GetTimeSeconds())
                 end
             end

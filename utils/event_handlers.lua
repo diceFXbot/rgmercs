@@ -34,7 +34,7 @@ mq.event("CantSee", "You cannot see your target.", function()
     else
         if Config:GetSetting('HandleCantSeeTarget') then
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() or haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') or haterCount > 0 then
                 local helpers = Core.GetHelpers()
                 if helpers and helpers.combatNav then
                     Logger.log_debug("CantSee: \ayWe are in COMBAT and Cannot see our target - using custom combatNav!")
@@ -111,7 +111,7 @@ mq.event("TooClose", "Your target is too close to use a ranged weapon!", functio
     else
         if Config:GetSetting('HandleTooClose') then
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') and haterCount > 0 then
                 Logger.log_debug("TooCloseHandler: Pull State not detected, using Combat Nav.")
                 local helpers = Core.GetHelpers()
                 if helpers and helpers.combatNav then
@@ -157,9 +157,9 @@ local function tooFarHandler()
         if Config:GetSetting('HandleTooFar') then
             local helpers = Core.GetHelpers()
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') and haterCount > 0 then
                 if helpers and helpers.combatNav then
-                    Core.SafeCallFunc("Custom Nav", helpers.combatNav)
+                    Core.SafeCallFunc("Custom Nav", helpers.combatNav, true)
                 elseif Config:GetSetting('DoMelee') then
                     Logger.log_debug("TooFar: \ayWe are in COMBAT and too far from our target!")
                     if Config:GetSetting('DoAutoEngage') and Combat.OkToEngage(target.ID() or 0) then

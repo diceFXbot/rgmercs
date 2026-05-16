@@ -385,11 +385,13 @@ local _ClassConfig = {
             local xtCount = mq.TLO.Me.XTarget() or 0
             if xtCount < Config:GetSetting('DiscCount') then return false end
             local haters = Set.new({})
+            local minConLevel = Globals.Constants.ConColorsNameToId["BLUE"] or 4
             for i = 1, xtCount do
                 local xtarg = mq.TLO.Me.XTarget(i)
-                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and (xtarg.Distance() or 999) <= 30 then
+                local conLevel = xtarg and xtarg() and (Globals.Constants.ConColorsNameToId[(xtarg.ConColor() or "Grey"):upper()] or 0) or 0
+                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and (xtarg.Distance() or 999) <= 30 and conLevel >= minConLevel then
                     if printDebug then
-                        Logger.log_verbose("DefensiveDiscCheck(): XT(%d) Counting %s(%d) as a hater in range.", i, xtarg.CleanName() or "None", xtarg.ID())
+                        Logger.log_verbose("DefensiveDiscCheck(): XT(%d) Counting %s(%d) as a blue+ hater in range (ConColor=%s).", i, xtarg.CleanName() or "None", xtarg.ID(), xtarg.ConColor() or "None")
                     end
                     haters:add(xtarg.ID())
                 end
@@ -1112,7 +1114,13 @@ local _ClassConfig = {
             -- cond = function(self) return true end, --Kept here for illustration, this line could be removed in this instance since we aren't using conditions.
             spells = {
                 { name = "SpearNuke", },
-                { name = "LifeTap", },
+                {
+                    name = "LifeTap",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap"] ~= false
+                    end,
+                },
                 { name = "SnareDot",    cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Encroaching Darkness") end, },
                 { name = "Terror",      cond = function(self) return Config:GetSetting('DoTerror') end, },
                 { name = "AETaunt",     cond = function(self) return Config:GetSetting('AETauntSpell') end, },
@@ -1124,11 +1132,22 @@ local _ClassConfig = {
                 { name = "PowerTapAtk", cond = function(self) return Config:GetSetting('DoAtkTap') end, },
                 { name = "Skin", },
                 { name = "HateBuff",    cond = function(self) return Config:GetSetting('DoHateBuff') and not Casting.CanUseAA("Voice of Thule") end, },
-                { name = "LifeTap2", },
+                {
+                    name = "LifeTap2",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap2"] ~= false
+                    end,
+                },
                 { name = "Terror2",     cond = function(self) return Config:GetSetting('DoTerror') end, },
                 { name = "Terror3",     cond = function(self) return Config:GetSetting('DoTerror') end, },
-                { name = "LifeTap3", },
-                { name = "SelfDS", },
+                {
+                    name = "LifeTap3",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap3"] ~= false
+                    end,
+                },
             },
         },
     },

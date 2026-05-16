@@ -1,0 +1,70 @@
+2026-05-14
+
+- EQ Might Ranger: DoMelee=true 時でも forceMove が来たら再NAVするように combatNav を修正。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: forceMove && AutoTargetID>0 の場合、ChaseDistance を使って Movement:DoNav(...) を実行。
+
+- TooFar 系イベント（"You can't hit them from here." など）で custom combatNav 呼び出し時に
+  forceMove=true を渡すように修正。
+  - file: utils/event_handlers.lua
+  - detail: Core.SafeCallFunc("Custom Nav", helpers.combatNav, true)
+
+- Tank Positioning: 「Moveback if Mob Behind」に動作モードを追加。
+  - file: utils/config.lua
+  - detail: MovebackWhenBehindMode (Moveback / Rear Snaproll (uw)) を追加。
+  - file: modules/class.lua
+  - detail: mode=Moveback は従来通り moveback。mode=Rear Snaproll は
+    '/stick id <xtarget> snaproll rear loose uw' を実行。
+
+- Moveback if Mob Behind の適用範囲を調整。
+  - file: modules/class.lua
+  - detail: class 側の背後検知処理は IsTanking 条件を外し、MovebackWhenBehind が ON なら全モードで動作。
+
+- NamedList から通常版 "King Tranix" を削除。
+  - file: namedlist/named_eqmight.lua
+  - file: namedlist/named_default.lua
+  - file: namedlist/named_lazarus.lua
+  - note: "The Fabled King Tranix" 系は未変更。
+
+- Rear Snaproll モード時に通常stickへ moveback が混ざらないよう調整。
+  - file: utils/movement.lua
+  - detail: MovebackWhenBehindMode=Rear Snaproll (2) の場合、MovebackWhenTank は stick コマンドへ付与しない。
+  - file: modules/class.lua
+  - detail: 背後調整のクールダウンログ文言を moveback 固有表現から中立表現へ変更。
+
+- Rear Snaproll 実行コマンドを固定化。
+  - file: modules/class.lua
+  - detail: MovebackWhenBehindMode=Rear Snaproll の実行を
+    '/stick snaproll rear loose uw'（idなし）に変更。
+
+- MovebackWhenBehindMode のプルダウン表記を実コマンドに合わせて変更。
+  - file: utils/config.lua
+  - detail: "Rear Snaproll (uw)" を "stick snaproll rear loose uw" に変更。
+  
+- CantSee/TooFar の再移動ガードから "not Me.Moving()" 条件を除去。
+  - file: utils/event_handlers.lua
+  - detail: 移動中でも再NAV判定が通るように条件を緩和。
+
+- NamedList から "High Priest Zaharn" を削除。
+  - file: namedlist/named_lazarus.lua
+
+2026-05-15
+
+- Burning: Auto Burn: Mob Threshold の上限を引き上げ。
+  - file: utils/config.lua
+  - detail: BurnMobCount の Max を 10 -> 99 に変更。
+
+- EQ Might SHD: Defenses の DiscCount 判定に Con 条件を追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: DefensiveDiscCheck でカウント対象を「Blue以上（Blue/White/Yellow/Red）」かつ
+    30レンジ内のヘイターのみに限定。
+
+2026-05-16
+
+- EQ Might SHD: Banshee Aura（SelfDS）を spell loadout から除外。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: SpellList の SelfDS エントリを削除。
+
+- EQ Might SHD: LifeTap / LifeTap2 / LifeTap3 のトグル連動を spell loadout に反映。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: EnabledRotationEntries で各エントリが false の場合、SpellList から除外する cond を追加。

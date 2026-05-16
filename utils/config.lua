@@ -1103,12 +1103,28 @@ Config.DefaultConfig                                     = {
         Default = true,
         ConfigType = "Advanced",
     },
+    ['MovebackWhenBehindMode']     = {
+        DisplayName = "Moveback Behind Mode",
+        Group = "Combat",
+        Header = "Positioning",
+        Category = "Tank Positioning",
+        Index = 3,
+        Tooltip = "Choose how to react when an XTarget is behind you while tanking.\n" ..
+            "Moveback: use the existing moveback behavior.\n" ..
+            "stick snaproll rear loose uw: use '/stick snaproll rear loose uw' to get behind the target.",
+        Type = "Combo",
+        ComboOptions = { 'Moveback', 'stick snaproll rear loose uw', },
+        Default = 1,
+        Min = 1,
+        Max = 2,
+        ConfigType = "Advanced",
+    },
     ['MovebackDistance']           = {
         DisplayName = "Units to Moveback",
         Group = "Combat",
         Header = "Positioning",
         Category = "Tank Positioning",
-        Index = 3,
+        Index = 4,
         Tooltip = "Distance from mob to moveback to. May require adjustment for larger targets or due to overshooting from high move speed.",
         Default = 20,
         Min = 1,
@@ -1746,7 +1762,7 @@ Config.DefaultConfig                                     = {
         Tooltip = "Automatically use Burn rotations when we are fighting x number of haters.",
         Default = 3,
         Min = 1,
-        Max = 10,
+        Max = 99,
         ConfigType = "Advanced",
     },
     ['BurnNamed']                  = {

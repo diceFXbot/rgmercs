@@ -298,7 +298,6 @@ return {
     ["nagafen's lair"] = {
         "a death beetle",
         "Efreeti Lord Djarn",
-        "King Tranix",
         "Kobold Champion Payrugh",
         "Kobold King Charugh",
         "Kobold Noble Rorach",
