@@ -526,7 +526,7 @@ Config.DefaultConfig                                     = {
         Header = "Clickies",
         Category = "General Clickies",
         Index = 3,
-        Tooltip = "Choose how/when to use mounts.",
+        Tooltip = "Choose how/when to use mounts. A character with melee combat enabled will only use a mount if set to use as a buff.",
         Type = "Combo",
         ComboOptions = { 'Never', 'For use as mount', 'For buff only', },
         Default = 2,
@@ -3739,6 +3739,24 @@ function Config:ListMoveUp(id, listName)
 
     list[newId], list[id] = list[id], list[newId]
     Logger.log_info("\ax%s: \ag%s\ax has been\ag moved up\ax to position \at%d", listName, self:GetSetting(listName)[newId], newId)
+    self:SetSetting(listName, list)
+end
+
+function Config:ListMoveTop(id, listName)
+    if type(id) == 'string' then
+        id = self:ConvertListNameToID(id, listName)
+    end
+
+    if id < 2 then return end
+    local list = self:GetSetting(listName)
+
+    if id > #list then return end
+
+    local newId = 1
+
+    list[newId], list[id] = list[id], list[newId]
+
+    Logger.log_info("\ax%s: \ag%s\ax has been\ag moved to the top of the list!", listName, self:GetSetting(listName)[1])
     self:SetSetting(listName, list)
 end
 
