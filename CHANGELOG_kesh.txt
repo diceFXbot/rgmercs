@@ -71,3 +71,20 @@
 
 
 /rgl set ManualMode ${If[${RGMercs.Config[ManualMode]},off,on]}
+
+2026-05-18
+
+- Cure: Core.SafeCallFunc の複数戻り値を保持するよう修正。
+  - file: utils/core.lua
+  - detail: pcall 結果を table で受け、成功時に 2個目以降の戻り値をそのまま返すよう変更。
+    CureNow の (successful, haveValidOptions) 判定が正しく伝播するように修正。
+
+- EQ Might SHD: Cure 処理を実装。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: ModeChecks に IsCuring を追加し、Cures(GetCureSpells/CureNow) を追加。
+    AbilitySets に CurePoison/CureDisease/CureCurse/CureCorrupt を追加。
+
+- EQ Might RNG: Cure 処理を実装。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: ModeChecks に IsCuring を追加し、Cures(GetCureSpells/CureNow) を追加。
+    AbilitySets に CurePoison/CureDisease/CureCurse/CureCorrupt を追加。
