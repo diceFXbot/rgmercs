@@ -125,6 +125,7 @@ local _ClassConfig = {
         ['Epic'] = {
             "Crafted Talisman of Fates",
             "Blessed Spiritstaff of the Heyokah",
+            "Spear of Fate",
         },
         ['BlueBand'] = {
             "Legendary Ancient Frozen Blue Band",
@@ -943,7 +944,8 @@ local _ClassConfig = {
                 type = "Item",
                 cond = function(self, itemName)
                     if Config:GetSetting('UseEpic') == 1 then return false end
-                    return (Config:GetSetting('UseEpic') == 3 or (Config:GetSetting('UseEpic') == 2 and Casting.BurnCheck()))
+                    if not (Config:GetSetting('UseEpic') == 3 or (Config:GetSetting('UseEpic') == 2 and Casting.BurnCheck())) then return false end
+                    return Casting.DotItemCheck(itemName)
                 end,
             },
             {
@@ -1274,11 +1276,8 @@ local _ClassConfig = {
                 { name = "CanniSpell",      cond = function(self) return Config:GetSetting('DoSpellCanni') end, },
                 { name = "MeleeProcBuff",   cond = function(self) return self.Helpers.ProcBuffChoice() == "ProcSpell" end, },
                 { name = "SlowProcBuff", },
-                { name = "LowLvlAtkBuff",   cond = function(self) return not mq.TLO.FindItem("=Artifact of the Champion")() or mq.TLO.Me.Level() < 68 end, },
                 { name = "ColdNuke",        cond = function(self) return Config:GetSetting('DoColdNuke') end, },
                 { name = "PoisonNuke",      cond = function(self) return Config:GetSetting('DoPoisonNuke') end, },
-                { name = "CurseDot",        cond = function(self) return Config:GetSetting('DoCurseDot') end, },
-                { name = "SaryrnDot",       cond = function(self) return Config:GetSetting('DoSaryrnDot') end, },
                 { name = "UltorDot",        cond = function(self) return Config:GetSetting('DoUltorDot') end, },
                 { name = "PBAEPoison",      cond = function(self) return Config:GetSetting('DoPBAE') end, },
             },
@@ -1298,11 +1297,8 @@ local _ClassConfig = {
                 { name = "CanniSpell",      cond = function(self) return Config:GetSetting('DoSpellCanni') end, },
                 { name = "MeleeProcBuff",   cond = function(self) return self.Helpers.ProcBuffChoice() == "ProcSpell" end, },
                 { name = "SlowProcBuff", },
-                { name = "LowLvlAtkBuff",   cond = function(self) return not mq.TLO.FindItem("=Artifact of the Champion")() or mq.TLO.Me.Level() < 68 end, },
                 { name = "ColdNuke",        cond = function(self) return Config:GetSetting('DoColdNuke') end, },
                 { name = "PoisonNuke",      cond = function(self) return Config:GetSetting('DoPoisonNuke') end, },
-                { name = "CurseDot",        cond = function(self) return Config:GetSetting('DoCurseDot') end, },
-                { name = "SaryrnDot",       cond = function(self) return Config:GetSetting('DoSaryrnDot') end, },
                 { name = "UltorDot",        cond = function(self) return Config:GetSetting('DoUltorDot') end, },
                 { name = "PBAEPoison",      cond = function(self) return Config:GetSetting('DoPBAE') end, },
                 { name = "SingleHot",       cond = function(self) return Config:GetSetting('DoSingleHot') end, },

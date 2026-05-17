@@ -82,10 +82,60 @@ local _ClassConfig = {
     ['ModeChecks']    = {
         IsTanking = function() return Core.IsModeActive("Tank") end,
         IsRezing = function() return Core.GetResolvedActionMapItem('RezStaff') ~= nil and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
+        IsCuring = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
     },
     ['Modes']         = {
         'Tank',
         'DPS',
+    },
+    ['Cures']         = {
+        GetCureSpells = function(self)
+            self.TempSettings.CureSpells = {}
+
+            local neededCures = {
+                ['Poison'] = "CurePoison",
+                ['Disease'] = "CureDisease",
+                ['Curse'] = "CureCurse",
+                ['Corruption'] = "CureCorrupt",
+            }
+
+            for effectType, mapName in pairs(neededCures) do
+                local cureSpell = Core.GetResolvedActionMapItem(mapName)
+                if cureSpell then
+                    self.TempSettings.CureSpells[effectType] = cureSpell
+                end
+            end
+        end,
+        CureNow = function(self, type, targetId)
+            local targetSpawn = mq.TLO.Spawn(targetId)
+            if not (targetSpawn and targetSpawn()) then return false, false end
+
+            if Config:GetSetting('DoCureAA') then
+                local cureAA = Casting.AAReady("Radiant Cure") and "Radiant Cure"
+
+                if cureAA then
+                    Logger.log_debug("CureNow: Using %s for %s on %s.", cureAA, type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                    return Casting.UseAA(cureAA, targetId), true
+                end
+            end
+
+            if Config:GetSetting('DoCureSpells') then
+                for effectType, cureSpell in pairs(self.TempSettings.CureSpells or {}) do
+                    if type:lower() == effectType:lower() then
+                        if cureSpell.TargetType():lower() == "group v1" and not Targeting.GroupedWithTarget(targetSpawn) then
+                            Logger.log_debug("CureNow: We cannot use %s on %s, because it is a group-only spell and they are not in our group!", cureSpell.RankName(),
+                                targetSpawn.CleanName() or "Unknown")
+                        else
+                            Logger.log_debug("CureNow: Using %s for %s on %s.", cureSpell.RankName(), type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                            return Casting.UseSpell(cureSpell.RankName(), targetId, true), true
+                        end
+                    end
+                end
+            end
+
+            Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+            return false, false
+        end,
     },
     ['Themes']        = {
         ['Tank'] = {
@@ -180,6 +230,26 @@ local _ClassConfig = {
             "Augmentation of Death",
             "Augment Death",
             "Strengthen Death",
+        },
+        ['CurePoison'] = {
+            "Eradicate Poison",
+            "Counteract Poison",
+            "Cure Poison",
+        },
+        ['CureDisease'] = {
+            "Eradicate Disease",
+            "Counteract Disease",
+            "Cure Disease",
+        },
+        ['CureCurse'] = {
+            "Eradicate Curse",
+            "Remove Greater Curse",
+            "Remove Curse",
+            "Remove Lesser Curse",
+            "Remove Minor Curse",
+        },
+        ['CureCorrupt'] = {
+            "Cure Corruption",
         },
         ['Horror'] = {                 -- HP Tap Proc
             "Shroud of the Nightborn", -- Level 71

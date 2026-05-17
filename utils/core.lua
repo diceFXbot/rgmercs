@@ -55,12 +55,14 @@ end
 function Core.SafeCallFunc(logInfo, fn, ...)
     if not fn then return true end -- no condition func == pass
 
-    local success, ret = pcall(fn, ...)
+    local results = { pcall(fn, ...) }
+    local success = results[1]
     if not success then
-        Logger.log_error("\ay%s\n\ar\t%s", logInfo, ret)
-        ret = false
+        Logger.log_error("\ay%s\n\ar\t%s", logInfo, results[2])
+        return false
     end
-    return ret
+
+    return (table.unpack or unpack)(results, 2, #results)
 end
 
 --- Returns true if running on an EMU (emulator) MacroQuest build.

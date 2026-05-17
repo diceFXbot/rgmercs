@@ -68,3 +68,6 @@
 - EQ Might SHD: LifeTap / LifeTap2 / LifeTap3 のトグル連動を spell loadout に反映。
   - file: class_configs/EQ Might/shd_class_config.lua
   - detail: EnabledRotationEntries で各エントリが false の場合、SpellList から除外する cond を追加。
+
+
+/rgl set ManualMode ${If[${RGMercs.Config[ManualMode]},off,on]}
