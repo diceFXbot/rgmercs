@@ -9,10 +9,25 @@ local Tables      = require("utils.tables")
 
 local ClassLoader = { _version = '0.1', _name = "ClassLoader", _author = 'Derple', }
 
+local MightKeshClasses = { shd = true, rng = true, }
+
+function ClassLoader.getMightKeshConfigFile(class)
+    local baseConfigDir = Globals.ScriptDir .. "/class_configs"
+    return string.format("%s/EQ Might-kesh/%s_class_config.lua", baseConfigDir, class:lower())
+end
+
 function ClassLoader.getClassConfigFileName(class)
     local baseConfigDir = Globals.ScriptDir .. "/class_configs"
     local classConfigDir = Config:GetSetting('ClassConfigDir') -- now defaults to current server (PrM falls back to EQM)
-    local configFile = string.format("%s/%s/%s_class_config.lua", baseConfigDir, classConfigDir, class:lower())
+    local classLower = class:lower()
+
+    if classConfigDir == "EQ Might-kesh" then
+        classConfigDir = "EQ Might-kesh"
+    elseif Core.OnMight() and MightKeshClasses[classLower] and Files.file_exists(ClassLoader.getMightKeshConfigFile(class)) then
+        classConfigDir = "EQ Might-kesh"
+    end
+
+    local configFile = string.format("%s/%s/%s_class_config.lua", baseConfigDir, classConfigDir, classLower)
     local deprecated = Tables.TableContains(Globals.Constants.DeprecatedConfigs[class] or {}, classConfigDir)
 
     if deprecated then

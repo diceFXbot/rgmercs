@@ -37,6 +37,7 @@ local Tooltips     = {
     CallAtk             = "Spell Line: Increase Attack / Decrease HP Per Tick",
     AETaunt             = "Spell Line: PBAE Hate Increase + Taunt",
     PoisonDot           = "Spell Line: Poison Dot",
+    UndeadNuke          = "Spell Line: Undead/Vampire 専用ダメージ",
     SpearNuke           = "Spell Line: Instacast Disease Nuke",
     BondTap             = "Spell Line: LifeTap DOT",
     DireTap             = "Spell Line: LifeTap",
@@ -48,11 +49,12 @@ local Tooltips     = {
     Dicho               = "Spell Line: Hate Increase + LifeTap",
     PowerTapAC          = "Spell Line: AC Tap",
     PowerTapAtk         = "Spell Line: Attack Tap",
+    ResistTap           = "Spell Line: Resist Tap (Decrease All Resists)",
     SnareDot            = "Spell Line: Snare + HP DOT",
     Acrimony            = "Spell Increase: Aggrolock + LifeTap DOT + Hate Generation",
     SpiteStrike         = "Spell Line: LifeTap + Caster 1H Blunt Increase + Target Armor Decrease",
     ReflexStrike        = "Ability: Triple 2HS Attack + HP Increase",
-    DireDot             = "Spell Line: DOT + AC Decrease + Strength Decrease",
+    DiseaseDot          = "Spell Line: Disease DoT + AC Decrease + Strength Decrease",
     AllianceNuke        = "Spell Line: Alliance (Requires Multiple of Same Class) - Increase Spell Damage Taken by Target + Large LifeTap",
     InfluenceDisc       = "Ability Line: Increase AC + Absorb Damage + Melee Proc (LifeTap + Max HP Increase)",
     DLUA                = "AA: Cast Highest Level of Scribed Buffs (Shroud, Horror, Drape, Demeanor, Skin, Covenant, CallATK)",
@@ -77,15 +79,65 @@ local Tooltips     = {
 
 local _ClassConfig = {
     -- Added BladeDisc line for AE taunt, return spears to ST
-    _version          = "2.6 - EQ Might",
+    _version          = "2.6 - EQ Might-kesh",
     _author           = "Algar, Derple",
     ['ModeChecks']    = {
         IsTanking = function() return Core.IsModeActive("Tank") end,
         IsRezing = function() return Core.GetResolvedActionMapItem('RezStaff') ~= nil and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
+        IsCuring = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
     },
     ['Modes']         = {
         'Tank',
         'DPS',
+    },
+    ['Cures']         = {
+        GetCureSpells = function(self)
+            self.TempSettings.CureSpells = {}
+
+            local neededCures = {
+                ['Poison'] = "CurePoison",
+                ['Disease'] = "CureDisease",
+                ['Curse'] = "CureCurse",
+                ['Corruption'] = "CureCorrupt",
+            }
+
+            for effectType, mapName in pairs(neededCures) do
+                local cureSpell = Core.GetResolvedActionMapItem(mapName)
+                if cureSpell then
+                    self.TempSettings.CureSpells[effectType] = cureSpell
+                end
+            end
+        end,
+        CureNow = function(self, type, targetId)
+            local targetSpawn = mq.TLO.Spawn(targetId)
+            if not (targetSpawn and targetSpawn()) then return false, false end
+
+            if Config:GetSetting('DoCureAA') then
+                local cureAA = Casting.AAReady("Radiant Cure") and "Radiant Cure"
+
+                if cureAA then
+                    Logger.log_debug("CureNow: Using %s for %s on %s.", cureAA, type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                    return Casting.UseAA(cureAA, targetId), true
+                end
+            end
+
+            if Config:GetSetting('DoCureSpells') then
+                for effectType, cureSpell in pairs(self.TempSettings.CureSpells or {}) do
+                    if type:lower() == effectType:lower() then
+                        if cureSpell.TargetType():lower() == "group v1" and not Targeting.GroupedWithTarget(targetSpawn) then
+                            Logger.log_debug("CureNow: We cannot use %s on %s, because it is a group-only spell and they are not in our group!", cureSpell.RankName(),
+                                targetSpawn.CleanName() or "Unknown")
+                        else
+                            Logger.log_debug("CureNow: Using %s for %s on %s.", cureSpell.RankName(), type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                            return Casting.UseSpell(cureSpell.RankName(), targetId, true), true
+                        end
+                    end
+                end
+            end
+
+            Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+            return false, false
+        end,
     },
     ['Themes']        = {
         ['Tank'] = {
@@ -146,224 +198,299 @@ local _ClassConfig = {
     ['AbilitySets']   = {
         --Laz spells to look into: Fickle Shadows
         ['Mantle'] = {
-            "Soul Carapace",              -- Level 71
-            "Ancient: Guard of Chivalry", -- Level 68 EQM Custom
-            "Soul Shield",                -- Level 67
-            "Soul Guard",                 -- Level 61
-            "Ichor Guard",                -- Level 56 Timer 5
-            "Squire Guard",               -- Level 40
+            "Soul Carapace",
+            "Ancient: Guard of Chivalry", -- EQM Custom
+            "Soul Shield",
+            "Soul Guard",
+            "Ichor Guard", -- Level 56, Timer 5
+            "Squire Guard",
         },
         ['BlockDisc'] = {
-            "Deflection Discipline", -- Level 59
+            "Deflection Discipline",
         },
 
-        ['LeechCurse'] = { 'Leechcurse Discipline', },  -- Level 60
+        ['LeechCurse'] = { 'Leechcurse Discipline', },
 
-        ['UnholyAura'] = { 'Unholy Aura Discipline', }, -- Level 55
+        ['UnholyAura'] = { 'Unholy Aura Discipline', },
 
         ['PetSpell'] = {
-            "Son of Decay",   -- Level 68
-            "Invoke Death",   -- Level 64
-            "Cackling Bones", -- Level 58
-            "Malignant Dead", -- Level 52
-            "Summon Dead",    -- Level 46
-            "Animate Dead",   -- Level 38
-            "Restless Bones", -- Level 30
-            "Convoke Shadow", -- Level 22
-            "Bone Walk",      -- Level 14
-            "Leering Corpse", -- Level 7
+            "Son of Decay",
+            "Invoke Death",
+            "Cackling Bones",
+            "Leering Corpse",
+            "Malignant Dead",
+            "Summon Dead",
+            "Animate Dead",
+            "Restless Bones",
+            "Bone Walk",
+            "Convoke Shadow",
+            "Leering Corpse,",
         },
         ['PetHaste'] = {
-            "Amplify Death",           -- Level 71
-            "Rune of Decay",           -- Level 69
-            "Augmentation of Death",   -- Level 64
-            "Augment Death",           -- Level 60
-            "Strengthen Death",        -- Level 29
+            "Amplify Death",
+            "Rune of Decay",
+            "Augmentation of Death",
+            "Augment Death",
+            "Strengthen Death",
+        },
+        ['CurePoison'] = {
+            "Eradicate Poison",
+            "Counteract Poison",
+            "Cure Poison",
+        },
+        ['CureDisease'] = {
+            "Eradicate Disease",
+            "Counteract Disease",
+            "Cure Disease",
+        },
+        ['CureCurse'] = {
+            "Eradicate Curse",
+            "Remove Greater Curse",
+            "Remove Curse",
+            "Remove Lesser Curse",
+            "Remove Minor Curse",
+        },
+        ['CureCorrupt'] = {
+            "Cure Corruption",
         },
         ['Horror'] = {                 -- HP Tap Proc
             "Shroud of the Nightborn", -- Level 71
-            "Marrowthirst Horror",     -- Level 70 EQM Added
-            "Shroud of Discord",       -- Level 67 Buff Slot 1 <
+            "Marrowthirst Horror",     -- EQM Added
+            "Shroud of Discord",       -- Level 67 -- Buff Slot 1 <
             "Black Shroud",            -- Level 65
             "Shroud of Chaos",         -- Level 63
             "Shroud of Death",         -- Level 55
         },
         ['Mental'] = {                 -- Mana Tap Proc
-            "Mental Horror",           -- Level 65 Buff Slot 1 >
+            "Mental Horror",           -- Level 65 --Buff Slot 1 >
             "Mental Corruption",       -- Level 52
         },
         ['Skin'] = {
             "Decrepit Skin", -- Level 70
         },
         ['SelfDS'] = {
-            "Banshee Aura", -- Level 54
+            "Banshee Aura",
         },
         ['CloakHP'] = {
-            "Cloak of Discord",    -- Level 70
-            "Cloak of Luclin",     -- Level 65
-            "Cloak of the Akheva", -- Level 60
+            "Cloak of the Akheva",
+            "Cloak of Luclin",
+            "Cloak of Discord",
         },
         ['CallAtk'] = {
-            "Call of Darkness", -- Level 54
+            "Call of Darkness",
         },
         ['AETaunt'] = {
             "Dread Gaze", -- Level 69
         },
         ['PoisonDot'] = {
             "Blood of the Blacktalon", -- Level 71
-            "Blood of Inruku",         -- Level 68
-            "Blood of Discord",        -- Level 66
-            "Blood of Hate",           -- Level 63
             "Blood of Pain",           -- Level 41
+            "Blood of Hate",
+            "Blood of Discord",
+            "Blood of Inruku",
+        },
+        ['FireDot'] = {
+            "Pyre of Mori XIX Rk. III",
+            "Pyre of Mori XIX Rk. II",
+            "Pyre of Mori XIX",
+            "Pyre of the Abandoned Rk. III",
+            "Pyre of the Abandoned Rk. II",
+            "Pyre of the Abandoned",
+            "Pyre of the Neglected Rk. III",
+            "Pyre of the Neglected Rk. II",
+            "Pyre of the Neglected",
+            "Pyre of the Wretched Rk. III",
+            "Pyre of the Wretched Rk. II",
+            "Pyre of the Wretched",
+            "Pyre of the Fereth Rk. III",
+            "Pyre of the Fereth Rk. II",
+            "Pyre of the Fereth",
+            "Pyre of the Lost Rk. III",
+            "Pyre of the Lost Rk. II",
+            "Pyre of the Lost",
+            "Pyre of the Forsaken Rk. III",
+            "Pyre of the Forsaken Rk. II",
+            "Pyre of the Forsaken",
+            "Pyre of the Piq'a Rk. III",
+            "Pyre of the Piq'a Rk. II",
+            "Pyre of the Piq'a",
+            "Pyre of the Bereft Rk. III",
+            "Pyre of the Bereft Rk. II",
+            "Pyre of the Bereft",
+            "Pyre of the Forgotten Rk. III",
+            "Pyre of the Forgotten Rk. II",
+            "Pyre of the Forgotten",
+            "Pyre of the Lifeless Rk. III",
+            "Pyre of the Lifeless Rk. II",
+            "Pyre of the Lifeless",
+            "Pyre of the Fallen Rk. III",
+            "Pyre of the Fallen Rk. II",
+            "Pyre of the Fallen",
+            "Pyre of Mori",
+            "Night Fire",
+            "Funeral Pyre of Kelador",
+            "Pyrocruor",
+            "Boil Blood",
+            "Heat Blood",
+            "Ignite Blood",
         },
         ['SpearNuke'] = {
-            "Spear of Muram",   -- Level 69
-            "Miasmic Spear",    -- Level 65
-            "Spear of Decay",   -- Level 64
-            "Spear of Plague",  -- Level 54
-            "Spear of Pain",    -- Level 48
-            "Spear of Disease", -- Level 34
+            "Spear of Decay",
+            "Miasmic Spear",
+            "Spear of Muram",
             "Spike of Disease", -- Level 1
+            "Spear of Disease",
+            "Spear of Pain",
+            "Spear of Plague",
+        },
+        ['UndeadNuke'] = {
+            "Scythe of Inruku",
+            "Scythe of Innoruuk",
+            "Scythe of Death",
+            "Scythe of Darkness",
         },
         ['BondTap'] = {
-            "Bond of the Blacktalon", -- Level 70 EQM Added
-            "Bond of Inruku",         -- Level 66
-            "Bond of Death",          -- Level 62
-            "Vampiric Curse",         -- Level 57
+            "Bond of the Blacktalon", -- EQM Added
+            "Bond of Inruku",
+            "Bond of Death",
+            "Vampiric Curse", -- Level 57
         },
         ['LifeTap'] = {
-            "Touch of the Devourer", -- Level 70
-            "Leech Soul",            -- Level 68 EQM Custom
-            "Touch of Inruku",       -- Level 67
-            "Touch of Innoruuk",     -- Level 65
-            "Touch of Volatis",      -- Level 62
-            "Drain Soul",            -- Level 60
-            "Drain Spirit",          -- Level 55
-            "Spirit Tap",            -- Level 51
-            "Siphon Life",           -- Level 47
-            "Life Leech",            -- Level 44
-            "Lifedraw",              -- Level 25
-            "Lifespike",             -- Level 15
-            "Lifetap",               -- Level 8
+            "Touch of the Devourer",
+            "Leech Soul", -- EQM Custom
+            "Touch of Inruku",
+            "Touch of Innoruuk",
+            "Touch of Volatis",
+            "Drain Soul",
+            "Drain Spirit",
+            "Spirit Tap",
+            "Siphon Life",
+            "Life Leech",
+            "Lifedraw",
+            "Lifespike", -- Level 15
+            "Lifetap",   -- Level 8
         },
         ['LifeTap2'] = {
-            "Touch of the Devourer", -- Level 70
-            "Leech Soul",            -- Level 68 EQM Custom
-            "Touch of Inruku",       -- Level 67
-            "Touch of Innoruuk",     -- Level 65
-            "Touch of Volatis",      -- Level 62
-            "Drain Soul",            -- Level 60
-            "Drain Spirit",          -- Level 55
-            "Spirit Tap",            -- Level 51
-            "Siphon Life",           -- Level 47
-            "Life Leech",            -- Level 44
-            "Lifedraw",              -- Level 25
-            "Lifespike",             -- Level 15
-            "Lifetap",               -- Level 8
+            "Touch of the Devourer",
+            "Leech Soul", -- EQM Custom
+            "Touch of Inruku",
+            "Touch of Innoruuk",
+            "Touch of Volatis",
+            "Drain Soul",
+            "Drain Spirit",
+            "Spirit Tap",
+            "Siphon Life",
+            "Life Leech",
+            "Lifedraw",
+            "Lifespike",
+            "Lifetap", -- Level 8
         },
         ['LifeTap3'] = {
-            "Touch of the Devourer", -- Level 70
-            "Leech Soul",            -- Level 68 EQM Custom
-            "Touch of Inruku",       -- Level 67
-            "Touch of Innoruuk",     -- Level 65
-            "Touch of Volatis",      -- Level 62
-            "Drain Soul",            -- Level 60
-            "Drain Spirit",          -- Level 55
-            "Spirit Tap",            -- Level 51
-            "Siphon Life",           -- Level 47
-            "Life Leech",            -- Level 44
-            "Lifedraw",              -- Level 25
-            "Lifespike",             -- Level 15
-            "Lifetap",               -- Level 8
+            "Touch of the Devourer",
+            "Leech Soul", -- EQM Custom
+            "Touch of Inruku",
+            "Touch of Innoruuk",
+            "Touch of Volatis",
+            "Drain Soul",
+            "Drain Spirit",
+            "Spirit Tap",
+            "Siphon Life",
+            "Life Leech",
+            "Lifedraw",
+            "Lifespike",
+            "Lifetap", -- Level 8
         },
         -- ['TouchTap'] = {
         --     "Touch of Draygun",
         -- },
         ['BiteTap'] = {
-            "Ancient: Bite of Muram", -- Level 70
-            "Blacktalon Bite",        -- Level 70 EQM Added
-            "Inruku's Bite",          -- Level 67
-            "Ancient: Bite of Chaos", -- Level 65
-            "Zevfeer's Bite",         -- Level 62
+            "Zevfeer's Bite", -- Level 62
+            "Ancient: Bite of Chaos",
+            "Inruku's Bite",
+            "Ancient: Bite of Muram",
+            "Blacktalon Bite", -- EQM Added
         },
         ['Terror'] = {
-            "Terror of Vergalid", -- Level 70 EQM added
-            "Terror of Discord",  -- Level 67
-            "Terror of Thule",    -- Level 63
-            "Terror of Terris",   -- Level 59
-            "Terror of Death",    -- Level 53
-            "Terror of Shadows",  -- Level 42
             "Terror of Darkness", -- Level 33
+            "Terror of Shadows",  -- Level 42
+            "Terror of Death",
+            "Terror of Terris",
+            "Terror of Thule",
+            "Terror of Discord",
+            "Terror of Vergalid", -- EQM added
         },
         ['Terror2'] = {
-            "Terror of Vergalid", -- Level 70 EQM added
-            "Terror of Discord",  -- Level 67
-            "Terror of Thule",    -- Level 63
-            "Terror of Terris",   -- Level 59
-            "Terror of Death",    -- Level 53
-            "Terror of Shadows",  -- Level 42
-            "Terror of Darkness", -- Level 33
+            "Terror of Darkness",
+            "Terror of Shadows",
+            "Terror of Death",
+            "Terror of Terris",
+            "Terror of Thule",
+            "Terror of Discord",
+            "Terror of Vergalid", -- EQM added
         },
         ['Terror3'] = {
-            "Terror of Vergalid", -- Level 70 EQM added
-            "Terror of Discord",  -- Level 67
-            "Terror of Thule",    -- Level 63
-            "Terror of Terris",   -- Level 59
-            "Terror of Death",    -- Level 53
-            "Terror of Shadows",  -- Level 42
-            "Terror of Darkness", -- Level 33
+            "Terror of Darkness",
+            "Terror of Shadows",
+            "Terror of Death",
+            "Terror of Terris",
+            "Terror of Thule",
+            "Terror of Discord",
+            "Terror of Vergalid", -- EQM added
         },
         ['PowerTapAC'] = {
-            "Theft of Agony",  -- Level 70
-            "Theft of Pain",   -- Level 68
-            "Aura of Pain",    -- Level 63
-            "Torrent of Pain", -- Level 56
-            "Shroud of Pain",  -- Level 50
-            "Scream of Pain",  -- Level 23
+            "Theft of Agony",
+            "Theft of Pain",
+            "Aura of Pain",
+            "Torrent of Pain",
+            "Shroud of Pain",
+            "Scream of Pain",
         },
         ['PowerTapAtk'] = {
-            "Theft of Hate",   -- Level 70
-            "Aura of Hate",    -- Level 65
-            "Torrent of Hate", -- Level 54
-            "Shroud of Hate",  -- Level 35
-            "Scream of Hate",  -- Level 15
+            "Theft of Hate",
+            "Aura of Hate",
+            "Torrent of Hate",
+            "Shroud of Hate",
+            "Scream of Hate",
+        },
+        ['ResistTap'] = {
+            "Aura of Darkness",
         },
         ['SnareDot'] = {
-            "Festering Darkness", -- Level 61
-            "Cascading Darkness", -- Level 59
-            "Dooming Darkness",   -- Level 44
-            "Engulfing Darkness", -- Level 20
-            "Clinging Darkness",  -- Level 11
+            "Festering Darkness",
+            "Cascading Darkness",
+            "Dooming Darkness",
+            "Engulfing Darkness",
+            "Clinging Darkness", -- Level 11
         },
-        ['DireDot'] = {
-            "Dark Constriction", -- Level 66
-            "Asystole",          -- Level 60
-            "Heart Flutter",     -- Level 36
-            "Disease Cloud",     -- Level 5
+        ['DiseaseDot'] = {
+            "Dark Constriction",
+            "Asystole",
+            "Heart Flutter",
+            "Disease Cloud",
         },
         ['HateBuff'] = {         --9 minute reuse makes these somewhat ridiculous to gem on the fly.
-            "Voice of Thule",    -- Level 65 12% hate
-            "Voice of Terris",   -- Level 60 10% hate
-            "Voice of Death",    -- Level 55 6% hate
-            "Voice of Shadows",  -- Level 46 4% hate
-            "Voice of Darkness", -- Level 39 2% hate
+            "Voice of Thule",    -- level 60, 12% hate
+            "Voice of Terris",   -- level 55, 10% hate
+            "Voice of Death",    -- level 50, 6% hate
+            "Voice of Shadows",  -- level 46, 4% hate
+            "Voice of Darkness", -- level 39, 2% hate
         },
         ['BladeDisc'] = {
-            "Whirlwind Blade",    -- Level 65
-            "Mayhem Blade",       -- Level 52
+            "Whirlwind Blade",
+            "Mayhem Blade",
         },
-        ['Minionskin'] = {        --EQM Custom: HP/Regen/mitigation (May need to block druid HP buff line on pet)
-            "Major Minionskin",   -- Level 66
-            "Greater Minionskin", -- Level 56
-            "Minionskin",         -- Level 43
-            "Lesser Minionskin",  -- not castable for SHD
+        ['Minionskin'] = { --EQM Custom: HP/Regen/mitigation (May need to block druid HP buff line on pet)
+            "Major Minionskin",
+            "Greater Minionskin",
+            "Minionskin",
+            "Lesser Minionskin",
         },
         ['Protective'] = {
-            "Protective Discipline",       -- Level 69
-            "Protective Surge Discipline", -- Level 45
+            "Protective Discipline",
+            "Protective Surge Discipline",
         },
         ['ForPower'] = {
-            "Challenge for Power", -- Level 71
+            "Challenge for Power",
         },
         -- pact of decay ... is this a lich? level 69
     },
@@ -384,17 +511,26 @@ local _ClassConfig = {
             local xtCount = mq.TLO.Me.XTarget() or 0
             if xtCount < Config:GetSetting('DiscCount') then return false end
             local haters = Set.new({})
+            local minConLevel = Globals.Constants.ConColorsNameToId["BLUE"] or 4
             for i = 1, xtCount do
                 local xtarg = mq.TLO.Me.XTarget(i)
-                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and (xtarg.Distance() or 999) <= 30 then
+                local conLevel = xtarg and xtarg() and (Globals.Constants.ConColorsNameToId[(xtarg.ConColor() or "Grey"):upper()] or 0) or 0
+                if xtarg and xtarg.ID() > 0 and ((xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater")) and (xtarg.Distance() or 999) <= 30 and conLevel >= minConLevel then
                     if printDebug then
-                        Logger.log_verbose("DefensiveDiscCheck(): XT(%d) Counting %s(%d) as a hater in range.", i, xtarg.CleanName() or "None", xtarg.ID())
+                        Logger.log_verbose("DefensiveDiscCheck(): XT(%d) Counting %s(%d) as a blue+ hater in range (ConColor=%s).", i, xtarg.CleanName() or "None", xtarg.ID(), xtarg.ConColor() or "None")
                     end
                     haters:add(xtarg.ID())
                 end
                 if #haters:toList() >= Config:GetSetting('DiscCount') then return true end -- no need to keep counting once this threshold has been reached
             end
             return false
+        end,
+        TargetMeetsSnareMinCon = function(target)
+            if not target or not target() then return false end
+            local minConLevel = Config:GetSetting('SnareMinCon') or 1
+            local conName = (target.ConColor() or "Grey"):upper()
+            local conLevel = Globals.Constants.ConColorsNameToId[conName] or 0
+            return conLevel >= minConLevel
         end,
         --function to space out Epic and Omens Chest with Mortal Coil old-school swarm style. Epic has an override condition to fire anyway on named.
         LeechCheck = function(self)
@@ -518,17 +654,6 @@ local _ClassConfig = {
                         (Globals.AutoTargetIsNamed and Targeting.GetAutoTargetAggroPct() >= 100))
             end,
         },
-        { --Keep things from running
-            name = 'Snare',
-            state = 1,
-            steps = 1,
-            load_cond = function() return Config:GetSetting('DoSnare') end,
-            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
-            cond = function(self, combat_state)
-                if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and not Globals.AutoTargetIsNamed and Targeting.GetXTHaterCount() <= Config:GetSetting('SnareCount')
-            end,
-        },
         { --Offensive actions to temporarily boost damage dealt
             name = 'Burn',
             state = 1,
@@ -547,6 +672,17 @@ local _ClassConfig = {
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
                 return combat_state == "Combat"
+            end,
+        },
+        { --Keep things from running
+            name = 'Snare',
+            state = 1,
+            steps = 1,
+            load_cond = function() return Config:GetSetting('DoSnare') end,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
+                return combat_state == "Combat" and Targeting.GetXTHaterCount() <= Config:GetSetting('SnareCount')
             end,
         },
     },
@@ -891,7 +1027,7 @@ local _ClassConfig = {
                 type = "AA",
                 load_cond = function(self) return Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, aaName, target)
-                    return Casting.DetAACheck(aaName) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
@@ -900,7 +1036,7 @@ local _ClassConfig = {
                 tooltip = Tooltips.SnareDot,
                 load_cond = function(self) return not Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
         },
@@ -973,6 +1109,24 @@ local _ClassConfig = {
         },
         ['Combat'] = {
             {
+                name = "Bash",
+                type = "Ability",
+                tooltip = Tooltips.Bash,
+                cond = function(self)
+                    return (Core.ShieldEquipped() or Casting.CanUseAA("2 Hand Bash"))
+                end,
+            },
+            {
+                name = "UndeadNuke",
+                type = "Spell",
+                tooltip = Tooltips.UndeadNuke,
+                load_cond = function(self) return Config:GetSetting('DoUndeadNuke') end,
+                cond = function(self, spell, target)
+                    if not (Targeting.TargetBodyIs(target, "undead") or Targeting.TargetBodyIs(target, "vampire") or Targeting.TargetBodyIs(target, "vampyre")) then return false end
+                    return Casting.HaveManaToNuke()
+                end,
+            },
+            {
                 name = "ForPower",
                 type = "Spell",
                 tooltip = Tooltips.ForPower,
@@ -1008,41 +1162,9 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "PoisonDot",
-                type = "Spell",
-                tooltip = Tooltips.PoisonDot,
-                load_cond = function(self) return Config:GetSetting('DoPoisonDot') end,
-                cond = function(self, spell, target)
-                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
-                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
-                end,
-            },
-            {
-                name = "DireDot",
-                type = "Spell",
-                tooltip = Tooltips.DireDot,
-                load_cond = function(self) return Config:GetSetting('DoDireDot') end,
-                cond = function(self, spell, target)
-                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
-                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
-                end,
-            },
-            {
                 name = "BiteTap",
                 type = "Spell",
                 tooltip = Tooltips.BiteTap,
-            },
-            {
-                name = "Vicious Bite of Chaos",
-                type = "AA",
-                tooltip = Tooltips.ViciousBiteOfChaos,
-            },
-            {
-                name = "Companion's Blessing",
-                type = "AA",
-                cond = function(self, aaName, target)
-                    return (mq.TLO.Me.Pet.PctHPs() or 999) <= Config:GetSetting('BigHealPoint')
-                end,
             },
             {
                 name = "PowerTapAC",
@@ -1063,11 +1185,54 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "Bash",
-                type = "Ability",
-                tooltip = Tooltips.Bash,
-                cond = function(self)
-                    return (Core.ShieldEquipped() or Casting.CanUseAA("2 Hand Bash"))
+                name = "ResistTap",
+                type = "Spell",
+                tooltip = Tooltips.ResistTap,
+                load_cond = function(self) return Config:GetSetting('DoResistTap') end,
+                cond = function(self, spell, target)
+                    return Casting.HaveManaToNuke() and Casting.DetSpellCheck(spell, target)
+                end,
+            },
+            {
+                name = "PoisonDot",
+                type = "Spell",
+                tooltip = Tooltips.PoisonDot,
+                load_cond = function(self) return Config:GetSetting('DoPoisonDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "DiseaseDot",
+                type = "Spell",
+                tooltip = Tooltips.DiseaseDot,
+                load_cond = function(self) return Config:GetSetting('DoDiseaseDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "FireDot",
+                type = "Spell",
+                tooltip = Tooltips.PoisonDot,
+                load_cond = function(self) return Config:GetSetting('DoFireDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "Vicious Bite of Chaos",
+                type = "AA",
+                tooltip = Tooltips.ViciousBiteOfChaos,
+            },
+            {
+                name = "Companion's Blessing",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    return (mq.TLO.Me.Pet.PctHPs() or 999) <= Config:GetSetting('BigHealPoint')
                 end,
             },
             {
@@ -1111,23 +1276,44 @@ local _ClassConfig = {
             -- cond = function(self) return true end, --Kept here for illustration, this line could be removed in this instance since we aren't using conditions.
             spells = {
                 { name = "SpearNuke", },
-                { name = "LifeTap", },
-                { name = "SnareDot",    cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Encroaching Darkness") end, },
+                { name = "UndeadNuke", cond = function(self) return Config:GetSetting('DoUndeadNuke') end, },
+                {
+                    name = "LifeTap",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap"] ~= false
+                    end,
+                },
                 { name = "Terror",      cond = function(self) return Config:GetSetting('DoTerror') end, },
-                { name = "AETaunt",     cond = function(self) return Config:GetSetting('AETauntSpell') end, },
-                { name = "BiteTap", },
-                { name = "BondTap",     cond = function(self) return Config:GetSetting('DoBondTap') end, },
-                { name = "PoisonDot",   cond = function(self) return Config:GetSetting('DoPoisonDot') end, },
-                { name = "DireDot",     cond = function(self) return Config:GetSetting('DoDireDot') end, },
-                { name = "PowerTapAC",  cond = function(self) return Config:GetSetting('DoACTap') end, },
-                { name = "PowerTapAtk", cond = function(self) return Config:GetSetting('DoAtkTap') end, },
-                { name = "Skin", },
-                { name = "HateBuff",    cond = function(self) return Config:GetSetting('DoHateBuff') and not Casting.CanUseAA("Voice of Thule") end, },
-                { name = "LifeTap2", },
                 { name = "Terror2",     cond = function(self) return Config:GetSetting('DoTerror') end, },
                 { name = "Terror3",     cond = function(self) return Config:GetSetting('DoTerror') end, },
-                { name = "LifeTap3", },
-                { name = "SelfDS", },
+                { name = "SnareDot",    cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Encroaching Darkness") end, },
+                { name = "AETaunt",     cond = function(self) return Config:GetSetting('AETauntSpell') end, },
+                { name = "BiteTap", },
+                { name = "PowerTapAC",  cond = function(self) return Config:GetSetting('DoACTap') end, },
+                { name = "PowerTapAtk", cond = function(self) return Config:GetSetting('DoAtkTap') end, },
+                { name = "ResistTap",   cond = function(self) return Config:GetSetting('DoResistTap') end, },
+                { name = "BondTap",     cond = function(self) return Config:GetSetting('DoBondTap') end, },
+                { name = "PoisonDot",   cond = function(self) return Config:GetSetting('DoPoisonDot') end, },
+                { name = "FireDot", cond = function(self) return Config:GetSetting('DoFireDot') end, },
+                { name = "DiseaseDot",  cond = function(self) return Config:GetSetting('DoDiseaseDot') end, },
+                { name = "Skin", },
+                { name = "Horror",      cond = function(self) return Config:GetSetting('ProcChoice') == 1 end, },
+                { name = "HateBuff",    cond = function(self) return Config:GetSetting('DoHateBuff') and not Casting.CanUseAA("Voice of Thule") end, },
+                {
+                    name = "LifeTap2",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap2"] ~= false
+                    end,
+                },
+                {
+                    name = "LifeTap3",
+                    cond = function(self)
+                        local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+                        return enabledEntries["LifeTap3"] ~= false
+                    end,
+                },
             },
         },
     },
@@ -1242,6 +1428,19 @@ local _ClassConfig = {
             Min = 1,
             Max = 99,
         },
+        ['SnareMinCon']       = {
+            DisplayName = "Snare Min Con",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 103,
+            Tooltip = "Only use snare on targets at or above this con color.",
+            Type = "Combo",
+            ComboOptions = { "Grey", "Green", "Light Blue", "Blue", "White", "Yellow", "Red", },
+            Default = 1,
+            Min = 1,
+            Max = 7,
+        },
         ['ProcChoice']        = {
             DisplayName = "Proc Self-Buff Choice:",
             Group = "Abilities",
@@ -1313,12 +1512,22 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
+        ['DoResistTap']       = {
+            DisplayName = "Use Resist Tap",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Taps",
+            Index = 104,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("Aura of Darkness") end,
+            RequiresLoadoutChange = true,
+            Default = false,
+        },
         ['DoLeechTouch']      = {
             DisplayName = "Leech Touch Use:",
             Group = "Abilities",
             Header = "Damage",
             Category = "Taps",
-            Index = 104,
+            Index = 105,
             Tooltip = "When to use Leech Touch",
             Type = "Combo",
             ComboOptions = { 'On critically low HP', 'As DD during burns', 'For HP or DD', },
@@ -1339,6 +1548,16 @@ local _ClassConfig = {
             RequiresLoadoutChange = true,
             Default = false,
         },
+        ['DoUndeadNuke']      = {
+            DisplayName = "Use Undead/Vampire Nuke",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Index = 102,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("UndeadNuke") end,
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
         ['DoPoisonDot']       = {
             DisplayName = "Use Poison Dot",
             Group = "Abilities",
@@ -1349,13 +1568,23 @@ local _ClassConfig = {
             RequiresLoadoutChange = false,
             Default = true,
         },
-        ['DoDireDot']         = {
-            DisplayName = "Use Dire Dot",
+        ['DoFireDot']         = {
+            DisplayName = "Use Fire Dot",
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
             Index = 103,
-            Tooltip = function() return Ui.GetDynamicTooltipForSpell("DireDot") end,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("Boil Blood") end,
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
+        ['DoDiseaseDot']      = {
+            DisplayName = "Use Disease Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 104,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("DiseaseDot") end,
             RequiresLoadoutChange = true,
             Default = false,
         },
@@ -1364,7 +1593,7 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 104,
+            Index = 105,
             Tooltip = "Any selected dot above will only be used on a named mob.",
             Default = true,
         },

@@ -10,14 +10,64 @@ local Strings   = require("utils.strings")
 local Combat    = require("utils.combat")
 
 return {
-    _version              = "2.1 - EQ Might",
+    _version              = "2.1 - EQ Might-kesh",
     _author               = "Algar",
     ['ModeChecks']        = {
         IsHealing = function() return Config:GetSetting('DoHeals') end,
         IsRezing = function() return Core.GetResolvedActionMapItem('RezStaff') ~= nil and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
+        IsCuring = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
     },
     ['Modes']             = {
         'DPS',
+    },
+    ['Cures']             = {
+        GetCureSpells = function(self)
+            self.TempSettings.CureSpells = {}
+
+            local neededCures = {
+                ['Poison'] = "CurePoison",
+                ['Disease'] = "CureDisease",
+                ['Curse'] = "CureCurse",
+                ['Corruption'] = "CureCorrupt",
+            }
+
+            for effectType, mapName in pairs(neededCures) do
+                local cureSpell = Core.GetResolvedActionMapItem(mapName)
+                if cureSpell then
+                    self.TempSettings.CureSpells[effectType] = cureSpell
+                end
+            end
+        end,
+        CureNow = function(self, type, targetId)
+            local targetSpawn = mq.TLO.Spawn(targetId)
+            if not (targetSpawn and targetSpawn()) then return false, false end
+
+            if Config:GetSetting('DoCureAA') then
+                local cureAA = Casting.AAReady("Radiant Cure") and "Radiant Cure"
+
+                if cureAA then
+                    Logger.log_debug("CureNow: Using %s for %s on %s.", cureAA, type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                    return Casting.UseAA(cureAA, targetId), true
+                end
+            end
+
+            if Config:GetSetting('DoCureSpells') then
+                for effectType, cureSpell in pairs(self.TempSettings.CureSpells or {}) do
+                    if type:lower() == effectType:lower() then
+                        if cureSpell.TargetType():lower() == "group v1" and not Targeting.GroupedWithTarget(targetSpawn) then
+                            Logger.log_debug("CureNow: We cannot use %s on %s, because it is a group-only spell and they are not in our group!", cureSpell.RankName(),
+                                targetSpawn.CleanName() or "Unknown")
+                        else
+                            Logger.log_debug("CureNow: Using %s for %s on %s.", cureSpell.RankName(), type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+                            return Casting.UseSpell(cureSpell.RankName(), targetId, true), true
+                        end
+                    end
+                end
+            end
+
+            Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
+            return false, false
+        end,
     },
     ['Themes']            = {
         ['DPS'] = {
@@ -56,186 +106,220 @@ return {
         },
     },
     ['AbilitySets']       = {
-        ['PredatorBuff'] = {                  -- Groupv2 Atk Buff
-            "Snarl of the Predator",          -- Level 71
-            "Howl of the Predator",           -- Level 69
-            "Spirit of the Predator",         -- Level 64
-            "Call of the Predator",           -- Level 60
-            "Mark of the Predator",           -- Level 56
+        ['PredatorBuff'] = { -- Groupv2 Atk Buff
+            "Snarl of the Predator",
+            "Howl of the Predator",
+            "Spirit of the Predator",
+            "Call of the Predator",
+            "Mark of the Predator",
         },
-        ['StrengthHPBuff'] = {                -- Groupv2 HP Type 2, Atk
-            "Strength of the Forest Stalker", -- Level 71
-            "Strength of the Hunter",         -- Level 67
-            "Strength of Tunare",             -- Level 62
-            "Strength of Nature",             -- Level 51 - Single Target
+        ['StrengthHPBuff'] = { -- Groupv2 HP Type 2, Atk
+            "Strength of the Forest Stalker",
+            "Strength of the Hunter",
+            "Strength of Tunare",
+            "Strength of Nature", -- Single Target
         },
-        ['SkinBuff'] = {                      -- ST HP Type 1, small regen
-            "Onyx Skin",                      -- Level 70
-            "Natureskin",                     -- Level 65
-            "Skin like Nature",               -- Level 59
-            "Skin like Diamond",              -- Level 54
-            "Skin like Steel",                -- Level 38
-            "Skin like Rock",                 -- Level 21
-            "Skin like Wood",                 -- Level 7
+        ['SkinBuff'] = {          -- ST HP Type 1, small regen
+            "Onyx Skin",
+            "Natureskin",
+            "Skin like Nature",
+            "Skin like Diamond",
+            "Skin like Steel",
+            "Skin like Rock",
+            "Skin like Wood",
         },
-        ['EyeBuff'] = {                       -- Self Archery Buff
-            "Eagle Eye",                      -- Level 58
-            "Falcon Eye",                     -- Level 52
-            "Hawk Eye",                       -- Level 11
+        ['EyeBuff'] = { -- Self Archery Buff
+            "Eyes of the Hawk",
+            "Eyes of the Owl",
+            "Eyes of the Eagle",
+            "Eagle Eye",
+            "Falcon Eye",
+            "Hawk Eye",
         },
-        ['FireNukeT1'] = {                    -- ST Fire DD, Timer 1, 30s Recast
-            "Volcanic Ash",                   -- Level 71
-            "Hearth Embers",                  -- Level 69
-            "Sylvan Burn",                    -- Level 65
-            "Call of Flame",                  -- Level 49
-            "Flaming Arrow",                  -- Level 29
+        ['FireNukeT1'] = { -- ST Fire DD, Timer 1, 30s Recast
+            "Volcanic Ash",
+            "Hearth Embers",
+            "Sylvan Burn",
+            "Call of Flame",
+            "Flaming Arrow",
         },
-        ['ColdNukeT2'] = {                    -- ST Cold DD, Timer 2, 30s Recast
-            "Icefall Chill",                  -- Level 71
-            "Frost Wind",                     -- Level 68
-            "Icewind",                        -- Level 52
+        ['ColdNukeT2'] = { -- ST Cold DD, Timer 2, 30s Recast
+            "Icefall Chill",
+            "Frost Wind",
+            "Icewind",
         },
-        ['ColdNukeT3'] = {                    -- ST Cold DD, Timer 3, 30s Recast
-            "Ancient: North Wind",            -- Level 70
-            "Frozen Wind",                    -- Level 63
+        ['ColdNukeT3'] = { -- ST Cold DD, Timer 3, 30s Recast
+            "Ancient: North Wind",
+            "Frozen Wind",
         },
-        ['FireNukeT4'] = {                    -- ST Fire DD, Timer 4, 30s Recast
-            "Scorched Earth",                 -- Level 70
-            "Ancient: Burning Chaos",         -- Level 65
-            "Brushfire",                      -- Level 64
-            "Burning Arrow",                  -- Level 39
+        ['FireNukeT4'] = { -- ST Fire DD, Timer 4, 30s Recast
+            "Scorched Earth",
+            "Ancient: Burning Chaos",
+            "Brushfire",
+            "Burning Arrow",
         },
         ["DDProc"] = {
-            "Call of Lightning", -- Level 70
-            "Cry of Thunder",    -- Level 65
-            "Call of Ice",       -- Level 58
-            "Call of Fire",      -- Level 55
-            "Call of Sky",       -- Level 36
+            "Call of Lightning",
+            "Cry of Thunder",
+        },
+        ["DDProcIce"] = {
+            "Call of Ice",
+        },
+        ["DDProcFire"] = {
+            "Call of Fire",
+        },
+        ["DDProcSky"] = {
+            "Call of Sky",
         },
         -- ["SummonedProc"] = {
-        --     "Nature's Denial", -- Level 69
-        --     "Nature's Rebuke", -- Level 64
+        --     "Nature's Denial",
+        --     "Nature's Rebuke",
         -- },
         ['SelfBuff'] = {
-            "Ward of the Hunter",     -- Level 70
-            "Protection of the Wild", -- Level 65
-            "Warder's Protection",    -- Level 60
-            "Nature's Precision",     -- Level 37 - Self ATK Buff, filler
-            "Firefist",               -- Level 17 - Self ATK Buff, filler
+            "Ward of the Hunter",
+            "Protection of the Wild",
+            "Warder's Protection",
+            "Nature's Precision", --Self ATK Buff, filler
+            "Firefist",           --Self ATK Buff, filler
         },
-        ['ArrowHail'] = {             -- DirAE multihit archery attack
-            "Hail of Arrows",         -- Level 68
+        ['ArrowHail'] = {         -- DirAE multihit archery attack
+            "Hail of Arrows",
         },
         ['Dispel'] = {
-            "Nature's Entropy", -- Level 70
-            "Nature's Balance", -- Level 69
-            "Annul Magic",      -- Level 61
-            "Nullify Magic",    -- Level 58
-            "Cancel Magic",     -- Level 30
+            "Nature's Entropy",
+            "Nature's Balance",
+            "Annul Magic",
+            "Nullify Magic",
+            "Cancel Magic",
         },
         ['RegenBuff'] = {
-            "Hunter's Vigor",        -- Level 68
-            "Regrowth",              -- Level 64
-            "Chloroplast",           -- Level 55
+            "Hunter's Vigor",
+            "Regrowth",
+            "Chloroplast",
         },
-        ['CoatBuff'] = {             -- Self DS
-            "Briarcoat",             -- Level 68
-            "Bladecoat",             -- Level 63
-            "Thorncoat",             -- Level 60
-            "Spikecoat",             -- Level 42
-            "Bramblecoat",           -- Level 34
-            "Barbcoat",              -- Level 30
-            "Thistlecoat",           -- Level 13
+        ['CoatBuff'] = { -- Self DS
+            "Briarcoat",
+            "Bladecoat",
+            "Thorncoat",
+            "Spikecoat",
+            "Bramblecoat",
+            "Barbcoat",
+            "Thistlecoat",
         },
-        ['GuardBuff'] = {            -- ST AC DS Buff
-            "Guard of the Earth",    -- Level 67
-            "Call of the Rathe",     -- Level 62
-            "Call of Earth",         -- Level 50
-            "Riftwind's Protection", -- Level 29
+        ['GuardBuff'] = { -- ST AC DS Buff
+            "Guard of the Earth",
+            "Call of the Rathe",
+            "Call of Earth",
+            "Riftwind's Protection",
         },
         ['HealSpell'] = {
-            "Sunderock Springwater", -- Level 70
-            "Sylvan Water",          -- Level 67
-            "Sylvan Light",          -- Level 65
-            "Chloroblast",           -- Level 62
-            "Greater Healing",       -- Level 57
-            "Healing",               -- Level 38
-            "Light Healing",         -- Level 21
-            "Minor Healing",         -- Level 8
-            "Salve",                 -- Level 1
+            "Sunderock Springwater",
+            "Sylvan Water",
+            "Sylvan Light",
+            "Chloroblast",
+            "Greater Healing",
+            "Healing",
+            "Light Healing",
+            "Minor Healing",
+            "Salve",
+        },
+        ['CurePoison'] = {
+            "Eradicate Poison",
+            "Counteract Poison",
+            "Cure Poison",
+        },
+        ['CureDisease'] = {
+            "Eradicate Disease",
+            "Counteract Disease",
+            "Cure Disease",
+        },
+        ['CureCurse'] = {
+            "Eradicate Curse",
+            "Remove Greater Curse",
+            "Remove Curse",
+            "Remove Lesser Curse",
+            "Remove Minor Curse",
+        },
+        ['CureCorrupt'] = {
+            "Cure Corruption",
         },
         ['SwarmDot'] = {
-            "Cloud of Wasps", -- Level 70
-            "Locust Swarm",   -- Level 67
-            "Drifting Death", -- Level 62
-            "Fire Swarm",     -- Level 55
-            "Drones of Doom", -- Level 54
-            "Swarm of Pain",  -- Level 40
-            "Stinging Swarm", -- Level 25
+            "Cloud of Wasps",
+            "Locust Swarm",
+            "Drifting Death",
+            "Fire Swarm",
+            "Drones of Doom",
+            "Swarm of Pain",
+            "Stinging Swarm",
+        },
+        ['DronesDot'] = {
+            "Drones of Doom",
+            "Swarm of Pain",
+            "Stinging Swarm",
         },
         ['Trueshot'] = {
-            "Trueshot Discipline", -- Level 55
+            "Trueshot Discipline",
         },
-        ['ShieldDS'] = {           -- ST Slot 1 DS
-            "Shield of Needles",   -- Level 70
-            "Shield of Briar",     -- Level 66
-            "Shield of Thorns",    -- Level 62
-            "Shield of Spikes",    -- Level 58
-            "Shield of Brambles",  -- Level 43
-            "Shield of Thistles",  -- Level 24
+        ['ShieldDS'] = { -- ST Slot 1 DS
+            "Shield of Needles",
+            "Shield of Briar",
+            "Shield of Thorns",
+            "Shield of Spikes",
+            "Shield of Brambles",
+            "Shield of Thistles",
         },
-        ['NatureProc'] = {         -- ST Hade reduction defensive proc buff
-            "Nature Veil",         -- Level 66
+        ['NatureProc'] = { -- ST Hade reduction defensive proc buff
+            "Nature Veil",
         },
         -- ['DDStunProcBuff'] = {
-        --     "Sylvan Call", -- Level 65
+        --     "Sylvan Call",
         -- },
         -- ['MaskBuff'] = { -- no stack with eyes of the hawk
-        --     "Mask of the Stalker", -- Level 65
+        --     "Mask of the Stalker",
         -- },
         ['MoveBuff'] = {
-            "Spirit of Eagle", -- Level 65
+            "Spirit of Eagle",
         },
-        -- ['SelfWolfBuff'] = {
-        --     "Feral Form",        -- Level 64
-        --     "Greater Wolf Form", -- Level 56
-        --     "Wolf Form",         -- Level 48
-        -- },
+        ['SelfWolfBuff'] = {
+            "Feral Form",
+            "Greater Wolf Form",
+            "Wolf Form",
+        },
         ['ColdResistBuff'] = {
-            "Circle of Summer", -- Level 63
+            "Circle of Summer",
         },
         ['FireResistBuff'] = {
-            "Circle of Winter", -- Level 61
+            "Circle of Winter",
         },
         ['SnareSpell'] = {
-            "Earthen Shackles", -- Level 69
-            "Earthen Embrace",  -- Level 61
-            "Ensnare",          -- Level 51
-            "Tangle",           -- Level 51
-            "Snare",            -- Level 6
-            "Tangling Weeds",   -- Level 5
+            "Earthen Shackles",
+            "Earthen Embrace",
+            "Ensnare",
+            "Tangle",
+            "Snare",
+            "Tangling Weeds",
         },
         ['WeaponShield'] = {
-            "Weapon Shield Discipline", -- Level 60
+            "Weapon Shield Discipline",
         },
         ['JoltSpell'] = {
-            "Cinder Jolt", -- Level 55
-            "Jolt",        -- Level 50
+            "Cinder Jolt",
+            "Jolt",
         },
         ['WrathDisc'] = {
-            "Warder's Wrath", -- Level 69
+            "Warder's Wrath",
         },
-        ['KickDisc'] = {      -- 2-hit kick attack
-            "Jolting Kicks",  -- Level 71
+        ['KickDisc'] = { -- 2-hit kick attack
+            "Jolting Kicks",
         },
         ['Skals'] = {
-            "Skal's Stance Discipline", -- Level 61
+            "Skal's Stance Discipline",
         },
         -- ['JoltProcBuff'] = {
-        --     "Jolting Blades", -- Level 54
+        --     "Jolting Blades",
         -- },
         -- ['ResistDisc'] = {
-        --     "Resistant Discipline", -- Level 51
+        --     "Resistant Discipline",
         -- },
         -- TODO: Potameid Salve (small heal, cure)
     },
@@ -346,38 +430,53 @@ return {
 
             return false
         end,
+        TargetMeetsSnareMinCon = function(target)
+            if not target or not target() then return false end
+            local minConLevel = Config:GetSetting('SnareMinCon') or 1
+            local conName = (target.ConColor() or "Grey"):upper()
+            local conLevel = Globals.Constants.ConColorsNameToId[conName] or 0
+            return conLevel >= minConLevel
+        end,
         combatNav = function(forceMove)
-            if not Config:GetSetting('DoMelee') then
-                if not mq.TLO.Me.AutoFire() then
-                    Core.DoCmd('/squelch face fast')
-                    Core.DoCmd('/autofire on')
-                end
-
-                local targetDistance = Targeting.GetTargetDistance()
-                local chaseDistance = Config:GetSetting('ChaseDistance')
-                local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
-                local tooClose = targetDistance < 30
-                --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
-                local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
-
-                Logger.log_verbose("Custom Ranger combatNav engaged. TargetDistance: %d, LOS:%s, ChaseDistance: %d, forceMove: %s, tooClose: %s, tooFar: %s", targetDistance,
-                    mq.TLO.Target.LineOfSight(), chaseDistance, Strings.BoolToColorString(forceMove), Strings.BoolToColorString(tooClose), Strings.BoolToColorString(tooFar))
-                if Config:GetSetting('NavCircle') then
-                    if tooClose or tooFar or forceMove then
-                        Movement:NavAroundCircle(mq.TLO.Target, Config:GetSetting('BowNavDistance'))
-                    end
-                elseif tooClose then
-                    if chaseDistance < 30 then
-                        Logger.log_warning(
-                            "Custom Ranger combatNav: \arWarning! \awChase distance is %d. \ayThis may interfere with ranged combat, depending on chase target movement!",
-                            chaseDistance)
-                    end
-                    Core.DoCmd('/squelch face fast')
-                    Movement:DoStickCmd("10 moveback")
-                elseif tooFar or forceMove then
-                    Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, Config:GetSetting('BowNavDistance'))
+            if Config:GetSetting('DoMelee') then
+                if forceMove and (Globals.AutoTargetID or 0) > 0 then
+                    local chaseDistance = Config:GetSetting('ChaseDistance')
+                    Logger.log_verbose("Custom Ranger combatNav (melee forceMove): targetId=%d chaseDistance=%d", Globals.AutoTargetID, chaseDistance)
+                    Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, chaseDistance)
                     Core.DoCmd('/squelch /face fast')
                 end
+                return
+            end
+
+            if not mq.TLO.Me.AutoFire() then
+                Core.DoCmd('/squelch face fast')
+                Core.DoCmd('/autofire on')
+            end
+
+            local targetDistance = Targeting.GetTargetDistance()
+            local chaseDistance = Config:GetSetting('ChaseDistance')
+            local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
+            local tooClose = targetDistance < 30
+            --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
+            local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
+
+            Logger.log_verbose("Custom Ranger combatNav engaged. TargetDistance: %d, LOS:%s, ChaseDistance: %d, forceMove: %s, tooClose: %s, tooFar: %s", targetDistance,
+                mq.TLO.Target.LineOfSight(), chaseDistance, Strings.BoolToColorString(forceMove), Strings.BoolToColorString(tooClose), Strings.BoolToColorString(tooFar))
+            if Config:GetSetting('NavCircle') then
+                if tooClose or tooFar or forceMove then
+                    Movement:NavAroundCircle(mq.TLO.Target, Config:GetSetting('BowNavDistance'))
+                end
+            elseif tooClose then
+                if chaseDistance < 30 then
+                    Logger.log_warning(
+                        "Custom Ranger combatNav: \arWarning! \awChase distance is %d. \ayThis may interfere with ranged combat, depending on chase target movement!",
+                        chaseDistance)
+                end
+                Core.DoCmd('/squelch face fast')
+                Movement:DoStickCmd("10 moveback")
+            elseif tooFar or forceMove then
+                Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, Config:GetSetting('BowNavDistance'))
+                Core.DoCmd('/squelch /face fast')
             end
         end,
         --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities
@@ -487,7 +586,8 @@ return {
                 type = "AA",
                 load_cond = function() return Casting.CanUseAA("Entrap") end,
                 cond = function(self, aaName, target)
-                    return Casting.DetAACheck(aaName) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
+                        not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
@@ -495,7 +595,8 @@ return {
                 type = "Spell",
                 load_cond = function() return not Casting.CanUseAA("Entrap") end,
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
+                        not Casting.SnareImmuneTarget(target)
                 end,
             },
         },
@@ -540,15 +641,7 @@ return {
                 end,
             },
             {
-                name = "SwarmDot",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    if not Config:GetSetting('DoSwarmDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
-                end,
-            },
-            {
-                name = "FireNukeT4",
+                name = "ColdNukeT2",
                 type = "Spell",
             },
             {
@@ -556,12 +649,26 @@ return {
                 type = "Spell",
             },
             {
-                name = "ColdNukeT3",
+                name = "FireNukeT4",
                 type = "Spell",
             },
             {
-                name = "ColdNukeT2",
+                name = "SwarmDot",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoSwarmDot') end,
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('DoSwarmDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                end,
+            },
+            {
+                name = "DronesDot",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoDronesDot') end,
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('DoDronesDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                end,
             },
             {
                 name = "ArrowHail",
@@ -665,6 +772,14 @@ return {
         },
         ['Downtime']   = {
             {
+                name = "SelfWolfBuff",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    if (mq.TLO.Zone.ShortName() or ""):lower() == "poknowledge" then return false end
+                    return Casting.SelfBuffCheck(spell)
+                end,
+            },
+            {
                 name = "SelfBuff",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -693,7 +808,16 @@ return {
                 end,
             },
             {
-                name = "DDProc",
+                name_func = function(self)
+                    local choice = Config:GetSetting('DDProcChoice') or 1
+                    if choice == 2 then return "DDProcIce" end
+                    if choice == 3 then return "DDProcFire" end
+                    if choice == 4 then return "DDProcSky" end
+                    if Core.GetResolvedActionMapItem("DDProcIce") then return "DDProcIce" end
+                    if Core.GetResolvedActionMapItem("DDProcFire") then return "DDProcFire" end
+                    if Core.GetResolvedActionMapItem("DDProcSky") then return "DDProcSky" end
+                    return "DDProc"
+                end,
                 type = "Spell",
                 cond = function(self, spell, target)
                     return Casting.SelfBuffCheck(spell)
@@ -722,10 +846,9 @@ return {
             spells = {
                 { name = "HealSpell",   cond = function(self) return Config:GetSetting('DoHeals') end, },
                 { name = "SnareSpell",  cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA('Entrap') end, },
-                { name = "SwarmDot",    cond = function(self) return Config:GetSetting('DoSwarmDot') end, },
+                { name = "ColdNukeT2", },
                 { name = "FireNukeT1", },
                 { name = "FireNukeT4", },
-                { name = "ColdNukeT2", },
                 { name = "ColdNukeT3", },
                 { name = "Heartshot", },
                 { name = "ArrowHail", },
@@ -863,12 +986,36 @@ return {
             Default = true,
             RequiresLoadoutChange = true,
         },
+        ['DDProcChoice']   = {
+            DisplayName = "DD Proc Choice:",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "DD Proc",
+            Index = 103,
+            Tooltip = "Choose which Call proc buff to use in Downtime.",
+            Type = "Combo",
+            ComboOptions = { 'Auto', 'Call of Ice', 'Call of Fire', 'Call of Sky', },
+            Default = 1,
+            Min = 1,
+            Max = 4,
+            RequiresLoadoutChange = true,
+        },
+        ['DoDronesDot']    = {
+            DisplayName = "Drones Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 102,
+            Tooltip = "Use your Drones of Doom line of dots.",
+            Default = true,
+            RequiresLoadoutChange = true,
+        },
         ['DotNamedOnly']   = {
             DisplayName = "Only Dot Named",
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 102,
+            Index = 103,
             Tooltip = "Any selected dot above will only be used on a named mob.",
             Default = true,
         },
@@ -939,6 +1086,19 @@ return {
             Default = 3,
             Min = 1,
             Max = 99,
+        },
+        ['SnareMinCon']    = {
+            DisplayName = "Snare Min Con",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 103,
+            Tooltip = "Only use snare on targets at or above this con color.",
+            Type = "Combo",
+            ComboOptions = { "Grey", "Green", "Light Blue", "Blue", "White", "Yellow", "Red", },
+            Default = 1,
+            Min = 1,
+            Max = 7,
         },
     },
     ['ClassFAQ']          = {

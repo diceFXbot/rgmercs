@@ -202,6 +202,16 @@
 
 ---
 
+- Class configs: EQ Might-kesh フォルダを新設し SHD/RNG を移動。
+  - file: class_configs/EQ Might-kesh/shd_class_config.lua
+  - file: class_configs/EQ Might-kesh/rng_class_config.lua
+  - file: utils/classloader.lua
+  - detail: カスタム SHD/RNG を EQ Might-kesh へ移動。EQ Might 側は本家 main の SHD/RNG を配置。
+    EQ Might / Project Might 接続時は SHD/RNG のみ EQ Might-kesh を自動読み込み。
+    UI から Class Config Dir で EQ Might-kesh を直接選択することも可能。
+
+---
+
 ## 検討事項（未実装）
 
 - EQ Might RNG: Quickshot Discipline のローテーション追加を検討。
