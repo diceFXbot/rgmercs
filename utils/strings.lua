@@ -120,6 +120,13 @@ function Strings.BoolToColorString(b)
     return b and "\agtrue\ax" or "\arfalse\ax"
 end
 
+--- Trims leading and trailing whitespace from a string.
+--- @param s string Input string.
+--- @return string Trimmed string.
+function Strings.TrimSpaces(s)
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 local function dumpTable(o, depth, accLen, maxLen)
     accLen = accLen or 0
     if not depth then depth = 0 end
