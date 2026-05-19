@@ -14,6 +14,20 @@ local Module       = { _version = '1.1', _name = "Named", _author = 'Derple, Alg
 Module.__index     = Module
 setmetatable(Module, { __index = Base, })
 
+local function normalizeNamedString(value)
+    if not value then return nil end
+    local normalized = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
+    -- Normalize visually similar apostrophes/backticks to ASCII apostrophe.
+    normalized = normalized:gsub("’", "'"):gsub("`", "'")
+    return normalized
+end
+
+local function addNamedLookupKey(lookupTable, value)
+    local normalized = normalizeNamedString(value)
+    if not normalized or normalized == "" then return end
+    lookupTable[normalized] = true
+end
+
 Module.CachedNamedList = {}
 Module.CommandHandlers = {}
 
@@ -93,17 +107,17 @@ function Module:RefreshNamedCache()
         local zoneName = mq.TLO.Zone.Name():lower()
 
         for _, n in ipairs(self.DefNamed[zoneName] or {}) do
-            self.NamedList[n] = true
+            addNamedLookupKey(self.NamedList, n)
         end
 
         zoneName = mq.TLO.Zone.ShortName():lower()
 
         for _, n in ipairs(self.DefNamed[zoneName] or {}) do
-            self.NamedList[n] = true
+            addNamedLookupKey(self.NamedList, n)
         end
 
         for _, n in ipairs(userList[zoneName] or {}) do
-            self.NamedList[n] = true
+            addNamedLookupKey(self.NamedList, n)
         end
     end
 end
@@ -150,18 +164,9 @@ function Module:IsNamed(spawn)
 
     self:RefreshNamedCache()
 
-    local cleanNameFixed = spawn.CleanName()
-    if cleanNameFixed then
-        -- if first or last character is a space then remove it.
-        while cleanNameFixed:sub(1, 1) == " " do
-            cleanNameFixed = cleanNameFixed:sub(2)
-        end
-        while cleanNameFixed:sub(-1) == " " do
-            cleanNameFixed = cleanNameFixed:sub(1, -2)
-        end
-    end
-
-    if self.NamedList[spawn.Name()] or self.NamedList[spawn.CleanName()] or self.NamedList[cleanNameFixed] then return true end
+    local spawnName = normalizeNamedString(spawn.Name())
+    local cleanName = normalizeNamedString(spawn.CleanName())
+    if self.NamedList[spawnName] or self.NamedList[cleanName] then return true end
 
     ---@diagnostic disable-next-line: undefined-field
     if Config:GetSetting('CheckSMForNamed') and mq.TLO.Plugin("MQ2SpawnMaster").IsLoaded() and mq.TLO.SpawnMaster.HasSpawn ~= nil and mq.TLO.SpawnMaster.HasSpawn(spawn.ID())() then return true end

@@ -161,8 +161,14 @@ return {
         ["DDProc"] = {
             "Call of Lightning",
             "Cry of Thunder",
+        },
+        ["DDProcIce"] = {
             "Call of Ice",
+        },
+        ["DDProcFire"] = {
             "Call of Fire",
+        },
+        ["DDProcSky"] = {
             "Call of Sky",
         },
         -- ["SummonedProc"] = {
@@ -242,6 +248,11 @@ return {
             "Locust Swarm",
             "Drifting Death",
             "Fire Swarm",
+            "Drones of Doom",
+            "Swarm of Pain",
+            "Stinging Swarm",
+        },
+        ['DronesDot'] = {
             "Drones of Doom",
             "Swarm of Pain",
             "Stinging Swarm",
@@ -419,6 +430,13 @@ return {
 
             return false
         end,
+        TargetMeetsSnareMinCon = function(target)
+            if not target or not target() then return false end
+            local minConLevel = Config:GetSetting('SnareMinCon') or 1
+            local conName = (target.ConColor() or "Grey"):upper()
+            local conLevel = Globals.Constants.ConColorsNameToId[conName] or 0
+            return conLevel >= minConLevel
+        end,
         combatNav = function(forceMove)
             if Config:GetSetting('DoMelee') then
                 if forceMove and (Globals.AutoTargetID or 0) > 0 then
@@ -568,7 +586,8 @@ return {
                 type = "AA",
                 load_cond = function() return Casting.CanUseAA("Entrap") end,
                 cond = function(self, aaName, target)
-                    return Casting.DetAACheck(aaName) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
+                        not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
@@ -576,7 +595,8 @@ return {
                 type = "Spell",
                 load_cond = function() return not Casting.CanUseAA("Entrap") end,
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
+                        not Casting.SnareImmuneTarget(target)
                 end,
             },
         },
@@ -621,15 +641,7 @@ return {
                 end,
             },
             {
-                name = "SwarmDot",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    if not Config:GetSetting('DoSwarmDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
-                end,
-            },
-            {
-                name = "FireNukeT4",
+                name = "ColdNukeT2",
                 type = "Spell",
             },
             {
@@ -637,12 +649,26 @@ return {
                 type = "Spell",
             },
             {
-                name = "ColdNukeT3",
+                name = "FireNukeT4",
                 type = "Spell",
             },
             {
-                name = "ColdNukeT2",
+                name = "SwarmDot",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoSwarmDot') end,
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('DoSwarmDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                end,
+            },
+            {
+                name = "DronesDot",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoDronesDot') end,
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('DoDronesDot') or (Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed) then return false end
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                end,
             },
             {
                 name = "ArrowHail",
@@ -749,6 +775,7 @@ return {
                 name = "SelfWolfBuff",
                 type = "Spell",
                 cond = function(self, spell, target)
+                    if (mq.TLO.Zone.ShortName() or ""):lower() == "poknowledge" then return false end
                     return Casting.SelfBuffCheck(spell)
                 end,
             },
@@ -781,7 +808,16 @@ return {
                 end,
             },
             {
-                name = "DDProc",
+                name_func = function(self)
+                    local choice = Config:GetSetting('DDProcChoice') or 1
+                    if choice == 2 then return "DDProcIce" end
+                    if choice == 3 then return "DDProcFire" end
+                    if choice == 4 then return "DDProcSky" end
+                    if Core.GetResolvedActionMapItem("DDProcIce") then return "DDProcIce" end
+                    if Core.GetResolvedActionMapItem("DDProcFire") then return "DDProcFire" end
+                    if Core.GetResolvedActionMapItem("DDProcSky") then return "DDProcSky" end
+                    return "DDProc"
+                end,
                 type = "Spell",
                 cond = function(self, spell, target)
                     return Casting.SelfBuffCheck(spell)
@@ -810,10 +846,9 @@ return {
             spells = {
                 { name = "HealSpell",   cond = function(self) return Config:GetSetting('DoHeals') end, },
                 { name = "SnareSpell",  cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA('Entrap') end, },
-                { name = "SwarmDot",    cond = function(self) return Config:GetSetting('DoSwarmDot') end, },
+                { name = "ColdNukeT2", },
                 { name = "FireNukeT1", },
                 { name = "FireNukeT4", },
-                { name = "ColdNukeT2", },
                 { name = "ColdNukeT3", },
                 { name = "Heartshot", },
                 { name = "ArrowHail", },
@@ -951,12 +986,36 @@ return {
             Default = true,
             RequiresLoadoutChange = true,
         },
+        ['DDProcChoice']   = {
+            DisplayName = "DD Proc Choice:",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "DD Proc",
+            Index = 103,
+            Tooltip = "Choose which Call proc buff to use in Downtime.",
+            Type = "Combo",
+            ComboOptions = { 'Auto', 'Call of Ice', 'Call of Fire', 'Call of Sky', },
+            Default = 1,
+            Min = 1,
+            Max = 4,
+            RequiresLoadoutChange = true,
+        },
+        ['DoDronesDot']    = {
+            DisplayName = "Drones Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 102,
+            Tooltip = "Use your Drones of Doom line of dots.",
+            Default = true,
+            RequiresLoadoutChange = true,
+        },
         ['DotNamedOnly']   = {
             DisplayName = "Only Dot Named",
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 102,
+            Index = 103,
             Tooltip = "Any selected dot above will only be used on a named mob.",
             Default = true,
         },
@@ -1027,6 +1086,19 @@ return {
             Default = 3,
             Min = 1,
             Max = 99,
+        },
+        ['SnareMinCon']    = {
+            DisplayName = "Snare Min Con",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 103,
+            Tooltip = "Only use snare on targets at or above this con color.",
+            Type = "Combo",
+            ComboOptions = { "Grey", "Green", "Light Blue", "Blue", "White", "Yellow", "Red", },
+            Default = 1,
+            Min = 1,
+            Max = 7,
         },
     },
     ['ClassFAQ']          = {

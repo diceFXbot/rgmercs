@@ -92,7 +92,7 @@ OptionsUI.Groups                = { --- Add a default of the same name for any k
             { Name = 'Buffs',    Categories = { "Buff Rules", "Self", "Group", }, },
             { Name = 'Debuffs',  Categories = { "Debuff Rules", "Slow", "Stun", "Resist", "Snare", "Dispel", "Misc Debuffs", }, }, -- Resist i.e, Malo, Tash, druid
             { Name = 'Recovery', Categories = { "General Healing", "Healing Thresholds", "Other Recovery", "Curing", "Rezzing", }, },
-            { Name = 'Damage',   Categories = { "Direct", "AE", "Over Time", "Taps", }, },
+            { Name = 'Damage',   Categories = { "Direct", "AE", "Over Time", "DD Proc", "Taps", }, },
             { Name = 'Tanking',  Categories = { "Hate Tools", "Defenses", }, },
             { Name = 'Utility',  Categories = { "Hate Reduction", "Emergency", }, },
             { Name = 'Mez',      Categories = { "Mez General", "Mez Targets", }, },

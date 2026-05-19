@@ -37,6 +37,7 @@ local Tooltips     = {
     CallAtk             = "Spell Line: Increase Attack / Decrease HP Per Tick",
     AETaunt             = "Spell Line: PBAE Hate Increase + Taunt",
     PoisonDot           = "Spell Line: Poison Dot",
+    UndeadNuke          = "Spell Line: Undead/Vampire 専用ダメージ",
     SpearNuke           = "Spell Line: Instacast Disease Nuke",
     BondTap             = "Spell Line: LifeTap DOT",
     DireTap             = "Spell Line: LifeTap",
@@ -48,11 +49,12 @@ local Tooltips     = {
     Dicho               = "Spell Line: Hate Increase + LifeTap",
     PowerTapAC          = "Spell Line: AC Tap",
     PowerTapAtk         = "Spell Line: Attack Tap",
+    ResistTap           = "Spell Line: Resist Tap (Decrease All Resists)",
     SnareDot            = "Spell Line: Snare + HP DOT",
     Acrimony            = "Spell Increase: Aggrolock + LifeTap DOT + Hate Generation",
     SpiteStrike         = "Spell Line: LifeTap + Caster 1H Blunt Increase + Target Armor Decrease",
     ReflexStrike        = "Ability: Triple 2HS Attack + HP Increase",
-    DireDot             = "Spell Line: DOT + AC Decrease + Strength Decrease",
+    DiseaseDot          = "Spell Line: Disease DoT + AC Decrease + Strength Decrease",
     AllianceNuke        = "Spell Line: Alliance (Requires Multiple of Same Class) - Increase Spell Damage Taken by Target + Large LifeTap",
     InfluenceDisc       = "Ability Line: Increase AC + Absorb Damage + Melee Proc (LifeTap + Max HP Increase)",
     DLUA                = "AA: Cast Highest Level of Scribed Buffs (Shroud, Horror, Drape, Demeanor, Skin, Covenant, CallATK)",
@@ -287,6 +289,51 @@ local _ClassConfig = {
             "Blood of Discord",
             "Blood of Inruku",
         },
+        ['FireDot'] = {
+            "Pyre of Mori XIX Rk. III",
+            "Pyre of Mori XIX Rk. II",
+            "Pyre of Mori XIX",
+            "Pyre of the Abandoned Rk. III",
+            "Pyre of the Abandoned Rk. II",
+            "Pyre of the Abandoned",
+            "Pyre of the Neglected Rk. III",
+            "Pyre of the Neglected Rk. II",
+            "Pyre of the Neglected",
+            "Pyre of the Wretched Rk. III",
+            "Pyre of the Wretched Rk. II",
+            "Pyre of the Wretched",
+            "Pyre of the Fereth Rk. III",
+            "Pyre of the Fereth Rk. II",
+            "Pyre of the Fereth",
+            "Pyre of the Lost Rk. III",
+            "Pyre of the Lost Rk. II",
+            "Pyre of the Lost",
+            "Pyre of the Forsaken Rk. III",
+            "Pyre of the Forsaken Rk. II",
+            "Pyre of the Forsaken",
+            "Pyre of the Piq'a Rk. III",
+            "Pyre of the Piq'a Rk. II",
+            "Pyre of the Piq'a",
+            "Pyre of the Bereft Rk. III",
+            "Pyre of the Bereft Rk. II",
+            "Pyre of the Bereft",
+            "Pyre of the Forgotten Rk. III",
+            "Pyre of the Forgotten Rk. II",
+            "Pyre of the Forgotten",
+            "Pyre of the Lifeless Rk. III",
+            "Pyre of the Lifeless Rk. II",
+            "Pyre of the Lifeless",
+            "Pyre of the Fallen Rk. III",
+            "Pyre of the Fallen Rk. II",
+            "Pyre of the Fallen",
+            "Pyre of Mori",
+            "Night Fire",
+            "Funeral Pyre of Kelador",
+            "Pyrocruor",
+            "Boil Blood",
+            "Heat Blood",
+            "Ignite Blood",
+        },
         ['SpearNuke'] = {
             "Spear of Decay",
             "Miasmic Spear",
@@ -295,6 +342,12 @@ local _ClassConfig = {
             "Spear of Disease",
             "Spear of Pain",
             "Spear of Plague",
+        },
+        ['UndeadNuke'] = {
+            "Scythe of Inruku",
+            "Scythe of Innoruuk",
+            "Scythe of Death",
+            "Scythe of Darkness",
         },
         ['BondTap'] = {
             "Bond of the Blacktalon", -- EQM Added
@@ -399,6 +452,9 @@ local _ClassConfig = {
             "Shroud of Hate",
             "Scream of Hate",
         },
+        ['ResistTap'] = {
+            "Aura of Darkness",
+        },
         ['SnareDot'] = {
             "Festering Darkness",
             "Cascading Darkness",
@@ -406,7 +462,7 @@ local _ClassConfig = {
             "Engulfing Darkness",
             "Clinging Darkness", -- Level 11
         },
-        ['DireDot'] = {
+        ['DiseaseDot'] = {
             "Dark Constriction",
             "Asystole",
             "Heart Flutter",
@@ -468,6 +524,13 @@ local _ClassConfig = {
                 if #haters:toList() >= Config:GetSetting('DiscCount') then return true end -- no need to keep counting once this threshold has been reached
             end
             return false
+        end,
+        TargetMeetsSnareMinCon = function(target)
+            if not target or not target() then return false end
+            local minConLevel = Config:GetSetting('SnareMinCon') or 1
+            local conName = (target.ConColor() or "Grey"):upper()
+            local conLevel = Globals.Constants.ConColorsNameToId[conName] or 0
+            return conLevel >= minConLevel
         end,
         --function to space out Epic and Omens Chest with Mortal Coil old-school swarm style. Epic has an override condition to fire anyway on named.
         LeechCheck = function(self)
@@ -591,17 +654,6 @@ local _ClassConfig = {
                         (Globals.AutoTargetIsNamed and Targeting.GetAutoTargetAggroPct() >= 100))
             end,
         },
-        { --Keep things from running
-            name = 'Snare',
-            state = 1,
-            steps = 1,
-            load_cond = function() return Config:GetSetting('DoSnare') end,
-            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
-            cond = function(self, combat_state)
-                if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and not Globals.AutoTargetIsNamed and Targeting.GetXTHaterCount() <= Config:GetSetting('SnareCount')
-            end,
-        },
         { --Offensive actions to temporarily boost damage dealt
             name = 'Burn',
             state = 1,
@@ -620,6 +672,17 @@ local _ClassConfig = {
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
                 return combat_state == "Combat"
+            end,
+        },
+        { --Keep things from running
+            name = 'Snare',
+            state = 1,
+            steps = 1,
+            load_cond = function() return Config:GetSetting('DoSnare') end,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
+                return combat_state == "Combat" and Targeting.GetXTHaterCount() <= Config:GetSetting('SnareCount')
             end,
         },
     },
@@ -964,7 +1027,7 @@ local _ClassConfig = {
                 type = "AA",
                 load_cond = function(self) return Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, aaName, target)
-                    return Casting.DetAACheck(aaName) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
             {
@@ -973,7 +1036,7 @@ local _ClassConfig = {
                 tooltip = Tooltips.SnareDot,
                 load_cond = function(self) return not Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and Targeting.MobHasLowHP(target) and not Casting.SnareImmuneTarget(target)
+                    return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
         },
@@ -1046,6 +1109,24 @@ local _ClassConfig = {
         },
         ['Combat'] = {
             {
+                name = "Bash",
+                type = "Ability",
+                tooltip = Tooltips.Bash,
+                cond = function(self)
+                    return (Core.ShieldEquipped() or Casting.CanUseAA("2 Hand Bash"))
+                end,
+            },
+            {
+                name = "UndeadNuke",
+                type = "Spell",
+                tooltip = Tooltips.UndeadNuke,
+                load_cond = function(self) return Config:GetSetting('DoUndeadNuke') end,
+                cond = function(self, spell, target)
+                    if not (Targeting.TargetBodyIs(target, "undead") or Targeting.TargetBodyIs(target, "vampire") or Targeting.TargetBodyIs(target, "vampyre")) then return false end
+                    return Casting.HaveManaToNuke()
+                end,
+            },
+            {
                 name = "ForPower",
                 type = "Spell",
                 tooltip = Tooltips.ForPower,
@@ -1081,41 +1162,9 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "PoisonDot",
-                type = "Spell",
-                tooltip = Tooltips.PoisonDot,
-                load_cond = function(self) return Config:GetSetting('DoPoisonDot') end,
-                cond = function(self, spell, target)
-                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
-                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
-                end,
-            },
-            {
-                name = "DireDot",
-                type = "Spell",
-                tooltip = Tooltips.DireDot,
-                load_cond = function(self) return Config:GetSetting('DoDireDot') end,
-                cond = function(self, spell, target)
-                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
-                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
-                end,
-            },
-            {
                 name = "BiteTap",
                 type = "Spell",
                 tooltip = Tooltips.BiteTap,
-            },
-            {
-                name = "Vicious Bite of Chaos",
-                type = "AA",
-                tooltip = Tooltips.ViciousBiteOfChaos,
-            },
-            {
-                name = "Companion's Blessing",
-                type = "AA",
-                cond = function(self, aaName, target)
-                    return (mq.TLO.Me.Pet.PctHPs() or 999) <= Config:GetSetting('BigHealPoint')
-                end,
             },
             {
                 name = "PowerTapAC",
@@ -1136,11 +1185,54 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "Bash",
-                type = "Ability",
-                tooltip = Tooltips.Bash,
-                cond = function(self)
-                    return (Core.ShieldEquipped() or Casting.CanUseAA("2 Hand Bash"))
+                name = "ResistTap",
+                type = "Spell",
+                tooltip = Tooltips.ResistTap,
+                load_cond = function(self) return Config:GetSetting('DoResistTap') end,
+                cond = function(self, spell, target)
+                    return Casting.HaveManaToNuke() and Casting.DetSpellCheck(spell, target)
+                end,
+            },
+            {
+                name = "PoisonDot",
+                type = "Spell",
+                tooltip = Tooltips.PoisonDot,
+                load_cond = function(self) return Config:GetSetting('DoPoisonDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "DiseaseDot",
+                type = "Spell",
+                tooltip = Tooltips.DiseaseDot,
+                load_cond = function(self) return Config:GetSetting('DoDiseaseDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "FireDot",
+                type = "Spell",
+                tooltip = Tooltips.PoisonDot,
+                load_cond = function(self) return Config:GetSetting('DoFireDot') end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.HaveManaToDot() and Casting.DotSpellCheck(spell)
+                end,
+            },
+            {
+                name = "Vicious Bite of Chaos",
+                type = "AA",
+                tooltip = Tooltips.ViciousBiteOfChaos,
+            },
+            {
+                name = "Companion's Blessing",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    return (mq.TLO.Me.Pet.PctHPs() or 999) <= Config:GetSetting('BigHealPoint')
                 end,
             },
             {
@@ -1184,6 +1276,7 @@ local _ClassConfig = {
             -- cond = function(self) return true end, --Kept here for illustration, this line could be removed in this instance since we aren't using conditions.
             spells = {
                 { name = "SpearNuke", },
+                { name = "UndeadNuke", cond = function(self) return Config:GetSetting('DoUndeadNuke') end, },
                 {
                     name = "LifeTap",
                     cond = function(self)
@@ -1191,16 +1284,21 @@ local _ClassConfig = {
                         return enabledEntries["LifeTap"] ~= false
                     end,
                 },
-                { name = "SnareDot",    cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Encroaching Darkness") end, },
                 { name = "Terror",      cond = function(self) return Config:GetSetting('DoTerror') end, },
+                { name = "Terror2",     cond = function(self) return Config:GetSetting('DoTerror') end, },
+                { name = "Terror3",     cond = function(self) return Config:GetSetting('DoTerror') end, },
+                { name = "SnareDot",    cond = function(self) return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Encroaching Darkness") end, },
                 { name = "AETaunt",     cond = function(self) return Config:GetSetting('AETauntSpell') end, },
                 { name = "BiteTap", },
-                { name = "BondTap",     cond = function(self) return Config:GetSetting('DoBondTap') end, },
-                { name = "PoisonDot",   cond = function(self) return Config:GetSetting('DoPoisonDot') end, },
-                { name = "DireDot",     cond = function(self) return Config:GetSetting('DoDireDot') end, },
                 { name = "PowerTapAC",  cond = function(self) return Config:GetSetting('DoACTap') end, },
                 { name = "PowerTapAtk", cond = function(self) return Config:GetSetting('DoAtkTap') end, },
+                { name = "ResistTap",   cond = function(self) return Config:GetSetting('DoResistTap') end, },
+                { name = "BondTap",     cond = function(self) return Config:GetSetting('DoBondTap') end, },
+                { name = "PoisonDot",   cond = function(self) return Config:GetSetting('DoPoisonDot') end, },
+                { name = "FireDot", cond = function(self) return Config:GetSetting('DoFireDot') end, },
+                { name = "DiseaseDot",  cond = function(self) return Config:GetSetting('DoDiseaseDot') end, },
                 { name = "Skin", },
+                { name = "Horror",      cond = function(self) return Config:GetSetting('ProcChoice') == 1 end, },
                 { name = "HateBuff",    cond = function(self) return Config:GetSetting('DoHateBuff') and not Casting.CanUseAA("Voice of Thule") end, },
                 {
                     name = "LifeTap2",
@@ -1209,8 +1307,6 @@ local _ClassConfig = {
                         return enabledEntries["LifeTap2"] ~= false
                     end,
                 },
-                { name = "Terror2",     cond = function(self) return Config:GetSetting('DoTerror') end, },
-                { name = "Terror3",     cond = function(self) return Config:GetSetting('DoTerror') end, },
                 {
                     name = "LifeTap3",
                     cond = function(self)
@@ -1332,6 +1428,19 @@ local _ClassConfig = {
             Min = 1,
             Max = 99,
         },
+        ['SnareMinCon']       = {
+            DisplayName = "Snare Min Con",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 103,
+            Tooltip = "Only use snare on targets at or above this con color.",
+            Type = "Combo",
+            ComboOptions = { "Grey", "Green", "Light Blue", "Blue", "White", "Yellow", "Red", },
+            Default = 1,
+            Min = 1,
+            Max = 7,
+        },
         ['ProcChoice']        = {
             DisplayName = "Proc Self-Buff Choice:",
             Group = "Abilities",
@@ -1403,12 +1512,22 @@ local _ClassConfig = {
             Default = true,
             ConfigType = "Advanced",
         },
+        ['DoResistTap']       = {
+            DisplayName = "Use Resist Tap",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Taps",
+            Index = 104,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("Aura of Darkness") end,
+            RequiresLoadoutChange = true,
+            Default = false,
+        },
         ['DoLeechTouch']      = {
             DisplayName = "Leech Touch Use:",
             Group = "Abilities",
             Header = "Damage",
             Category = "Taps",
-            Index = 104,
+            Index = 105,
             Tooltip = "When to use Leech Touch",
             Type = "Combo",
             ComboOptions = { 'On critically low HP', 'As DD during burns', 'For HP or DD', },
@@ -1429,6 +1548,16 @@ local _ClassConfig = {
             RequiresLoadoutChange = true,
             Default = false,
         },
+        ['DoUndeadNuke']      = {
+            DisplayName = "Use Undead/Vampire Nuke",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Index = 102,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("UndeadNuke") end,
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
         ['DoPoisonDot']       = {
             DisplayName = "Use Poison Dot",
             Group = "Abilities",
@@ -1439,13 +1568,23 @@ local _ClassConfig = {
             RequiresLoadoutChange = false,
             Default = true,
         },
-        ['DoDireDot']         = {
-            DisplayName = "Use Dire Dot",
+        ['DoFireDot']         = {
+            DisplayName = "Use Fire Dot",
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
             Index = 103,
-            Tooltip = function() return Ui.GetDynamicTooltipForSpell("DireDot") end,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("Boil Blood") end,
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
+        ['DoDiseaseDot']      = {
+            DisplayName = "Use Disease Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 104,
+            Tooltip = function() return Ui.GetDynamicTooltipForSpell("DiseaseDot") end,
             RequiresLoadoutChange = true,
             Default = false,
         },
@@ -1454,7 +1593,7 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 104,
+            Index = 105,
             Tooltip = "Any selected dot above will only be used on a named mob.",
             Default = true,
         },

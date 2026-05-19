@@ -69,9 +69,6 @@
   - file: class_configs/EQ Might/shd_class_config.lua
   - detail: EnabledRotationEntries で各エントリが false の場合、SpellList から除外する cond を追加。
 
-
-/rgl set ManualMode ${If[${RGMercs.Config[ManualMode]},off,on]}
-
 2026-05-18
 
 - Cure: Core.SafeCallFunc の複数戻り値を保持するよう修正。
@@ -88,3 +85,126 @@
   - file: class_configs/EQ Might/rng_class_config.lua
   - detail: ModeChecks に IsCuring を追加し、Cures(GetCureSpells/CureNow) を追加。
     AbilitySets に CurePoison/CureDisease/CureCurse/CureCorrupt を追加。
+
+- EQ Might RNG: Downtime に Wolf Form 系バフを追加。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: AbilitySets の SelfWolfBuff（Feral/Greater Wolf Form/Wolf Form）を有効化し、
+    Rotations['Downtime'] に SelfWolfBuff ブロックを追加。
+
+- EQ Might RNG: Combat に Drones of Doom 系 DoT ラインを追加。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: AbilitySets に DronesDot（Drones of Doom / Swarm of Pain / Stinging Swarm）を追加し、
+    Rotations['Combat'] に DronesDot エントリを追加。
+
+- EQ Might RNG: Combat / SpellLoadout の Nuke 並びを調整。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: Nuke 順を ColdNukeT2 → FireNukeT1 → FireNukeT4 に変更。
+    併せて SpellList から SwarmDot を削除。
+
+- EQ Might RNG: DD Proc の選択設定を追加。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: DefaultConfig に DDProcChoice（Auto / Call of Ice / Call of Fire / Call of Sky）を追加。
+    Downtime の DDProc は name_func で設定連動し、Auto 時は Ice→Fire→Sky の順で自動選択。
+
+- EQ Might RNG: DD Proc 選択時の "No Spell Detected" を修正。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: DDProc（Auto用）から Ice/Fire/Sky を分離し、個別セットとの重複解決競合を回避。
+
+- EQ Might RNG: Drones Dot 個別トグル設定を追加。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: DefaultConfig に DoDronesDot を追加。
+    Rotations['Combat'] の DronesDot 条件を DoDronesDot 参照に変更。
+
+- EQ Might RNG: Swarm/Drones DoT の表示連動を修正。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: SwarmDot / DronesDot の Combat エントリに load_cond を追加。
+    トグル OFF 時に Combat セクションから非表示になるよう修正。
+
+- EQ Might RNG: Over Time 設定の表示順を調整。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: Index を調整し、Swarm Dot → Drones Dot → Only Dot Named の順に変更。
+    Only Dot Named は Swarm/Drones の両 DoT に適用。
+
+- UI: Abilities > Damage に DD Proc カテゴリを追加。
+  - file: ui/options.lua
+  - detail: Damage ヘッダの Categories に "DD Proc" を追加。
+    DDProcChoice が Uncategorized へ落ちないよう修正。
+
+- EQ Might SHD: Spell Loadout の先頭並びを調整。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: 先頭順を SpearNuke → LifeTap → Terror → Terror2 → Terror3 に変更。
+
+- EQ Might SHD: Spell Loadout の HateBuff 取り扱いを調整。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: 一度削除後、最終的に HateBuff を復帰。
+
+- EQ Might SHD: Spell Loadout に Horror ラインを追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: SpellList に Horror を追加し、ProcChoice=1 のときにメモライズ対象となるよう調整。
+
+- EQ Might SHD: Over Time に Boil Blood 系を独立ラインとして追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: PoisonDot から Boil Blood を分離し、BoilBloodDot ラインを新設。
+    Pyre of Mori 系（上位ランク含む）を AbilitySets['BoilBloodDot'] に追加し、DoBoilBloodDot トグルで制御。
+
+- EQ Might SHD: Snare の条件を緩和。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: Snare の HP 閾値チェックを削除し、Named 除外条件も削除。
+    耐性系チェック（DetCheck / SnareImmuneTarget）は維持。
+
+- EQ Might SHD: Undead/Vampire 専用 Nuke ラインを追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: Scythe of Darkness 系を AbilitySets['UndeadNuke'] として追加し、
+    Combat 先頭に Undead/Vampire/Vampyre 条件付きで追加。SpellLoadout へも追加。
+    DoUndeadNuke トグル（Abilities > Damage > Direct）で ON/OFF 制御を追加。
+
+- EQ Might SHD: RotationOrder の Snare 位置を変更。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: Snare セクションを Combat セクションの下へ移動。
+
+- EQ Might SHD/RNG: Snare に最低Con条件を追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: Debuffs > Snare に Snare Min Con（Grey/Green/Light Blue/Blue/White/Yellow/Red）を追加。
+    Snare の AA/Spell 実行条件で、対象の ConColor が設定値以上の場合のみ使用するよう変更。
+
+- EQ Might RNG: SelfWolfBuff に PoK 除外条件を追加。
+  - file: class_configs/EQ Might/rng_class_config.lua
+  - detail: Downtime の SelfWolfBuff 条件に Zone.ShortName= "poknowledge" のときは使用しない判定を追加。
+
+- Named: クォート差異による取りこぼしを防ぐ正規化を追加。
+  - file: modules/named.lua
+  - detail: Named 判定時に名前文字列の前後空白を trim し、
+    `’`（スマートクォート）/ `` ` ``（バッククォート）を `'`（ASCII）へ正規化して比較するよう修正。
+
+2026-05-19
+
+- EQ Might SHD: DoT トグル／ライン名を整理（DireDot → Disease Dot、Boil Blood → Fire Dot）。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: 旧 DireDot を DiseaseDot にリネームし、設定を Use Disease Dot（DoDiseaseDot、デフォルト OFF）に変更。
+    旧 BoilBloodDot を FireDot にリネームし、設定表示を Use Fire Dot（DoFireDot）に変更。
+
+- EQ Might SHD: Resist Tap（Aura of Darkness）を追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: Abilities > Damage > Taps に Use Resist Tap（DoResistTap、デフォルト OFF）を追加。
+    ResistTap として Aura of Darkness を Combat / SpellLoadout に追加。
+    対象デバフ未付与時に DetSpellCheck で使用。
+
+- EQ Might SHD: AC Tap / Attack Tap の Spell Loadout 連動を追加。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: DoACTap / DoAtkTap が ON のとき PowerTapAC / PowerTapAtk を Spell Loadout に含めるよう変更。
+
+- EQ Might SHD: Combat ローテーションのブロック順を調整。
+  - file: class_configs/EQ Might/shd_class_config.lua
+  - detail: Bash を Combat 先頭へ移動。
+    Tap 群（BiteTap / PowerTapAC / PowerTapAtk / ResistTap）を Dot 群（Poison / Disease / Fire）の上へ移動。
+    DiseaseDot を FireDot の直上に配置。
+
+---
+
+## 検討事項（未実装）
+
+- EQ Might RNG: Quickshot Discipline のローテーション追加を検討。
+  - detail: 現状 RGMercs には未登録。Reuse 約1.5分で Trueshot Discipline とは別タイマーのため、
+    遠距離（DoMelee OFF）では頻繁に回したい。実装候補は Weaves / Combat 常時枠、Burn とは分離した
+    クールダウン連動、DoMelee OFF 時のみの ON/OFF トグルなど。
