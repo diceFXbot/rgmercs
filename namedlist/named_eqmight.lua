@@ -99,7 +99,6 @@ return {
     ["soldungb"] = {
         { name = "Efreeti Lord Djarn", elementalImmunities = { Fire = true, }, },
         { name = "Lord Nagafen",       elementalImmunities = { Fire = true, }, },
-        { name = "King Tranix",        elementalImmunities = { Fire = true, }, },
         "The Fabled Death Beetle",
         "The Fabled Efreeti Lord Djarn",
         "The Fabled King Tranix",
@@ -189,7 +188,6 @@ return {
     ["hateplane"] = {
         "Dark Apostle",
         { name = "Innoruuk", statusImmunities = { Slow = true, }, },
-        "The Deathrot Knight",
         "The Fabled Master of Spite",
     },
 

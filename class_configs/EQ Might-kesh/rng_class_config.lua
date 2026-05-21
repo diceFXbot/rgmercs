@@ -9,6 +9,33 @@ local Movement  = require("utils.movement")
 local Strings   = require("utils.strings")
 local Combat    = require("utils.combat")
 
+local function HasNearbyUnaggroNpcExceptTarget(radius)
+    local target = mq.TLO.Target
+    if not (target and target()) then return true end
+    local targetId = target.ID() or 0
+    if targetId == 0 then return true end
+
+    local search = string.format("npc radius %d zradius 30", radius)
+    local nearbyCount = mq.TLO.SpawnCount(search)() or 0
+
+    for i = 1, nearbyCount do
+        local nearby = mq.TLO.NearestSpawn(i, search)
+        if nearby and nearby() and (nearby.ID() or 0) > 0 and not nearby.Dead() then
+            local nearbyId = nearby.ID() or 0
+            if nearbyId ~= targetId then
+                local isAggressive = nearby.Aggressive() or false
+                local okType, targetType = pcall(function() return (nearby.TargetType() or ""):lower() end)
+                local isAutoHater = okType and targetType == "auto hater"
+                if not isAggressive and not isAutoHater then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 return {
     _version              = "2.1 - EQ Might-kesh",
     _author               = "Algar",
@@ -586,6 +613,7 @@ return {
                 type = "AA",
                 load_cond = function() return Casting.CanUseAA("Entrap") end,
                 cond = function(self, aaName, target)
+                    if Globals.AutoTargetIsNamed and not Config:GetSetting('DoSnareNamed') then return false end
                     return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
                         not Casting.SnareImmuneTarget(target)
                 end,
@@ -595,6 +623,7 @@ return {
                 type = "Spell",
                 load_cond = function() return not Casting.CanUseAA("Entrap") end,
                 cond = function(self, spell, target)
+                    if Globals.AutoTargetIsNamed and not Config:GetSetting('DoSnareNamed') then return false end
                     return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and Targeting.MobHasLowHP(target) and
                         not Casting.SnareImmuneTarget(target)
                 end,
@@ -638,6 +667,23 @@ return {
                 cond = function(self, itemName)
                     if not Config:GetSetting('DoMelee') or Config:GetSetting('UseEpic') == 1 then return false end
                     return (Config:GetSetting('UseEpic') == 3 or (Config:GetSetting('UseEpic') == 2 and Casting.BurnCheck()))
+                end,
+            },
+            {
+                name = "SnaprollRearOnLowAggroFront",
+                type = "CustomFunc",
+                custom_func = function(self, targetId)
+                    local target = mq.TLO.Target
+                    if not (target and target() and not target.Dead()) then return false end
+                    if not Config:GetSetting('DoMelee') then return false end
+                    if (target.PctAggro() or 0) >= 99 then return false end
+                    if not Targeting.MeInTargetFrontArc(target, 120) then return false end
+                    if Targeting.GetTargetDistance() > 50 then return false end
+                    if HasNearbyUnaggroNpcExceptTarget(50) then return false end
+                    if Globals.GetTimeSeconds() - Movement:GetLastStickTimer() < 0.5 then return false end
+
+                    Movement:DoStickCmd("12 snaproll rear loose uw")
+                    return false
                 end,
             },
             {
@@ -1099,6 +1145,15 @@ return {
             Default = 1,
             Min = 1,
             Max = 7,
+        },
+        ['DoSnareNamed']   = {
+            DisplayName = "Snare Named",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 104,
+            Tooltip = "When enabled, snare named mobs. When disabled, skip snare on named (non-named are unaffected).",
+            Default = false,
         },
     },
     ['ClassFAQ']          = {

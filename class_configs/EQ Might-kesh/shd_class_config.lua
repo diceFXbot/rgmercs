@@ -1027,6 +1027,7 @@ local _ClassConfig = {
                 type = "AA",
                 load_cond = function(self) return Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, aaName, target)
+                    if Globals.AutoTargetIsNamed and not Config:GetSetting('DoSnareNamed') then return false end
                     return Casting.DetAACheck(aaName) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
@@ -1036,6 +1037,7 @@ local _ClassConfig = {
                 tooltip = Tooltips.SnareDot,
                 load_cond = function(self) return not Casting.CanUseAA("Encroaching Darkness") end,
                 cond = function(self, spell, target)
+                    if Globals.AutoTargetIsNamed and not Config:GetSetting('DoSnareNamed') then return false end
                     return Casting.DetSpellCheck(spell) and self.Helpers.TargetMeetsSnareMinCon(target) and not Casting.SnareImmuneTarget(target)
                 end,
             },
@@ -1440,6 +1442,15 @@ local _ClassConfig = {
             Default = 1,
             Min = 1,
             Max = 7,
+        },
+        ['DoSnareNamed']      = {
+            DisplayName = "Snare Named",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Snare",
+            Index = 104,
+            Tooltip = "When enabled, snare named mobs. When disabled, skip snare on named (non-named are unaffected).",
+            Default = false,
         },
         ['ProcChoice']        = {
             DisplayName = "Proc Self-Buff Choice:",

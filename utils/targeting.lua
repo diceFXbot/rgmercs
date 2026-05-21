@@ -274,9 +274,32 @@ function Targeting.GetTargetSlowedPct()
 end
 
 --- Returns true if the player's heading is within 20 degrees of the target.
+---@param maxDelta number|nil Optional angle tolerance (degrees), defaults to 20.
 ---@return boolean True if facing the current target.
-function Targeting.FacingTarget()
-    return math.abs((mq.TLO.Target.HeadingTo.DegreesCCW() or mq.TLO.Me.Heading.DegreesCCW()) - mq.TLO.Me.Heading.DegreesCCW()) <= 20
+function Targeting.FacingTarget(maxDelta)
+    local tolerance = maxDelta or 20
+    local targetHeadingTo = mq.TLO.Target.HeadingTo.DegreesCCW() or mq.TLO.Me.Heading.DegreesCCW()
+    local myHeading = mq.TLO.Me.Heading.DegreesCCW()
+    local delta = math.abs(((targetHeadingTo - myHeading + 180) % 360) - 180)
+
+    return delta <= tolerance
+end
+
+--- Determines whether we are inside the target's front-facing arc.
+---@param target MQTarget|MQSpawn|nil Optional target. Defaults to current target.
+---@param arcDegrees number|nil Full arc size in degrees. Defaults to 120.
+---@return boolean True if we are in the target's front arc.
+function Targeting.MeInTargetFrontArc(target, arcDegrees)
+    local useTarget = target or mq.TLO.Target
+    if not useTarget or not useTarget() then return false end
+
+    local fullArc = arcDegrees or 120
+    local targetFacing = useTarget.Heading.DegreesCCW() or 0
+    local meToTarget = useTarget.HeadingTo.DegreesCCW() or 0
+    local targetToMe = (meToTarget + 180) % 360
+    local delta = math.abs(((targetToMe - targetFacing + 180) % 360) - 180)
+
+    return delta <= (fullArc / 2)
 end
 
 --- Returns the highest aggro percentage the player has across the current

@@ -29,6 +29,21 @@ function OptionsUI.LoadIcon(icon)
     return mq.CreateTexture(mq.TLO.Lua.Dir() .. "/rgmercs/extras/" .. icon .. ".png")
 end
 
+--- Composite key so the same Category name can appear under different Group/Header tabs.
+function OptionsUI.GetSettingsCategoryKey(groupName, headerName, category)
+    return string.format("%s/%s/%s", groupName, headerName, category)
+end
+
+--- Returns true when a setting belongs on the given Options tab Group/Header.
+local function settingMatchesPlacement(settingDefaults, groupName, headerName)
+    if not settingDefaults then return false end
+    local settingGroup = settingDefaults.Group
+    local settingHeader = settingDefaults.Header
+    if settingGroup and settingGroup ~= "" and settingGroup ~= groupName then return false end
+    if settingHeader and settingHeader ~= "" and settingHeader ~= headerName then return false end
+    return true
+end
+
 OptionsUI.Groups                = { --- Add a default of the same name for any key that has nothing in its table once these are finished
     {
         Name = "General",
@@ -92,7 +107,7 @@ OptionsUI.Groups                = { --- Add a default of the same name for any k
             { Name = 'Buffs',    Categories = { "Buff Rules", "Self", "Group", }, },
             { Name = 'Debuffs',  Categories = { "Debuff Rules", "Slow", "Stun", "Resist", "Snare", "Dispel", "Misc Debuffs", }, }, -- Resist i.e, Malo, Tash, druid
             { Name = 'Recovery', Categories = { "General Healing", "Healing Thresholds", "Other Recovery", "Curing", "Rezzing", }, },
-            { Name = 'Damage',   Categories = { "Direct", "AE", "Over Time", "DD Proc", "Taps", }, },
+            { Name = 'Damage',   Categories = { "Direct", "Weave", "AE", "Over Time", "DD Proc", "Taps", }, },
             { Name = 'Tanking',  Categories = { "Hate Tools", "Defenses", }, },
             { Name = 'Utility',  Categories = { "Hate Reduction", "Emergency", }, },
             { Name = 'Mez',      Categories = { "Mez General", "Mez Targets", }, },
@@ -278,12 +293,12 @@ function OptionsUI:ApplySearchFilter()
         end
     end
 
+    local catchAllExtraCategories = {}
     local allModuleCategoriesTable = allModuleCategories:toList()
     for _, category in ipairs(allModuleCategoriesTable) do
-        if not knownCategories:contains(category) and catchAllHeader ~= nil then
-            Logger.log_warn("\ayOptionsUI: \awAdding missing category '\at%s\aw' to catch-all header.", category)
-            table.insert(catchAllHeader.Categories, category)
-            knownCategories:add(category)
+        if not knownCategories:contains(category) then
+            Logger.log_warn("\ayOptionsUI: \awUnregistered setting category '\at%s\aw' will appear under General > Uncategorized.", category)
+            table.insert(catchAllExtraCategories, category)
         end
     end
 
@@ -299,15 +314,27 @@ function OptionsUI:ApplySearchFilter()
             local newCategories = {}
             local newRenderCategories = {}
 
-            for _, category in ipairs(header.Categories or {}) do
+            local categoriesToProcess = header.Categories or {}
+            if header.CatchAll and #catchAllExtraCategories > 0 then
+                categoriesToProcess = shallow_copy(categoriesToProcess)
+                for _, extraCategory in ipairs(catchAllExtraCategories) do
+                    table.insert(categoriesToProcess, extraCategory)
+                end
+            end
+
+            for _, category in ipairs(categoriesToProcess) do
                 local categoryLower = category:lower()
 
                 local categoryMatches = categoryLower:find(filter, 1, true) ~= nil
+                local categoryKey = OptionsUI.GetSettingsCategoryKey(group.Name, header.Name, category)
 
                 local settingsForCategory = Config:PeerGetAllSettingsForCategory(self.selectedCharacter, category)
 
                 for _, settingName in ipairs(settingsForCategory or {}) do
                     local settingDefaults         = Config:PeerGetSettingDefaults(self.selectedCharacter, settingName)
+                    if not settingMatchesPlacement(settingDefaults, group.Name, header.Name) then
+                        goto continue_setting
+                    end
                     local settingDisplayNameLower = (settingDefaults.DisplayName or ""):lower()
                     local settingTooltipLower     = (type(settingDefaults.Tooltip) == 'function' and settingDefaults.Tooltip() or (settingDefaults.Tooltip or "")):lower()
                     local customSetting           = (settingDefaults.Type == "Custom")
@@ -315,8 +342,8 @@ function OptionsUI:ApplySearchFilter()
 
                     if showAdv and not customSetting and (headerMatches or categoryMatches or settingName:lower():find(filter, 1, true) ~= nil or settingDisplayNameLower:find(filter, 1, true) ~= nil or
                             settingTooltipLower:find(filter, 1, true) ~= nil) then
-                        self.FilteredSettingsByCat[category] = self.FilteredSettingsByCat[category] or {}
-                        table.insert(self.FilteredSettingsByCat[category], settingName)
+                        self.FilteredSettingsByCat[categoryKey] = self.FilteredSettingsByCat[categoryKey] or {}
+                        table.insert(self.FilteredSettingsByCat[categoryKey], settingName)
 
                         -- set highlighting
                         if Config:IsModuleHighlighted(Config:PeerGetModuleForSetting(self.selectedCharacter, settingName)) then
@@ -326,9 +353,10 @@ function OptionsUI:ApplySearchFilter()
                             highlightHeader = true
                         end
                     end
+                    ::continue_setting::
                 end
 
-                table.sort(self.FilteredSettingsByCat[category] or {}, function(k1, k2)
+                table.sort(self.FilteredSettingsByCat[categoryKey] or {}, function(k1, k2)
                     local k1Defaults = Config:PeerGetSettingDefaults(self.selectedCharacter, k1)
                     local k2Defaults = Config:PeerGetSettingDefaults(self.selectedCharacter, k2)
                     if (k1Defaults.Index ~= nil or k2Defaults.Index ~= nil) and (k1Defaults.Index ~= k2Defaults.Index) then
@@ -342,7 +370,7 @@ function OptionsUI:ApplySearchFilter()
                     return (k1Defaults.Category or "") < (k2Defaults.Category or "")
                 end)
 
-                if #(self.FilteredSettingsByCat[category] or {}) > 0 then
+                if #(self.FilteredSettingsByCat[categoryKey] or {}) > 0 then
                     table.insert(newCategories, category)
                 end
             end
@@ -461,13 +489,14 @@ function OptionsUI:RenderOptionsPanel(groupName)
                     ImGui.PopStyleColor(1)
                 end
                 for _, category in ipairs(header.Categories or {}) do
-                    if #Config:PeerGetAllSettingsForCategory(self.selectedCharacter, category) > 0 then
+                    local categoryKey = OptionsUI.GetSettingsCategoryKey(groupName, header.Name, category)
+                    if #(self.FilteredSettingsByCat[categoryKey] or {}) > 0 then
                         -- only draw the seperator if the category name is different from the heading
                         if header.Name ~= category then
                             self:RenderCategorySeperator(category)
                         end
                         -- Render options for this category
-                        self:RenderCategorySettings(category)
+                        self:RenderCategorySettings(groupName, header.Name, category)
                     end
                 end
 
@@ -496,7 +525,7 @@ function OptionsUI:RenderOptionsPanel(groupName)
     end
 end
 
-function OptionsUI:RenderCategorySettings(category)
+function OptionsUI:RenderCategorySettings(groupName, headerName, category)
     local any_pressed         = false
     local new_loadout         = false
     local pressed             = false
@@ -504,7 +533,8 @@ function OptionsUI:RenderCategorySettings(category)
     local renderWidth         = 325
     local windowWidth         = ImGui.GetWindowWidth()
     local numCols             = math.max(1, math.floor(windowWidth / renderWidth))
-    local settingsForCategory = self.FilteredSettingsByCat[category] or {}
+    local categoryKey         = OptionsUI.GetSettingsCategoryKey(groupName, headerName, category)
+    local settingsForCategory = self.FilteredSettingsByCat[categoryKey] or {}
 
     if ImGui.BeginChild("catchild_" .. category, ImVec2(0, 0), bit32.bor(ImGuiChildFlags.AlwaysAutoResize, ImGuiChildFlags.AutoResizeY), ImGuiWindowFlags.None) then
         if ImGui.BeginTable("Options_" .. (category), 2 * numCols, ImGuiTableFlags.Borders) then
