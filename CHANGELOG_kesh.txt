@@ -2,6 +2,11 @@
 
 2026-05-19
 
+- main を kesh-custom にマージ（fd6efda1 まで取り込み）。
+  - detail: コンフリクトなし（merge-tree 自動統合）。Config 編集 FAQ・/rgl copy、Pull 調整、
+    マップのチェスト表示・ターゲット線、DefaultEmuServers リネーム、docs 追加。
+    kesh 側（EQ Might-kesh・MovebackWhenBehindMode・背後 snaproll 等）は維持。
+
 - NamedList から "The Deathrot Knight" を削除。
   - file: namedlist/named_eqmight.lua
   - detail: hateplane ゾーンの Named 登録から除外（The Timeless Deathrot Knight は hateplaneb に残す）。
