@@ -99,7 +99,7 @@ end
 Ui.LoadThemez = function()
     local themez, err = loadfile(mq.configDir .. '/MyThemez.lua')
     if err or not themez then
-        Logger.log_warn("\ayNo Themez Lua found.")
+        Logger.log_debug("\ayNo Themez Lua found.")
     else
         Ui.Themez = themez()
 
@@ -400,7 +400,7 @@ function Ui.RenderConfigSelector()
             ClassLoader.reloadConfig()
         end
         Ui.Tooltip(
-            "Select your current server/environment.\nLive: Official EQ Servers (Live, Test, TLP).\nProject Lazarus, EQ Might, Hidden Forest: Supported EMU servers.\nAlpha, Beta: Configs in testing. Often preferred, with some caveats (see forum sticky).\nCustom: Copies of the above configs that you have edited yourself.")
+            "Select your current server/environment.\nLive: Official EQ Servers (Live, Test, TLP).\nProject Lazarus, EQ Might: EMU servers we provide default configs for (RGMercs runs on other servers too; pick the closest as a base).\nAlpha, Beta: Configs in testing. Often preferred, with some caveats (see forum sticky).\nCustom: Copies of the above configs that you have edited yourself.")
 
         ImGui.SameLine()
         if ImGui.SmallButton(Icons.FA_REFRESH .. " Refresh List") then
