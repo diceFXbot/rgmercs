@@ -322,6 +322,32 @@ return {
             return mq.TLO.Me.SpellInCooldown() or false
         end,
 
+        --- True when at least one Weaves entry would pass rotation conditions (avoids empty Weaves passes).
+        HasUsableWeaveEntry = function(caller)
+            if Casting.CanUseAA("Lower Element") and Casting.DetAACheck("Lower Element")
+                and mq.TLO.Me.AltAbilityReady("Lower Element")() then
+                return true
+            end
+            if Casting.CanUseAA("Force of Will") and mq.TLO.Me.AltAbilityReady("Force of Will")() then
+                return true
+            end
+            local targetTable = Targeting.CheckForAutoTargetID()
+            for _, targetId in ipairs(targetTable or {}) do
+                if targetId and targetId > 0 then
+                    local targetSpawn = mq.TLO.Spawn(targetId)
+                    if targetSpawn() then
+                        local weaveClickies = Modules:ExecModule("Clickies", "GetClickiesForRotation", "Weaves") or {}
+                        for _, entry in ipairs(weaveClickies) do
+                            if entry.cond and Core.SafeCallFunc("Weaves HasUsableWeaveEntry", entry.cond, caller, entry.name, targetSpawn) then
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+            return false
+        end,
+
         -- Resolves the currently-active element based on ElementMode.
         -- Auto: prefers Fire, then Cold, then Magic, skipping any element the auto-target is
         -- immune to (per the Named List) or one toggled off via Skip<X>Spells.
@@ -335,6 +361,29 @@ return {
             if not Casting.ShouldSkipElement("Cold", autoId) then return "Cold" end
             if not Casting.ShouldSkipElement("Magic", autoId) then return "Magic" end
             return "Fire" -- all skipped; default so Fury/Familiar still resolve
+        end,
+
+        --- FireRain or ColdRain map key from Rain Element Mode (nil when Magic-only / no rain line).
+        --- Note: called as Helpers.RainMapName() — do not use self.Helpers inside (self is the Helpers table).
+        RainMapName = function()
+            local rainMode = Config:GetSetting('RainElementMode') or 1
+            if rainMode == 3 then return "FireRain" end
+            if rainMode == 4 then return "ColdRain" end
+            if rainMode == 2 then
+                local autoId = Globals.AutoTargetID or 0
+                if not Casting.ShouldSkipElement("Fire", autoId) then return "FireRain" end
+                if not Casting.ShouldSkipElement("Cold", autoId) then return "ColdRain" end
+                return "FireRain"
+            end
+            -- Same as Element Mode (DPS)
+            local el = Config:GetSetting('ElementMode') or 1
+            if el == 2 then return "FireRain" end
+            if el == 3 then return "ColdRain" end
+            if el == 4 then return nil end
+            local autoId = Globals.AutoTargetID or 0
+            if not Casting.ShouldSkipElement("Fire", autoId) then return "FireRain" end
+            if not Casting.ShouldSkipElement("Cold", autoId) then return "ColdRain" end
+            return "FireRain"
         end,
 
         -- Familiar element pick: explicit element if set, Fire fallback in Auto. See FAQ.
@@ -393,6 +442,17 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat"
+            end,
+        },
+        {
+            name = 'Rain',
+            state = 1,
+            steps = 1,
+            load_cond = function() return Config:GetSetting('DoRain') end,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                if not self.Helpers.RainMapName() then return false end
+                return combat_state == "Combat" and not (Core.IsModeActive('PBAE') and Combat.AETargetCheck(true))
             end,
         },
         {
@@ -474,7 +534,8 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if combat_state ~= "Combat" or not Targeting.AggroCheckOkay() then return false end
-                return self.Helpers.GemOnGlobalCooldown()
+                if not self.Helpers.GemOnGlobalCooldown() then return false end
+                return self.Helpers.HasUsableWeaveEntry(self)
             end,
         },
         {
@@ -630,6 +691,19 @@ return {
                 type = "AA",
             },
         },
+        ['Rain'] = {
+            {
+                name_func = function(self) return self.Helpers.RainMapName() end,
+                type = "Spell",
+                load_cond = function(self)
+                    return Config:GetSetting('DoRain') and self.Helpers.RainMapName() ~= nil
+                end,
+                cond = function(self, spell, target)
+                    if not self.Helpers.RainCheck(target) then return false end
+                    return Targeting.AggroCheckOkay()
+                end,
+            },
+        },
         ['WildNuke'] = {
             {
                 name = "WildNuke",
@@ -656,15 +730,6 @@ return {
                 end,
             },
             {
-                name = "FireRain",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoRain') end,
-                cond = function(self, spell, target)
-                    if not self.Helpers.RainCheck(target) then return false end
-                    return Targeting.AggroCheckOkay()
-                end,
-            },
-            {
                 name = "BigFireNuke",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -686,15 +751,6 @@ return {
                 load_condtion = function(self) return Casting.CanUseAA("Cryomancy") end,
                 cond = function(self, aaName)
                     return Casting.SelfBuffAACheck(aaName)
-                end,
-            },
-            {
-                name = "ColdRain",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('DoRain') end,
-                cond = function(self, spell, target)
-                    if not self.Helpers.RainCheck(target) then return false end
-                    return Targeting.AggroCheckOkay()
                 end,
             },
             {
@@ -846,8 +902,8 @@ return {
                 { name = "BigMagicNuke", },
                 { name = "WildNuke",     cond = function() return Config:GetSetting('DoWildNuke') end, },
                 { name = "IceSpear", },
-                { name = "FireRain",     cond = function() return Config:GetSetting('DoRain') end, },
-                { name = "ColdRain",     cond = function() return Config:GetSetting('DoRain') end, },
+                { name = "FireRain",     cond = function(self) return Config:GetSetting('DoRain') and self.Helpers.RainMapName() == "FireRain" end, },
+                { name = "ColdRain",     cond = function(self) return Config:GetSetting('DoRain') and self.Helpers.RainMapName() == "ColdRain" end, },
                 { name = "HarvestSpell", cond = function() return not Casting.CanUseAA("Harvest of Druzzil") end, },
                 { name = "SnareSpell",   cond = function() return Config:GetSetting('DoSnare') and not Casting.CanUseAA("Atol's Shackles") end, },
                 { name = "EvacSpell",    cond = function() return Config:GetSetting('KeepEvacMemmed') end, },
@@ -926,18 +982,38 @@ return {
             Index = 106,
             RequiresLoadoutChange = true,
             ConfigType = "Advanced",
-            Tooltip = "**WILL BREAK MEZ** Use your selected element's Rain Spell as a single-target nuke. **WILL BREAK MEZ***",
+            Tooltip = "**WILL BREAK MEZ** ST Rain nuke (Rain Element Mode). Memorized via SpellList when ON — Rescan Loadout after toggling. **WILL BREAK MEZ***",
             Default = false,
             FAQ = "Why is Rain being used a single target nuke?",
             Answer = "In some situations, using a Rain can be an efficient single target nuke at low levels.\n" ..
-                "Note that PBAE spells tend to be superior for AE dps at those levels.",
+                "Note that PBAE spells tend to be superior for AE dps at those levels.\n\n" ..
+                "   With Do Rain ON, SpellList mems the active FireRain or ColdRain line (per Rain Element Mode). Use Rescan Loadout / Reload Spells after changing Rain settings. Combat will not mem on the fly if gems are full or you have aggro.",
+        },
+        ['RainElementMode']      = {
+            DisplayName = "Rain Element Mode:",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Index = 107,
+            RequiresLoadoutChange = true,
+            ConfigType = "Advanced",
+            Tooltip = "Which Rain line to use. Independent of Element Mode unless 'Same as Element Mode'. Magic has no Rain line.",
+            Type = "Combo",
+            ComboOptions = { 'Same as Element Mode', 'Auto', 'Fire', 'Cold', },
+            Default = 1,
+            Min = 1,
+            Max = 4,
+            FAQ = "How is Rain Element Mode different from Element Mode?",
+            Answer =
+                "   Element Mode controls your main nuke rotation (Fire/Cold/Magic). Rain Element Mode controls only FireRain vs ColdRain.\n\n" ..
+                "   Same as Element Mode: Rain follows Element Mode (Magic mode = no Rain). Auto: Fire then Cold with immunity/skip toggles, ignoring DPS element. Fire/Cold: lock that Rain line regardless of what nukes you cast.",
         },
         ['RainDistance']         = {
             DisplayName = "Min Rain Distance",
             Group = "Abilities",
             Header = "Damage",
             Category = "Direct",
-            Index = 107,
+            Index = 108,
             ConfigType = "Advanced",
             Tooltip = "The minimum distance a target must be to use a Rain (Rain AE Range: 25'). Used to avoid harming the caster.",
             Default = 30,

@@ -41,10 +41,10 @@ function Movement:DoStick(targetId)
             local movebackWhenTank = Config:GetSetting('MovebackWhenTank')
             local behindMode = Config:GetSetting('MovebackWhenBehindMode') or 1
             local allowTankMoveback = movebackWhenTank and behindMode ~= 2
-            self:DoStickCmd("10 id %d %s uw", targetId, allowTankMoveback and "moveback" or "")
+            self:DoStickCmd("14 id %d loose %s uw", targetId, allowTankMoveback and "moveback" or "")
         else
-            local stickDist = (mq.TLO.Spawn(targetId).Height() or 5) > 15 and 20 or 10
-            self:DoStickCmd("%d id %d behindonce moveback uw", stickDist, targetId)
+            local stickDist = (mq.TLO.Spawn(targetId).Height() or 5) > 15 and 19 or 14
+            self:DoStickCmd("%d id %d loose uw", stickDist, targetId)
         end
     end
 end

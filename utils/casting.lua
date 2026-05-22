@@ -18,8 +18,27 @@ local Casting      = { _version = '2.0', _name = "Casting", _author = 'Derple, A
 Casting.__index    = Casting
 Casting.Memorizing = false
 
+--- Client recast TLO stays "ready" after use on these items (EMU); track CD locally after CAST_SUCCESS.
+local ITEM_SOFT_COOLDOWN_SEC = {
+    ["Vermilion Robe of Torrefaction"] = 15,
+}
+Casting.ItemSoftCooldownUntil = {}
+
 -- cached for UI display
 Casting.UseGem     = mq.TLO.Me.NumGems()
+
+--- @param itemName string
+--- @return number Seconds remaining on RGMercs soft item CD, or 0 if none/expired.
+function Casting.GetItemSoftCooldownRemaining(itemName)
+    local untilSec = Casting.ItemSoftCooldownUntil[itemName]
+    if not untilSec then return 0 end
+    local remaining = untilSec - Globals.GetTimeSeconds()
+    if remaining <= 0 then
+        Casting.ItemSoftCooldownUntil[itemName] = nil
+        return 0
+    end
+    return remaining
+end
 
 --- Checks if a spell target type is a group-affecting type (group buffs, AE PC buffs, etc.)
 --- @param targetType string|nil The TargetType() value from a spell.
@@ -897,13 +916,15 @@ function Casting.ShouldShrinkPet()
         (Config:GetSetting('ShrinkPetItem'):len() > 0) and Casting.OkayToPetBuff()
 end
 
---- Evaluates three burn triggers: autoBurn (BurnAuto enabled and XT hater count exceeds BurnMobCount, or the auto-target is a named mob with BurnNamed enabled), alwaysBurn (BurnAuto and BurnAlways both set), and forcedBurn (ForceBurnTargetID matches the current target). Caches the result in Globals.LastBurnCheck and announces state changes to the group/raid.
+--- Evaluates three burn triggers: autoBurn (BurnAuto enabled and XT hater count at/above BurnMobCount among haters meeting BurnMinCon, or named burn), alwaysBurn, and forcedBurn. Caches the result in Globals.LastBurnCheck and announces state changes to the group/raid.
 --- @return boolean True if the burn condition is met, false otherwise.
 function Casting.BurnCheck()
     local burnTarget = Targeting.GetAutoTarget()
     local burnTargetName = burnTarget and (burnTarget() and burnTarget.CleanName() or "None") or "None"
+    local burnMinCon = Config:GetSetting('BurnMinCon') or 1
+    local mobThresholdMet = Targeting.GetXTHaterCount(false, burnMinCon) >= Config:GetSetting('BurnMobCount')
     local autoBurn = Config:GetSetting('BurnAuto') and
-        ((Targeting.GetXTHaterCount() >= Config:GetSetting('BurnMobCount')) or (Globals.AutoTargetIsNamed and Config:GetSetting('BurnNamed') and Targeting.GetAutoTargetPctHPs() <= Config:GetSetting('NamedMinHPPct')))
+        (mobThresholdMet or (Globals.AutoTargetIsNamed and Config:GetSetting('BurnNamed') and Targeting.GetAutoTargetPctHPs() <= Config:GetSetting('NamedMinHPPct')))
     local alwaysBurn = (Config:GetSetting('BurnAlways') and Config:GetSetting('BurnAuto'))
     local forcedBurn = Targeting.ForceBurnTargetID > 0 and Targeting.ForceBurnTargetID == mq.TLO.Target.ID()
 
@@ -1649,6 +1670,13 @@ end
 ---@return boolean True if the item's clicky is ready to use.
 function Casting.ItemReady(itemName)
     if not Casting.ItemHasClicky(itemName) then return false end
+
+    local softRemaining = Casting.GetItemSoftCooldownRemaining(itemName)
+    if softRemaining > 0 then
+        Logger.log_verbose("ItemReady for %s: soft cooldown active (%.1fs remaining). Aborting.", itemName, softRemaining)
+        return false
+    end
+
     local me = mq.TLO.Me
     if not me.ItemReady(itemName)() then
         Logger.log_verbose("ItemReady for %s: Item appears to be on cooldown! Aborting.", itemName)
@@ -2308,7 +2336,7 @@ function Casting.UseItem(itemName, targetId, bAllowDead, retryCount)
         return false
     end
 
-    if not me.ItemReady(itemName)() then
+    if not Casting.ItemReady(itemName) then
         Logger.log_debug("\ayUseItem(): \arTried to use %s - not ready", itemName)
         return false
     end
@@ -2381,6 +2409,12 @@ function Casting.UseItem(itemName, targetId, bAllowDead, retryCount)
         retryCount = retryCount,
     })
     if Globals.StopCast then return false end
+
+    local softSec = ITEM_SOFT_COOLDOWN_SEC[itemName]
+    if softSec and Casting.GetLastCastResultName() == "CAST_SUCCESS" then
+        Casting.ItemSoftCooldownUntil[itemName] = Globals.GetTimeSeconds() + softSec
+        Logger.log_verbose("\ayUseItem(): soft cooldown for %s (%ds, client ItemReady unreliable after success)", itemName, softSec)
+    end
 
     if mq.TLO.Cursor.ID() then
         Core.DoCmd("/autoinv")

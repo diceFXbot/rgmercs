@@ -1,6 +1,61 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+2026-05-22
+
+- EQ Might-kesh WIZ: Weaves 空振り時の待機を改善。
+  - file: class_configs/EQ Might-kesh/wiz_class_config.lua
+  - detail: Weaves 発動 cond に HasUsableWeaveEntry を追加（GCD 中でも AA/クリッキーが全部不可なら Weaves 自体をスキップ）。CheckForAutoTargetID() の戻り（ID 配列）を正しく扱う（table と number 比較エラー修正）。
+
+- RGMercs: Vermilion Robe of Torrefaction 向けソフト CD（CAST_SUCCESS 後 15 秒）。
+  - file: utils/casting.lua
+  - detail: クライアントの ItemReady/TimerReady が成功直後も true のままになる不具合対策。Casting.ItemReady で soft CD を判定し、成功直後の再 UseItem（2.5 秒空振り）を防止。他クリッキーは影響なし。
+
 2026-05-19
+
+- RGMercs: Auto Burn に Min Con 条件を追加（Mob Threshold 用）。
+  - file: utils/config.lua, utils/casting.lua, utils/targeting.lua
+  - detail: Combat > Burning > Auto Burn: Min Con。XTarget のヘイト数を Con 以上の mob のみカウント。デフォルト Blue（4）。Grey=1 で全 mob カウントに戻せる。
+
+- EQ Might-kesh WIZ: Rain を専用化（DPS 分離・Rain Element Mode・SpellList/ローテ整理）。
+  - file: class_configs/EQ Might-kesh/wiz_class_config.lua
+  - detail:
+    - 専用 Rain セクション（steps=1、ST 向け）。DPS(Fire) 等から Rain を削除。
+    - Rain Element Mode（Same as Element Mode / Auto / Fire / Cold）で DPS 属性と独立。RainMapName() で FireRain/ColdRain を1系統に決定。
+    - ローテは name_func + load_cond の Spell 1エントリ（UI に Fire/Cold が二重表示されない）。
+    - SpellList: Do Rain ON 時、選択系統のみメモ（IceSpear の下）。Rescan Loadout でジェム反映。
+    - RainMapName の SpellList 評価時 self.Helpers nil エラーを修正。
+
+- EQ Might-kesh CLR: キュア優先を AA → スペル（メモ済）→ アイテムに戻す。
+  - file: class_configs/EQ Might-kesh/clr_class_config.lua
+  - detail: 戦闘・ダウンタイム共通。ジェムに無いときだけキュアアイテム。
+
+- EQ Might-kesh CLR: MagicNuke に Reckoning（Lv54）を追加。
+  - file: class_configs/EQ Might-kesh/clr_class_config.lua
+
+- EQ Might-kesh CLR: 単体 GroupSymbolBuff の対象を MA からメレー7職に変更。
+  - file: class_configs/EQ Might-kesh/clr_class_config.lua
+  - detail: WAR/SHD/PAL/MNK/RNG/ROG/BER のみ（単体 Symbol 時）。グループ Symbol は従来どおり全対象。
+
+- Belly Cast Stick の pin 距離を 40 から 19 に変更。
+  - file: utils/combat.lua, utils/config.lua
+
+- EQ Might-kesh CLR: Dispel ローテを DPS の上に追加（Annul Magic、敵に Beneficial 時）。
+  - file: class_configs/EQ Might-kesh/clr_class_config.lua
+  - detail: DispelSpell セット。SpellList には含めず（常時メモなし）。設定トグルなし。
+
+- Stick How 空欄時のデフォルト stick 距離を 14 に変更（非 MA 大型は 19 のまま）。
+  - file: utils/movement.lua
+  - detail: MA `14 id <id> loose [moveback] uw`、非 MA `14/19 id <id> loose uw`。
+
+- Stick How 空欄時のデフォルト /stick を 9 loose uw に変更（非 MA 大型は 19）。
+  - file: utils/movement.lua
+  - detail: MA は `9 id <id> loose [moveback] uw`（moveback 条件は従来どおり）。
+    非 MA は `9/19 id <id> loose uw`（behindonce・moveback なし）。MA に大型分岐はなし（常に 9）。
+
+- 戦闘オートターゲット時の SetTarget バフ待ちをスキップ。
+  - file: utils/combat.lua
+  - detail: FindBestAutoTarget から `Targeting.SetTarget(id, true)` に変更。
+    ターゲット直後の Ping×2+500ms 待ちなし（プル・メズと同様）。デバフ判定は一瞬ずれる可能性あり。
 
 - main を kesh-custom にマージ（fd6efda1 まで取り込み）。
   - detail: コンフリクトなし（merge-tree 自動統合）。Config 編集 FAQ・/rgl copy、Pull 調整、

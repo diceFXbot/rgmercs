@@ -347,20 +347,39 @@ function Targeting.IHaveAggro(pct)
     return false
 end
 
+--- Returns true if spawn meets minimum con color (Globals.Constants.ConColors index).
+---@param spawn MQSpawn|MQTarget? Spawn to check.
+---@param minConLevel number? Minimum con index (1=Grey … 7=Red); nil or 1 = any.
+---@return boolean
+function Targeting.SpawnMeetsMinCon(spawn, minConLevel)
+    if not spawn or not spawn() then return false end
+    minConLevel = minConLevel or 1
+    if minConLevel <= 1 then return true end
+    local conLevel = Globals.Constants.ConColorsNameToId[(spawn.ConColor() or "Grey"):upper()] or 0
+    return conLevel >= minConLevel
+end
+
 --- Returns a Set of spawn IDs currently hating the player on XTarget.
 ---@param printDebug boolean? If true, logs each hater found.
+---@param minConLevel number? If set above 1, only haters at or above this con index are counted.
 ---@return table Set of hater spawn IDs.
-function Targeting.GetXTHaterIDsSet(printDebug)
+function Targeting.GetXTHaterIDsSet(printDebug, minConLevel)
     local xtCount = mq.TLO.Me.XTarget() or 0
     local uniqHaters = Set.new({})
 
     for i = 1, xtCount do
         local xtarg = mq.TLO.Me.XTarget(i)
         if xtarg and xtarg.ID() > 0 and not xtarg.Dead() and (xtarg.Type() or "Corpse") ~= "Corpse" and (xtarg.Aggressive() or (xtarg.TargetType() or ""):lower() == "auto hater" or xtarg.ID() == Globals.ForceTargetID) then
-            if printDebug then
-                Logger.log_verbose("GetXTHaters(): XT(%d) Counting %s(%d) as a hater.", i, xtarg.CleanName() or "None", xtarg.ID())
+            if not Targeting.SpawnMeetsMinCon(xtarg, minConLevel) then
+                if printDebug then
+                    Logger.log_verbose("GetXTHaters(): XT(%d) Skipping %s(%d) con below min (%s).", i, xtarg.CleanName() or "None", xtarg.ID(), xtarg.ConColor() or "None")
+                end
+            else
+                if printDebug then
+                    Logger.log_verbose("GetXTHaters(): XT(%d) Counting %s(%d) as a hater.", i, xtarg.CleanName() or "None", xtarg.ID())
+                end
+                uniqHaters:add(xtarg.ID())
             end
-            uniqHaters:add(xtarg.ID())
         end
     end
 
@@ -369,16 +388,18 @@ end
 
 --- Returns an array of spawn IDs currently hating the player on XTarget.
 ---@param printDebug boolean? If true, logs each hater found.
+---@param minConLevel number? If set above 1, only haters at or above this con index are counted.
 ---@return number[] Array of hater spawn IDs.
-function Targeting.GetXTHaterIDs(printDebug)
-    return Targeting.GetXTHaterIDsSet(printDebug):toList()
+function Targeting.GetXTHaterIDs(printDebug, minConLevel)
+    return Targeting.GetXTHaterIDsSet(printDebug, minConLevel):toList()
 end
 
 --- Returns the number of spawns currently hating the player on XTarget.
 ---@param printDebug boolean? If true, logs each hater counted.
+---@param minConLevel number? If set above 1, only haters at or above this con index are counted.
 ---@return number Count of current XTarget haters.
-function Targeting.GetXTHaterCount(printDebug)
-    return #Targeting.GetXTHaterIDs(printDebug)
+function Targeting.GetXTHaterCount(printDebug, minConLevel)
+    return #Targeting.GetXTHaterIDs(printDebug, minConLevel)
 end
 
 --- Returns true if any current XTarget hater ID is not in t (new hater appeared).

@@ -1050,10 +1050,10 @@ Config.DefaultConfig                                     = {
         ConfigType = "Advanced",
         FAQ = "What are the default stick settings?",
         Answer = "   If the Stick How entry is left blank, we will use default stick settings as follows:\n" ..
-            "If MA: < 10 moveback* uw >\n" ..
-            "Others: < 10** behindonce moveback uw >\n\n" ..
+            "If MA: < 14 id <target> loose [moveback] uw >\n" ..
+            "Others: < 14 id <target> loose uw >\n\n" ..
             "* - Optional moveback flag (if 'Moveback As Tank' is enabled).\n" ..
-            "** - On larger targets this value becomes 20.",
+            "** - On larger targets (height > 15) non-MA distance becomes 19.",
     },
     ['BellyCastStick']             = {
         DisplayName = "Stick for Belly Cast",
@@ -1061,7 +1061,7 @@ Config.DefaultConfig                                     = {
         Header = "Positioning",
         Category = "General Positioning",
         Index = 3,
-        Tooltip = "If Melee Combat is disabled, pin at 40 units on named with a dragon bodytype in case of possible bellycaster.",
+        Tooltip = "If Melee Combat is disabled, pin at 19 units on named with a dragon bodytype in case of possible bellycaster.",
         Default = false,
         ConfigType = "Advanced",
     },
@@ -1840,10 +1840,24 @@ Config.DefaultConfig                                     = {
         Header = "Burning",
         Category = "Burning",
         Index = 4,
-        Tooltip = "Automatically use Burn rotations when we are fighting x number of haters.",
+        Tooltip = "Automatically use Burn rotations when we are fighting x number of haters at or above Auto Burn: Min Con.",
         Default = 3,
         Min = 1,
         Max = 99,
+        ConfigType = "Advanced",
+    },
+    ['BurnMinCon']                 = {
+        DisplayName = "Auto Burn: Min Con",
+        Group = "Combat",
+        Header = "Burning",
+        Category = "Burning",
+        Index = 41,
+        Tooltip = "For Mob Threshold only: only count XTarget haters at or above this con color (Grey counts all). Named burn is unchanged.",
+        Default = 4,
+        Min = 1,
+        Max = #Globals.Constants.ConColors,
+        Type = "Combo",
+        ComboOptions = Globals.Constants.ConColors,
         ConfigType = "Advanced",
     },
     ['BurnNamed']                  = {

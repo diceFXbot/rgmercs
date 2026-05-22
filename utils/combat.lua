@@ -164,7 +164,7 @@ function Combat.EngageTarget(autoTargetId)
 
                 if not Config:GetSetting('DoMelee') and Config:GetSetting("BellyCastStick") and Globals.Constants.RGCasters:contains(mq.TLO.Me.Class.ShortName()) and target.Body.Name() == "Dragon" and Globals.AutoTargetIsNamed then
                     Logger.log_verbose("\awNOTICE:\ax EngageTarget(%s) Dragon Named detected, sticking for belly cast.", Targeting.GetTargetCleanName())
-                    Movement:DoStickCmd("pin 40")
+                    Movement:DoStickCmd("pin 19")
                 end
 
                 if Core.MyClassIs("RNG") and not mq.TLO.Me.AutoFire() then
@@ -688,7 +688,7 @@ function Combat.FindBestAutoTarget(validateFn)
         local autoTargetId = Globals.AutoTargetID or 0
         if autoTargetId > 0 and (targetValidated or (validateFn == nil or validateFn(autoTargetId))) then
             if mq.TLO.Target.ID() ~= autoTargetId then
-                Targeting.SetTarget(autoTargetId)
+                Targeting.SetTarget(autoTargetId, true)
             end
 
             -- For Assist Lists, this ensures we correctly and quickly receive health percent to assist in a timely manner

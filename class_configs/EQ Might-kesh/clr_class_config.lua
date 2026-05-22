@@ -54,7 +54,7 @@ local _ClassConfig = {
         end,
         CureNow = function(self, type, targetId)
             local targetSpawn = mq.TLO.Spawn(targetId)
-            if not targetSpawn and targetSpawn() then return false, false end
+            if not targetSpawn or not targetSpawn() then return false, false end
 
             if Config:GetSetting('DoCureAA') then
                 local cureAA = Casting.AAReady("Purify Soul") and "Purify Soul"
@@ -72,23 +72,23 @@ local _ClassConfig = {
                 end
             end
 
-            local itemResult, haveItemOption = self.Helpers.TryCureItem(self, type, targetId, targetSpawn)
-            if itemResult == true then
-                return true, haveItemOption
-            end
-
             if Config:GetSetting('DoCureSpells') then
                 for effectType, cureSpell in pairs(self.TempSettings.CureSpells) do
                     if type:lower() == effectType:lower() then
                         if cureSpell.TargetType():lower() == "group v1" and not Targeting.GroupedWithTarget(targetSpawn) then
                             Logger.log_debug("CureNow: We cannot use %s on %s, because it is a group-only spell and they are not in our group!", cureSpell.RankName(),
                                 targetSpawn.CleanName() or "Unknown")
-                        else
+                        elseif Casting.SpellLoaded(cureSpell) then
                             Logger.log_debug("CureNow: Using %s for %s on %s.", cureSpell.RankName(), type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
                             return Casting.UseSpell(cureSpell.RankName(), targetId, true), true
                         end
                     end
                 end
+            end
+
+            local itemResult, haveItemOption = self.Helpers.TryCureItem(self, type, targetId, targetSpawn)
+            if itemResult == true then
+                return true, haveItemOption
             end
 
             Logger.log_debug("CureNow: No valid cure at this time for %s on %s.", type:lower() or "unknown", targetSpawn.CleanName() or "Unknown")
@@ -351,6 +351,7 @@ local _ClassConfig = {
             "Order",                  -- Level 65
             "Condemnation",           -- Level 62
             "Judgment",               -- Level 56
+            "Reckoning",              -- Level 54
             "Retribution",            -- Level 44
             "Wrath",                  -- Level 29
             "Smite",                  -- Level 14
@@ -361,6 +362,9 @@ local _ClassConfig = {
             "Verdict of Ascension",   -- Level 69
             "Verdict of Radiance",    -- Level 65
             "Verdict of Light",       -- Level 60
+        },
+        ['DispelSpell'] = {
+            "Annul Magic", -- Level 53
         },
         -- ['HammerPet'] = {
         --     "Unswerving Hammer of Retribution", -- Level 68
@@ -696,6 +700,15 @@ local _ClassConfig = {
             end,
         },
         {
+            name = 'Dispel',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                return combat_state == "Combat" and Core.OkayToNotHeal() and mq.TLO.Target.Beneficial() ~= nil
+            end,
+        },
+        {
             name = 'DPS',
             state = 1,
             steps = 1,
@@ -789,6 +802,16 @@ local _ClassConfig = {
                 cond = function(self, spell, target)
                     if not Targeting.TargetIsATank(target) then return false end
                     return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+        },
+        ['Dispel'] = {
+            {
+                name = "DispelSpell",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    if mq.TLO.Target.ID() == 0 then return false end
+                    return mq.TLO.Target.Beneficial() ~= nil
                 end,
             },
         },
@@ -987,7 +1010,10 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function() return mq.TLO.Me.Level() < 68 or not mq.TLO.FindItem("=Legendary Armband of Mithaniel")() end,
                 cond = function(self, spell, target)
-                    if Config:GetSetting('AegoSymbol') == (1 or 4) or ((spell.TargetType() or ""):lower() == "single" and target.ID() ~= Core.GetMainAssistId()) then return false end
+                    if Config:GetSetting('AegoSymbol') == (1 or 4) then return false end
+                    if (spell.TargetType() or ""):lower() == "single" and not Targeting.TargetClassIs({ "WAR", "SHD", "PAL", "MNK", "RNG", "ROG", "BER", }, target) then
+                        return false
+                    end
                     return Casting.GroupBuffCheck(spell, target)
                 end,
             },
