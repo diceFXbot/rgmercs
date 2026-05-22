@@ -2,6 +2,9 @@
 
 2026-05-22
 
+- origin/main を kesh-custom にマージ（af32e2df Config Maintenance #1189 まで取り込み）。
+  - detail: class_configs のキー表記整理・spell level コメント等。EQ Might-kesh カスタムへのコンフリクトなし。
+
 - EQ Might-kesh WIZ: Weaves 空振り時の待機を改善。
   - file: class_configs/EQ Might-kesh/wiz_class_config.lua
   - detail: Weaves 発動 cond に HasUsableWeaveEntry を追加（GCD 中でも AA/クリッキーが全部不可なら Weaves 自体をスキップ）。CheckForAutoTargetID() の戻り（ID 配列）を正しく扱う（table と number 比較エラー修正）。
