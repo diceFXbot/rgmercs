@@ -482,8 +482,9 @@ return {
 
             local targetDistance = Targeting.GetTargetDistance()
             local chaseDistance = Config:GetSetting('ChaseDistance')
+            local bowNavDist = Config:GetSetting('BowNavDistance')
             local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
-            local tooClose = targetDistance < 30
+            local tooClose = targetDistance < math.min(30, bowNavDist * 0.7)
             --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
             local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
 
@@ -926,9 +927,10 @@ return {
             Category = "Archery",
             Index = 101,
             Tooltip = "The distance from your target you should nav to for ranged attacks when necessary.\n" ..
-                "If Nav Circle is enabled, the distance to circle at.",
+                "If Nav Circle is enabled, the distance to circle at.\n" ..
+                "Emu servers that allow close-range archery can use values below 30; too-close moveback scales with this setting.",
             Default = 45,
-            Min = 30,
+            Min = 10,
             Max = 200,
             FAQ = "Why is my ranger rubber-banding, charging back and forth or changing heading constantly?",
             Answer = "Some terrain blocks line of sight while MQ reports that the ranger has line of sight.\n" ..

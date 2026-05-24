@@ -209,25 +209,15 @@ return {
             "Ancient: Greater Concussion", -- Level 60
             "Concussion",                  -- Level 37
         },
-        -- Lure Spells (I may implement these in the future. It would need some testing... and yet more options. Custom config users, double check these lists before use!)
-        -- ['IceLureNuke'] = {
-        --     "RimeLure",      -- Level 70
-        --     "Icebane",       -- Level 66
-        --     "Lure of Ice",   -- Level 60
-        --     "Lure of Frost", -- Level 52
-        -- },
-        -- ['FireLureNuke'] = {
-        --     "Firebane",            -- Level 68
-        --     "Lure of Ro",          -- Level 62
-        --     "Lure of Flame",       -- Level 55
-        --     "Lure of Fire",        -- Level 48 EQM Custom
-        --     "Enticement of Flame", -- Level 44
-        -- },
-        -- ['MagicLureNuke'] = {
-        --     "Lightningbane",     -- Level 67
-        --     "Lure of Thunder",   -- Level 61
-        --     "Lure of Lightning", -- Level 58
-        -- },
+        ['FireLureNuke'] = {
+            "Lure of Fire", -- Level 48 EQM Custom
+        },
+        ['ColdLureNuke'] = {
+            "Lure of Frost", -- Level 52
+        },
+        ['MagicLureNuke'] = {
+            "Lure of Lightning", -- Level 58
+        },
         -- ['StunMagicNuke'] = {
         --     "Spark of Thunder",   -- Level 68
         --     "Draught of Thunder", -- Level 63
@@ -730,6 +720,14 @@ return {
                 end,
             },
             {
+                name = "FireLureNuke",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoLure') end,
+                cond = function(self, spell, target)
+                    return Targeting.AggroCheckOkay()
+                end,
+            },
+            {
                 name = "BigFireNuke",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -754,6 +752,14 @@ return {
                 end,
             },
             {
+                name = "ColdLureNuke",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoLure') end,
+                cond = function(self, spell, target)
+                    return Targeting.AggroCheckOkay()
+                end,
+            },
+            {
                 name = "BigColdNuke",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -775,6 +781,14 @@ return {
                 load_condtion = function(self) return Casting.CanUseAA("Acromancy") end,
                 cond = function(self, aaName)
                     return Casting.SelfBuffAACheck(aaName)
+                end,
+            },
+            {
+                name = "MagicLureNuke",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoLure') end,
+                cond = function(self, spell, target)
+                    return Targeting.AggroCheckOkay()
                 end,
             },
             {
@@ -894,10 +908,13 @@ return {
             name = "Default Mode",
             -- cond = function(self) return true end, --Code kept here for illustration, if there is no condition to check, this line is not required
             spells = {
+                { name = "FireLureNuke",  cond = function() return Config:GetSetting('DoLure') end, },
                 { name = "FireNuke", },
                 { name = "BigFireNuke", },
+                { name = "ColdLureNuke",  cond = function() return Config:GetSetting('DoLure') end, },
                 { name = "ColdNuke", },
                 { name = "BigColdNuke", },
+                { name = "MagicLureNuke", cond = function() return Config:GetSetting('DoLure') end, },
                 { name = "MagicNuke", },
                 { name = "BigMagicNuke", },
                 { name = "WildNuke",     cond = function() return Config:GetSetting('DoWildNuke') end, },
@@ -973,6 +990,17 @@ return {
             Tooltip = "Cast Wildmagic Strike.",
             RequiresLoadoutChange = true,
             Default = true,
+        },
+        ['DoLure']               = {
+            DisplayName = "Do Lure",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Direct",
+            Index = 109,
+            Tooltip = "Use lure spells before nukes in each DPS rotation (Fire: Lure of Fire, Cold: Lure of Frost, Magic: Lure of Lightning). Rescan Loadout after toggling.",
+            RequiresLoadoutChange = true,
+            Default = false,
+            ConfigType = "Advanced",
         },
         ['DoRain']               = {
             DisplayName = "Do Rain",

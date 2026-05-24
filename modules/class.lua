@@ -1121,27 +1121,19 @@ function Module:HealById(id)
                 if selectedRotation then
                     self.CurrentRotation = { name = selectedRotation.name, state = selectedRotation.state or 0, }
 
-                    -- If we need to heal others we should wait on the cooldown.
-                    Casting.WaitGlobalCoolDown("Healing: ")
-
                     local newState, wasRun = Rotation.Run(self, self:GetHealRotationTable(selectedRotation.name), { id, },
                         self.ResolvedActionMap, selectedRotation.steps or 0, selectedRotation.state or 0,
                         self.CombatState == "Downtime", selectedRotation.doFullRotation or false, nil, Config:GetSetting('EnabledRotationEntries') or {})
                     if selectedRotation.state then selectedRotation.state = newState end
 
-                    if wasRun and Casting.GetLastCastResultName() == "CAST_SUCCESS" then
+                    if wasRun then
                         Logger.log_verbose(
-                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \agSuccessful\aw!", id,
+                            "\awHealById(%d):: Heal Rotation: \at%s\aw fired.", id,
                             rotation.name)
                         Comms.HandleAnnounce(Comms.FormatChatEvent("Heal", healTarget.CleanName(), Casting.GetLastUsedSpell()),
                             Config:GetSetting('HealAnnounceGroup'),
                             Config:GetSetting('HealAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
                         break
-                    else
-                        Logger.log_verbose(
-                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \arNOT \awSuccessful! Conditions: wasRun(%s) castResult(%s) \ayGoing to keep trying!",
-                            id,
-                            rotation.name, Strings.BoolToColorString(wasRun), Casting.GetLastCastResultName())
                     end
                 end
             else
@@ -1675,7 +1667,8 @@ function Module:GiveTime()
     end
 
     -- Downtime rotation will just run a full rotation to completion
-    for idx, r in ipairs(self.TempSettings.RotationStates) do
+    if not Casting.IsCastBusy() then
+        for idx, r in ipairs(self.TempSettings.RotationStates) do
         if Globals.PauseMain or Globals.StopCast then
             break
         end
@@ -1723,6 +1716,9 @@ function Module:GiveTime()
                 if r.timer then r.lastCondCheck = false end --update rotation UI when rotation doesn't fire due to timer check
             end
         end
+        end
+    else
+        Logger.log_verbose("\aySkipping rotations while casting or pending cast.")
     end
 
     self.TempSettings.CurrentRotationStateType = 0

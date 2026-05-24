@@ -380,17 +380,6 @@ function Module:CharmNow(charmId, useAA)
 
 	mq.doevents()
 
-	if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS and mq.TLO.Pet.ID() > 0 then
-		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Success", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
-			Config:GetSetting('CharmAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-	else
-		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Failed", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
-			Config:GetSetting('CharmAnnounce'),
-			Config:GetSetting('AnnounceToRaidIfInRaid'))
-	end
-
-	mq.doevents()
-
 	Targeting.SetTarget(currentTargetID)
 end
 

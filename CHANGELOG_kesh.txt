@@ -2,6 +2,42 @@
 
 2026-05-22
 
+- EQ Might-kesh RNG: Bow Nav Distance 下限 10、tooClose を BowNavDistance 連動。
+  - file: class_configs/EQ Might-kesh/rng_class_config.lua
+  - detail: Emu では近接でも TooClose メッセージが出ないため BowNavDistance を 30 未満に設定可能に（Min 10）。combatNav の tooClose 固定 30 を min(30, BowNavDistance*0.7) に変更（近距離弓設定時に不要な moveback を抑制）。
+
+- RGMercs: med 中バフ詠唱時の AutoMed 再 sit 防止。
+  - file: utils/casting.lua
+  - detail: async で ActionPrep 後 /cast 直後 Me.Casting() 未更新の tick に AutoMed が InMedState で me.Sit() し詠唱不能に。AutoMed の early return と sit 条件に IsCastBusy() を追加。
+
+- RGMercs: async 詠唱の二重 /cast 防止（詠唱やり直し）。
+  - file: utils/casting.lua, utils/rotation.lua, modules/class.lua, init.lua
+  - detail: /cast 直後 Me.Casting() 未更新の隙間で ActiveCastContext が即消去され同スペル再発行。IsCastBusy()=Me.Casting() or ActiveCastContext（人工待機なし）。context は sawCastBar で詠唱完了を即解放；未開始は pendingTicks 2 回で解放。
+
+- RGMercs: InterruptCastIfNeeded の Spawn 向け Mezzed/Charmed 参照修正（Laforce クラッシュ）。
+  - file: utils/casting.lua
+  - detail: mq.TLO.Spawn では Mezzed()/Charmed() が nil。combat.lua と同様 Mezzed.ID()/Charmed.ID() を安全参照（>0 で中断）。
+
+- RGMercs: Travel Init の SortedTabNames nil ガード。
+  - file: modules/travel.lua
+  - detail: Init ループと TravelerUpdate 受信時に SortedTabNames を必ず初期化（table.insert nil クラッシュ防止）。
+
+- RGMercs: async ローテ cast の中断条件を GiveTime で復元。
+  - file: utils/casting.lua, init.lua
+  - detail: WaitCastFinish と同一の InterruptCastIfNeeded（StopCast / ターゲット死亡・消失 / レンジ110%超 / StuckGem タイムアウト; Detrimental 時のみ LoS 喪失・Mezzed・Charmed・PC-owned pet 中断; ターゲット不一致は警告のみ）+ TickActiveCastSideEffects（200ms Pet / 500ms RescanCombatTargets）。SpellType==Detrimental 判定（HasSPA[0] 単独は使わない）。async 発火時 ActiveCastContext 記録。Main ループ先頭で TickActiveCastMonitor。同期 WaitCastFinish も同関数群。
+
+- RGMercs: ローテ cast 薄型化（Phase 2/3）— fire-and-return モデル。
+  - file: utils/casting.lua, utils/rotation.lua, modules/class.lua, modules/mez.lua, modules/charm.lua
+  - detail: ローテ経路（Heal 含む）で UseSpell/UseAA/UseItem/UseDisc に bAsync を渡し /cast 等を発行して即 return（RunCastLoop/WaitCastFinish なし）。Me.Casting() 中は combat ローテ全体をスキップ（Heal は GiveTime 先頭で従来どおり）。Casting.IsCasting()/RestoreTargetAfterAsyncUse 追加。HealById は wasRun で break（CAST_SUCCESS 待ちと WaitGlobalCoolDown 削除）。Mez/Charm の CAST_SUCCESS 成功/失敗アナウンス削除（Bard/同期 Mez 経路は従来どおり UseSong/UseSpell 同期）。Song/Bard/Pull/queue 直叩きは同期維持。
+
+- RGMercs: キャスト失敗の即時リトライをデフォルト off に変更（Phase 1）。
+  - file: utils/casting.lua, utils/rotation.lua
+  - detail: RunCastLoop のデフォルト retryCount を 2→0（1 回のみ）。妨害等の再試行はローテ Cond で次フレームに任せる。即時リトライが必要なアクションはローテ entry の retries で明示（例: retries=2 で最大 3 回）。Item/clickyitem も entry.retries を UseItem に渡すよう配線。Mez 等、コード側で retryCount を指定している箇所は従来どおり。
+
+- EQ Might-kesh WIZ: Do Lure 設定と Lure スペル（Fire/Cold/Magic DPS ローテ）。
+  - file: class_configs/EQ Might-kesh/wiz_class_config.lua
+  - detail: Abilities > Damage > Direct に Do Lure を追加。ON 時 FireLureNuke/ColdLureNuke/MagicLureNuke（Lure of Fire / Lure of Frost / Lure of Lightning）を DPS(Fire)/DPS(Cold)/DPS(Magic) の BigNuke 直前に配置。SpellList でも各 Nuke 直前にメモ。
+
 - origin/main を kesh-custom にマージ（af32e2df Config Maintenance #1189 まで取り込み）。
   - detail: class_configs のキー表記整理・spell level コメント等。EQ Might-kesh カスタムへのコンフリクトなし。
 

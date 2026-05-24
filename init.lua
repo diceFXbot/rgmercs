@@ -410,6 +410,10 @@ local function Main()
 
     Events.DoEvents()
 
+    if Casting.IsCasting() or Casting.ActiveCastContext then
+        Casting.TickActiveCastMonitor()
+    end
+
     Config:ValidatePeers()
 
     notifyZoning = true

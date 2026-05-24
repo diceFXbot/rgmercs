@@ -379,16 +379,6 @@ function Module:MezNow(mezId, useAE, useAA)
             Casting.UseAA("Dirge of the Sleepwalker", mezId)
 
             mq.doevents('ImmuneMez')
-            if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
-                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), "AA:Dirge of the Sleepwalker"), Config:GetSetting('MezAnnounceGroup'),
-                    Config:GetSetting('MezAnnounce'),
-                    Config:GetSetting('AnnounceToRaidIfInRaid'))
-            else
-                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Failed", mq.TLO.Spawn(mezId).CleanName(), "AA:Dirge of the Sleepwalker"), Config:GetSetting('MezAnnounceGroup'),
-                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-            end
-
-            mq.doevents('ImmuneMez')
             return
         end
 
@@ -431,14 +421,6 @@ function Module:MezNow(mezId, useAE, useAA)
 
             -- In case they're mez immune
             mq.doevents('ImmuneMez')
-
-            if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
-                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), mezSpell.RankName()), Config:GetSetting('MezAnnounceGroup'),
-                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-            else
-                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Failed", mq.TLO.Spawn(mezId).CleanName(), mezSpell.RankName()), Config:GetSetting('MezAnnounceGroup'),
-                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-            end
         end
 
         mq.doevents('ImmuneMez')

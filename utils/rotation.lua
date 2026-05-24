@@ -13,6 +13,9 @@ local Modules    = require("utils.modules")
 local Rotation   = { _version = '1.0', _name = "Rotation", _author = 'Derple', }
 Rotation.__index = Rotation
 
+--- Rotation entries fire /cast (etc.) and return without WaitCastFinish (kesh async tick model).
+local ROTATION_CAST_ASYNC = true
+
 --- Returns the first item name from t whose item is in the player's inventory,
 --- or nil if none are found.
 ---@param t table Array of item name strings to search.
@@ -132,14 +135,21 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
         end
     end
 
-    if entry.type:lower() == "item" then
+    local entryType = entry.type:lower()
+    if ROTATION_CAST_ASYNC and Casting.IsCastBusy() then
+        if entryType == "spell" or entryType == "disc" or entryType == "aa" or entryType == "item" or entryType == "clickyitem" then
+            return false
+        end
+    end
+
+    if entryType == "item" then
         --Allow us to pass entry names directly for items in addition to Action Map tables
         local itemName = resolvedActionMap[entry.name]
         if not itemName then itemName = entry.name end
 
         if Casting.ItemReady(itemName) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
-            ret, isGroup = Casting.UseItem(itemName, entry.no_target == true and nil or targetId)
+            ret, isGroup = Casting.UseItem(itemName, entry.no_target == true and nil or targetId, entry.allowDead, entry.retries, ROTATION_CAST_ASYNC)
         end
         Logger.log_verbose("Trying to use item %s :: %s", itemName, ret and "\agSuccess" or "\arFailed!")
     end
@@ -152,7 +162,7 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
 
         if Casting.ItemReady(itemName) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
-            ret, isGroup = Casting.UseItem(itemName, entry.no_target == true and nil or targetId)
+            ret, isGroup = Casting.UseItem(itemName, entry.no_target == true and nil or targetId, entry.allowDead, entry.retries, ROTATION_CAST_ASYNC)
         end
         Logger.log_verbose("Trying to use clickyitem %s :: %s", itemName, ret and "\agSuccess" or "\arFailed!")
     end
@@ -168,7 +178,7 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
 
         if Casting.SpellReady(spell, bAllowMem) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
-            ret, isGroup = Casting.UseSpell(spell.RankName(), targetId, bAllowMem, entry.allowDead, entry.retries)
+            ret, isGroup = Casting.UseSpell(spell.RankName(), targetId, bAllowMem, entry.allowDead, entry.retries, ROTATION_CAST_ASYNC)
         end
         Logger.log_verbose("(Spell) Trying to use %s - %s :: %s", entry.name, spell.RankName(), ret and "\agSuccess" or "\arFailed!")
     end
@@ -192,7 +202,7 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
 
         if Casting.DiscReady(discSpell) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
-            ret, isGroup = Casting.UseDisc(discSpell, targetId)
+            ret, isGroup = Casting.UseDisc(discSpell, targetId, ROTATION_CAST_ASYNC)
         end
         Logger.log_verbose("(Disc) Trying to use %s - %s :: %s", entry.name, discSpell.RankName(), ret and "\agSuccess" or "\arFailed!")
     end
@@ -204,7 +214,7 @@ function Rotation.ExecEntry(caller, entry, targetId, resolvedActionMap, bAllowMe
 
         if Casting.AAReady(aaName) then
             Rotation.RunPreActivate(caller, resolvedActionMap, entry)
-            ret, isGroup = Casting.UseAA(aaName, targetId, entry.allowDead, entry.retries)
+            ret, isGroup = Casting.UseAA(aaName, targetId, entry.allowDead, entry.retries, ROTATION_CAST_ASYNC)
         end
         Logger.log_verbose("(AA) Trying to use %s :: %s", aaName, ret and "\agSuccess" or "\arFailed!")
     end

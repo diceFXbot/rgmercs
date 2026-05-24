@@ -68,6 +68,13 @@ function Module:TravelerUpdate(newData)
     if newData then
         Logger.log_debug("\agGot new Traveler update from: \am%s", newData.Name)
 
+        if newData.Tabs and not newData.SortedTabNames then
+            newData.SortedTabNames = {}
+            for k in pairs(newData.Tabs) do
+                table.insert(newData.SortedTabNames, k)
+            end
+            table.sort(newData.SortedTabNames)
+        end
         self.TransportSpells[newData.Name] = newData
 
         self:CreatePorterList()
@@ -126,11 +133,12 @@ function Module:Init()
             end
         end
 
-        for k in pairs(self.TransportSpells[Globals.CurLoadedChar].Tabs) do
-            table.insert(
-                self.TransportSpells[Globals.CurLoadedChar].SortedTabNames, k)
+        local charData = self.TransportSpells[Globals.CurLoadedChar]
+        charData.SortedTabNames = charData.SortedTabNames or {}
+        for k in pairs(charData.Tabs or {}) do
+            table.insert(charData.SortedTabNames, k)
         end
-        table.sort(self.TransportSpells[Globals.CurLoadedChar].SortedTabNames)
+        table.sort(charData.SortedTabNames)
 
         -- notify everyone else of my state...
         self:SendPorterInfo()
