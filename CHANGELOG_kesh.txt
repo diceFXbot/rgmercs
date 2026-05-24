@@ -1,5 +1,11 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+2026-05-24
+
+- RGMercs: origin/main (#1190–#1193) を kesh-custom にマージ。
+  - file: class_configs/*, extras/version.lua, modules/pull.lua, ui/options.lua, utils/config.lua, utils/casting.lua
+  - detail: 競合は utils/casting.lua のみ。async cast 版（kesh）を採用し、#1193 の PeerBuffCheck 未接続 peer ログを log_verbose + zone/crash 文言に更新。その他は本家 Config Maintenance / stale data fix / options toast / WAR disc check をそのまま取り込み。
+
 2026-05-22
 
 - EQ Might-kesh RNG: Bow Nav Distance 下限 10、tooClose を BowNavDistance 連動。
