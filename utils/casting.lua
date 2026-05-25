@@ -2396,7 +2396,7 @@ function Casting.RunCastLoop(opts)
     local bAllowDead = opts.bAllowDead
     local spellRange = opts.spellRange
     local castTime = opts.castTime or 0
-    local retryCount = opts.retryCount or 0
+    local retryCount = opts.retryCount or Config:GetSetting('CastRetryCountBeta')
 
     -- give a small delay for when we need to rely on an action changing to "not ready" to detect success, this is data from the server. values tested on laz/might numerous times
     local floor = math.max(300, 3 * (mq.TLO.EverQuest.Ping() or 0))
