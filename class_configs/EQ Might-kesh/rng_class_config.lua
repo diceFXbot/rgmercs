@@ -36,6 +36,19 @@ local function HasNearbyUnaggroNpcExceptTarget(radius)
     return false
 end
 
+local function GetDDProcMapName()
+    local choice = Config:GetSetting('DDProcChoice') or 1
+    if choice == 2 then return "DDProcIce" end
+    if choice == 3 then return "DDProcFire" end
+    if choice == 4 then return "DDProc" end
+    if choice == 5 then return "NatureProc" end
+    return nil
+end
+
+local function IsDDProcEnabled()
+    return GetDDProcMapName() ~= nil
+end
+
 return {
     _version              = "2.1 - EQ Might-kesh",
     _author               = "Algar",
@@ -195,9 +208,6 @@ return {
         ["DDProcFire"] = {
             "Call of Fire",
         },
-        ["DDProcSky"] = {
-            "Call of Sky",
-        },
         -- ["SummonedProc"] = {
         --     "Nature's Denial",
         --     "Nature's Rebuke",
@@ -295,8 +305,9 @@ return {
             "Shield of Brambles",
             "Shield of Thistles",
         },
-        ['NatureProc'] = { -- ST Hade reduction defensive proc buff
+        ['NatureProc'] = { -- ST hate reduction defensive proc buff
             "Nature Veil",
+            "Jolting Blades",
         },
         -- ['DDStunProcBuff'] = {
         --     "Sylvan Call",
@@ -342,9 +353,6 @@ return {
         ['Skals'] = {
             "Skal's Stance Discipline",
         },
-        -- ['JoltProcBuff'] = {
-        --     "Jolting Blades",
-        -- },
         -- ['ResistDisc'] = {
         --     "Resistant Discipline",
         -- },
@@ -855,24 +863,9 @@ return {
                 end,
             },
             {
-                name_func = function(self)
-                    local choice = Config:GetSetting('DDProcChoice') or 1
-                    if choice == 2 then return "DDProcIce" end
-                    if choice == 3 then return "DDProcFire" end
-                    if choice == 4 then return "DDProcSky" end
-                    if Core.GetResolvedActionMapItem("DDProcIce") then return "DDProcIce" end
-                    if Core.GetResolvedActionMapItem("DDProcFire") then return "DDProcFire" end
-                    if Core.GetResolvedActionMapItem("DDProcSky") then return "DDProcSky" end
-                    return "DDProc"
-                end,
+                name_func = function(self) return GetDDProcMapName() end,
                 type = "Spell",
-                cond = function(self, spell, target)
-                    return Casting.SelfBuffCheck(spell)
-                end,
-            },
-            {
-                name = "NatureProc",
-                type = "Spell",
+                load_cond = function(self) return IsDDProcEnabled() end,
                 cond = function(self, spell, target)
                     return Casting.SelfBuffCheck(spell)
                 end,
@@ -901,6 +894,10 @@ return {
                 { name = "ArrowHail", },
                 { name = "FocusedHail", },
                 { name = "JoltSpell",   cond = function(self) return Config:GetSetting('DoJoltSpell') end, },
+                { name = "DDProcIce",   cond = function(self) return Config:GetSetting('DDProcChoice') == 2 end, },
+                { name = "DDProcFire",  cond = function(self) return Config:GetSetting('DDProcChoice') == 3 end, },
+                { name = "DDProc",      cond = function(self) return Config:GetSetting('DDProcChoice') == 4 end, },
+                { name = "NatureProc",  cond = function(self) return Config:GetSetting('DDProcChoice') == 5 end, },
                 { name = "MoveBuff",    cond = function(self) return Config:GetSetting('DoMoveBuffs') end, },
             },
         },
@@ -1040,12 +1037,15 @@ return {
             Header = "Damage",
             Category = "DD Proc",
             Index = 103,
-            Tooltip = "Choose which Call proc buff to use in Downtime.",
+            Tooltip = "Choose which proc self-buff to maintain in Downtime and mem in your spell loadout.\n" ..
+                "OFF disables proc buffing and does not mem a proc spell.\n" ..
+                "Magic uses the highest available Call of Lightning line spell.\n" ..
+                "Jolt uses the Jolting Blades / Nature Veil hate reduction defensive proc line.",
             Type = "Combo",
-            ComboOptions = { 'Auto', 'Call of Ice', 'Call of Fire', 'Call of Sky', },
+            ComboOptions = { 'OFF', 'Ice', 'Fire', 'Magic', 'Jolt', },
             Default = 1,
             Min = 1,
-            Max = 4,
+            Max = 5,
             RequiresLoadoutChange = true,
         },
         ['DoDronesDot']    = {

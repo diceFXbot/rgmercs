@@ -1,5 +1,13 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+2026-05-19
+
+- EQ Might-kesh RNG: DD Proc Choice を OFF / Ice / Fire / Magic / Jolt に再設計。
+  - file: class_configs/EQ Might-kesh/rng_class_config.lua
+  - detail: Auto と Call of Sky を廃止。OFF 時は Downtime バフと Spell Loadout メモを無効化。
+    Magic は Call of Lightning 系の最高ランク、Jolt は NatureProc（Jolting Blades / Nature Veil）を選択。
+    SpellList では JoltSpell の直後に proc を配置し loadout 自動メモに連動。
+
 2026-05-24
 
 - RGMercs: origin/main (#1190–#1193) を kesh-custom にマージ。
