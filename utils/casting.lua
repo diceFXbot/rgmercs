@@ -1848,7 +1848,7 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
         Targeting.SetTarget(targetId, true)
     end
 
-    local cmd = string.format("/cast \"%s%s\"", Config:GetSetting('UseExactSpellNames') and "=" or "", spellName)
+    local cmd = string.format("/cast \"=%s\"", spellName)
     local castTime = spell.MyCastTime() or 0
     local readyCheck = function() return me.SpellReady(spellName)() end
     -- Expose this if needed for EZServer if they have instant CD spells with 0 gcd
@@ -1975,7 +1975,7 @@ function Casting.UseSong(songName, targetId, bAllowMem, retryCount)
 
     repeat
         Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
-        Core.DoCmd("/cast \"%s%s\"", Config:GetSetting('UseExactSpellNames') and "=" or "", songName)
+        Core.DoCmd("/cast \"=%s\"", songName)
 
         mq.delay("3s", function() return mq.TLO.Window("CastingWindow").Open() end)
         -- Cast window opening is our cross-platform "song started" signal (EMU has no "you begin singing" event).
