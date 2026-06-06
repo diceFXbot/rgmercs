@@ -4,13 +4,13 @@
 -- so it is not patched over.
 
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require("utils.globals")
-local Targeting = require("utils.targeting")
 local Casting   = require("utils.casting")
-local Core      = require("utils.core")
-local Logger    = require("utils.logger")
 local Combat    = require("utils.combat")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Globals   = require("utils.globals")
+local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
 
 return {
     _version          = "2.2 - EQ Might",
@@ -754,6 +754,15 @@ return {
                     return Casting.SelfBuffCheck(spell)
                 end,
             },
+            {
+                name = "Improved Familiar",
+                type = "AA",
+                load_cond = function(self) return Casting.CanUseAA("Improved Familiar") and Config:GetSetting('FamiliarChoice') == 1 end,
+                active_cond = function(self, aaName) return Casting.IHaveBuff(aaName) end,
+                cond = function(self, aaName)
+                    return not mq.TLO.Me.Buff(aaName)()
+                end,
+            },
             { --Familiar AA, will use the correct element, and fallback to improved
                 name_func = function(self)
                     local familiars = { Fire = "Ro's Flaming Familiar", Cold = "E'ci's Icy Familiar", Magic = "Druzzil's Mystical Familiar", }
@@ -762,6 +771,7 @@ return {
                 end,
                 type = "AA",
                 active_cond = function(self, aaName) return Casting.IHaveBuff(aaName) end,
+                load_cond = function(self) return Config:GetSetting('FamiliarChoice') == 2 end,
                 pre_activate = function(self, aaName) -- remove the old familiar in case of stacking issues when switching elements
                     if not mq.TLO.Me.Buff(aaName)() and mq.TLO.Me.Buff("Familiar")() then
                         mq.TLO.Me.Buff("Familiar").Remove()
@@ -997,6 +1007,22 @@ return {
             Index = 101,
             Tooltip = "Keep (Lesser) Evacuate memorized.",
             Default = false,
+            RequiresLoadoutChange = true,
+        },
+        ['FamiliarChoice']       = {
+            DisplayName = "Familiar Choice:",
+            Group = "Abilities",
+            Header = "Buffs",
+            Category = "Self",
+            Index = 101,
+            Tooltip = "Choose which familiar buff you would like to maintain on yourself:\n" ..
+                "Improved: Increased spell crit damage, etc.\n" ..
+                "Elemental: Improved spell damage.",
+            Type = "Combo",
+            ComboOptions = { 'Improved', 'Elemental', },
+            Default = 1,
+            Min = 1,
+            Max = 2,
             RequiresLoadoutChange = true,
         },
     },

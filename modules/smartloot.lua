@@ -1,15 +1,16 @@
 -- SmartLoot Integration Module
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require("utils.globals")
-local Core      = require("utils.core")
-local Casting   = require("utils.casting")
-local Targeting = require("utils.targeting")
-local Ui        = require("utils.ui")
-local Logger    = require("utils.logger")
-local Events    = require("utils.events")
 local Set       = require("mq.Set")
 local Base      = require("modules.base")
+local Casting   = require("utils.casting")
+local Combat    = require("utils.combat")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Events    = require("utils.events")
+local Globals   = require("utils.globals")
+local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
+local Ui        = require("utils.ui")
 
 local Module    = { _version = '1.0', _name = "SmartLoot", _author = 'andude2, Algar', }
 Module.__index  = Module
@@ -297,6 +298,8 @@ function Module:GiveTime()
 	if Globals.PauseMain then return end
 
 	if not Core.OkayToNotHeal() or mq.TLO.Me.Invis() or Casting.IAmFeigning() then return end
+
+	if Combat.CombatNavActive() then return end
 
 	-- Check for corpses using SmartLoot
 	if self.TempSettings.Looting or (self:GetSLTLO() and (self:GetSLTLO().HasNewCorpses() and self:GetSLTLO().SafeToLoot())) then

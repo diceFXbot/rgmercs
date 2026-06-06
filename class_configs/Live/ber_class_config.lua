@@ -1,11 +1,11 @@
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require("utils.globals")
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
 local Casting   = require("utils.casting")
-local Strings   = require("utils.strings")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Globals   = require("utils.globals")
 local Logger    = require("utils.logger")
+local Strings   = require("utils.strings")
+local Targeting = require("utils.targeting")
 
 return {
     _version          = "1.4 - Live",
@@ -846,9 +846,7 @@ return {
 
             if mq.TLO.Cursor.ID() ~= nil then Core.DoCmd("/autoinv") end
             local ret = Casting.UseDisc(axeDisc, mq.TLO.Me.ID())
-            Logger.log_verbose("\aySummonAxe(): Waiting for Summon to Finish")
-            Casting.WaitCastFinish(mq.TLO.Me.ID(), false, axeDisc.Range() or 0)
-            Logger.log_verbose("\agSummonAxe(): Done!")
+            Logger.log_verbose("\aySummonAxe(): Summoning the Axe.")
             mq.delay(500, function() return mq.TLO.Cursor.ID() ~= nil end)
             while mq.TLO.Cursor.ID() ~= nil do Core.DoCmd("/autoinv") end
             return ret

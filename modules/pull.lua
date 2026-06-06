@@ -1,23 +1,23 @@
 -- Sample Pull Class Module
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require('utils.globals')
-local Math      = require('utils.math')
-local Combat    = require("utils.combat")
-local Casting   = require("utils.casting")
-local Core      = require("utils.core")
-local Movement  = require("utils.movement")
-local Targeting = require("utils.targeting")
-local Ui        = require("utils.ui")
-local Comms     = require("utils.comms")
-local Tables    = require("utils.tables")
-local Modules   = require("utils.modules")
-local Strings   = require("utils.strings")
-local Logger    = require("utils.logger")
-local Events    = require("utils.events")
+local Icons     = require('mq.ICONS')
 local Set       = require("mq.Set")
 local Base      = require("modules.base")
-local Icons     = require('mq.ICONS')
+local Casting   = require("utils.casting")
+local Combat    = require("utils.combat")
+local Comms     = require("utils.comms")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Events    = require("utils.events")
+local Globals   = require('utils.globals')
+local Logger    = require("utils.logger")
+local Math      = require('utils.math')
+local Modules   = require("utils.modules")
+local Movement  = require("utils.movement")
+local Strings   = require("utils.strings")
+local Tables    = require("utils.tables")
+local Targeting = require("utils.targeting")
+local Ui        = require("utils.ui")
 
 local Module    = { _version = '0.1a', _name = "Pull", _author = 'Derple', }
 Module.__index  = Module
@@ -239,9 +239,10 @@ Module.DefaultConfig                   = {
         Tooltip = "",
         Type = "Custom",
         Default = {},
+        OnChange = function() Modules:ExecModule("Pull", "FlagPullListUpdated") end,
         FAQ = "I only want to attack a specific set of mobs in my pull mode, how do I set this up?",
         Answer = "In the Pull Allow List (found on your Pull module tab), you will find a button to add your target to that list.\n\n" ..
-            "Alternatively, you can use /rgl pullallow <mobname> or /rgl pullallowrm <mobname> to adjust this list from the command line.\n\n" ..
+            "Alternatively, you can use /rgl pullallow <mobname> or /rgl pullallowrm <mobname> or <List#> to adjust this list from the command line.\n\n" ..
             "We will still engage mobs that aggro us, regardless of their abscence from this list.",
     },
     ['PullDenyList']                           = {
@@ -250,10 +251,37 @@ Module.DefaultConfig                   = {
         Tooltip = "",
         Type = "Custom",
         Default = {},
+        OnChange = function() Modules:ExecModule("Pull", "FlagPullListUpdated") end,
         FAQ = "I want to avoid pulling a specific mob (or mobs) in my pull mode, can I do that?",
         Answer = "In the Pull Deny List (found on your Pull module tab), you will find a button to add your target to that list.\n\n" ..
-            "Alternatively, you can use /rgl pulldeny <mobname> or /rgl pulldenyrm <mobname> to adjust this list from the command line.\n\n" ..
+            "Alternatively, you can use /rgl pulldeny <mobname> or /rgl pulldenyrm <mobname> or <List#> to adjust this list from the command line.\n\n" ..
             "We will still engage mobs that aggro us, regardless of their presence on this list.",
+    },
+    ['PullAllowListShared']                    = {
+        DisplayName = "Shared Allow List",
+        Category = "",
+        Tooltip = "",
+        Type = "Custom",
+        Default = {},
+        Scope = "server",
+        OnChange = function() Modules:ExecModule("Pull", "FlagPullListUpdated") end,
+    },
+    ['PullDenyListShared']                     = {
+        DisplayName = "Shared Deny List",
+        Category = "",
+        Tooltip = "",
+        Type = "Custom",
+        Default = {},
+        Scope = "server",
+        OnChange = function() Modules:ExecModule("Pull", "FlagPullListUpdated") end,
+    },
+    ['UseSharedPullLists']                     = {
+        DisplayName = "Use Shared Pull Lists",
+        Category = "",
+        Tooltip = "",
+        Type = "Custom",
+        Default = false,
+        OnChange = function() Modules:ExecModule("Pull", "FlagPullListUpdated") end,
     },
     ['PullSafeZones']                          = {
         DisplayName = "SafeZones",
@@ -700,21 +728,39 @@ Module.CommandHandlers                 = {
     },
     pulldeny = {
         usage = "/rgl pulldeny \"<name>\"",
-        about = "Adds <name> to the Pull Deny List. Ensure quotes are used on multi-word mob names!",
+        about = "Adds <name> to the Pull Deny List. If no name is entered, your target's name is used. Ensure quotes are used on multi-word mob names!",
         handler = function(self, name)
-            if not self:IsMobInList("PullDenyList", name) then
-                self:AddMobToList("PullDenyList", name)
+            if not name then
+                if not mq.TLO.Target() then
+                    Logger.log_error("/rgl pulldeny - no name given and no valid target exists!")
+                    return
+                end
+                if not Targeting.TargetIsType("NPC") then
+                    Logger.log_error("/rgl pulldeny - target must be an NPC!")
+                    return
+                end
+                name = mq.TLO.Target.CleanName()
             end
+            self:AddMobToList("PullDenyList", name)
             return true
         end,
     },
     pullallow = {
         usage = "/rgl pullallow \"<name>\"",
-        about = "Adds <name> to the Pull Allow List. Ensure quotes are used on multi-word mob names!",
+        about = "Adds <name> to the Pull Allow List. If no name is entered, your target's name is used. Ensure quotes are used on multi-word mob names!",
         handler = function(self, name)
-            if not self:IsMobInList("PullAllowList", name) then
-                self:AddMobToList("PullAllowList", name)
+            if not name then
+                if not mq.TLO.Target() then
+                    Logger.log_error("/rgl pullallow - no name given and no valid target exists!")
+                    return
+                end
+                if not Targeting.TargetIsType("NPC") then
+                    Logger.log_error("/rgl pullallow - target must be an NPC!")
+                    return
+                end
+                name = mq.TLO.Target.CleanName()
             end
+            self:AddMobToList("PullAllowList", name)
             return true
         end,
     },
@@ -727,38 +773,28 @@ Module.CommandHandlers                 = {
         end,
     },
     pulldenyrm = {
-        usage = "/rgl pulldenyrm \"<name>\"",
-        about = "Removes \"<name>\" from the Pull Deny List. Ensure quotes are used on multi-word mob names!",
-        handler = function(self, name)
-            local zoneAllowList = Config:GetSetting('PullDenyList')[mq.TLO.Zone.ShortName()]
-            if name and zoneAllowList then
-                for idx, mobName in ipairs(zoneAllowList) do
-                    if mobName:lower() == name:lower() then
-                        self:DeleteMobFromList("PullDenyList", idx)
-                        break
-                    end
-                end
-            else
-                Logger.log_error("Pull Deny Remove: Please supply a valid name to remove!")
+        usage = "/rgl pulldenyrm \"<name>\" or /rgl pulldenyrm <List#>",
+        about = "Removes <name> or <List#> from the Pull Deny List. If no name is entered, your target's name is used. Ensure quotes are used on multi-word mob names!",
+        handler = function(self, arg1)
+            if not arg1 then arg1 = mq.TLO.Target.CleanName() end
+            if not arg1 then
+                Logger.log_error("/rgl pulldenyrm - no argument given and no valid target exists!")
+                return
             end
+            self:DeleteMobFromList("PullDenyList", arg1)
             return true
         end,
     },
     pullallowrm = {
-        usage = "/rgl pullallowrm \"<name>\"",
-        about = "Removes \"<name>\" from the Pull Allow List. Ensure quotes are used on multi-word mob names!",
-        handler = function(self, name)
-            local zoneAllowList = Config:GetSetting('PullAllowList')[mq.TLO.Zone.ShortName()]
-            if name and zoneAllowList then
-                for idx, mobName in ipairs(zoneAllowList) do
-                    if mobName:lower() == name:lower() then
-                        self:DeleteMobFromList("PullAllowList", idx)
-                        break
-                    end
-                end
-            else
-                Logger.log_error("Pull Allow Remove: Please supply a valid name to remove!")
+        usage = "/rgl pullallowrm \"<name>\" or /rgl pullallowrm <List#>",
+        about = "Removes <name> or <List#> from the Pull Allow List. If no name is entered, your target's name is used. Ensure quotes are used on multi-word mob names!",
+        handler = function(self, arg1)
+            if not arg1 then arg1 = mq.TLO.Target.CleanName() end
+            if not arg1 then
+                Logger.log_error("/rgl pullallowrm - no argument given and no valid target exists!")
+                return
             end
+            self:DeleteMobFromList("PullAllowList", arg1)
             return true
         end,
     },
@@ -837,16 +873,14 @@ end
 
 function Module:RenderMobList(displayName, settingName)
     if ImGui.CollapsingHeader(string.format("Pull %s", displayName)) then
-        if mq.TLO.Target() and Targeting.TargetIsType("NPC") then
-            ImGui.PushID("##_small_btn_allow_target_" .. settingName)
-            if ImGui.SmallButton(string.format("Add Target To %s", displayName)) then
-                local targetName = mq.TLO.Target.CleanName()
-                if not self:IsMobInList(settingName, targetName, false) then
-                    self:AddMobToList(settingName, targetName)
-                end
-            end
-            ImGui.PopID()
+        local invalidTarget = not (mq.TLO.Target() and Targeting.TargetIsType("NPC"))
+        ImGui.BeginDisabled(invalidTarget)
+        ImGui.PushID("##_small_btn_allow_target_" .. settingName)
+        if ImGui.SmallButton(invalidTarget and "Select an NPC to Add" or string.format("Add Target To %s", displayName)) then
+            self:AddMobToList(settingName, mq.TLO.Target.CleanName())
         end
+        ImGui.PopID()
+        ImGui.EndDisabled()
 
         if ImGui.BeginTable("settingName", 4, bit32.bor(ImGuiTableFlags.Borders)) then
             ImGui.TableSetupColumn('Id', (ImGuiTableColumnFlags.WidthFixed), 40.0)
@@ -855,7 +889,7 @@ function Module:RenderMobList(displayName, settingName)
             ImGui.TableSetupColumn('Controls', (ImGuiTableColumnFlags.WidthFixed), 80.0)
             ImGui.TableHeadersRow()
 
-            for idx, mobName in ipairs(Config:GetSetting(settingName)[mq.TLO.Zone.ShortName()] or {}) do
+            for idx, mobName in ipairs(Config:GetSetting(self:ActivePullList(settingName))[(mq.TLO.Zone.ShortName() or ""):lower()] or {}) do
                 ImGui.TableNextColumn()
                 Ui.RenderText(tostring(idx))
                 ImGui.TableNextColumn()
@@ -1111,9 +1145,15 @@ function Module:Render()
 
         ImGui.NewLine()
         ImGui.Separator()
-        Ui.RenderText("Note: Allow List will supersede Deny List")
+        local useShared = Config:GetSetting('UseSharedPullLists')
+        local newUseShared = ImGui.Checkbox("Use Shared Pull Lists", useShared)
+        Ui.Tooltip("On: shares pull lists with all RGMercs peers on this machine.\nOff: this character uses its own lists.")
+        if newUseShared ~= useShared then
+            Config:SetSetting('UseSharedPullLists', newUseShared)
+        end
         self:RenderMobList("Allow List", "PullAllowList")
         self:RenderMobList("Deny List", "PullDenyList")
+        Ui.RenderText("Note: Allow List will supersede Deny List")
         ImGui.NewLine()
         ImGui.Separator()
 
@@ -1234,7 +1274,8 @@ end
 ---@param listName string
 ---@return boolean
 function Module:HaveList(listName)
-    return Config:GetSetting(listName)[mq.TLO.Zone.ShortName()] and #Config:GetSetting(listName)[mq.TLO.Zone.ShortName()] > 0
+    local zoneList = Config:GetSetting(self:ActivePullList(listName))[(mq.TLO.Zone.ShortName() or ""):lower()]
+    return zoneList ~= nil and #zoneList > 0
 end
 
 ---@param listName string
@@ -1245,42 +1286,35 @@ function Module:IsMobInList(listName, mobName, defaultNoList)
     -- no list so everything is allowed.
     if not self:HaveList(listName) then return defaultNoList end
 
-    for _, v in pairs(Config:GetSetting(listName)[mq.TLO.Zone.ShortName()]) do
+    for _, v in pairs(Config:GetSetting(self:ActivePullList(listName))[(mq.TLO.Zone.ShortName() or ""):lower()]) do
         if v == mobName then return true end
     end
 
     return false
 end
 
----@param list string
----@param mobName string
-function Module:AddMobToList(list, mobName)
-    Logger.log_debug("Adding \ag%s\ax to Pull %s for zone \ay%s\ax.", mobName, list == "PullAllowList" and "Allow List" or "Deny List",
-        mq.TLO.Zone.ShortName())
-
-    local listConfig = Config:GetSetting(list)
-    listConfig[mq.TLO.Zone.ShortName()] = listConfig[mq.TLO.Zone.ShortName()] or {}
-    table.insert(listConfig[mq.TLO.Zone.ShortName()], mobName)
-    Config:SetSetting(list, listConfig)
-
-    -- if we are pulling start over.
+function Module:FlagPullListUpdated()
     if Config:GetSetting('DoPull') then
         self.TempSettings.PullListUpdated = true
     end
 end
 
----@param list string
----@param idx number
-function Module:DeleteMobFromList(list, idx)
-    local listConfig = Config:GetSetting(list)
-    listConfig[mq.TLO.Zone.ShortName()] = listConfig[mq.TLO.Zone.ShortName()] or {}
-    table.remove(listConfig[mq.TLO.Zone.ShortName()], idx)
-    Config:SetSetting(list, listConfig)
+---@param baseName string # "PullAllowList" or "PullDenyList"
+---@return string
+function Module:ActivePullList(baseName)
+    return Config:GetSetting('UseSharedPullLists') and (baseName .. "Shared") or baseName
+end
 
-    -- if we are pulling start over.
-    if Config:GetSetting('DoPull') then
-        self.TempSettings.PullListUpdated = true
-    end
+---@param list string
+---@param mobName string
+function Module:AddMobToList(list, mobName)
+    Config:ZoneListAdd(mobName, self:ActivePullList(list))
+end
+
+---@param list string
+---@param arg1 string|number
+function Module:DeleteMobFromList(list, arg1)
+    Config:ZoneListDelete(arg1, self:ActivePullList(list))
 end
 
 function Module:ClearIgnoreList()
@@ -2039,7 +2073,7 @@ function Module:CheckForAbort(pullID, bNavigating)
 
     -- ignore distance and time if this is a manually requested pull
     if pullID ~= self.TempSettings.TargetSpawnID then
-        if spawn.Distance() > Config:GetSetting("MaxPathRange") then
+        if (spawn.Distance() or 0) > Config:GetSetting("MaxPathRange") then
             Logger.log_debug("PULL:\ar ALERT: Aborting mob moved out of spawn distance \ax")
             return true
         end
@@ -2080,6 +2114,18 @@ function Module:IsPullState(state)
     return self.TempSettings.PullState == PullStates[state]
 end
 
+-- True when we're standing idle during a pull hold and below our med-stop level on a stat our class uses.
+---@return boolean
+function Module:ShouldSitToMed()
+    local me = mq.TLO.Me
+    if not me.Standing() or me.Moving() then return false end
+
+    local needHP = me.PctHPs() < Config:GetSetting('HPMedPctStop')
+    local needMana = me.MaxMana() > 0 and me.PctMana() < Config:GetSetting('ManaMedPctStop')
+    local needEndurance = not Globals.Constants.RGCasters:contains(me.Class.ShortName()) and me.PctEndurance() < Config:GetSetting('EndMedPctStop')
+
+    return needHP or needMana or needEndurance
+end
 ---@param state number
 ---@param reason string
 function Module:SetPullState(state, reason)
@@ -2268,11 +2314,10 @@ function Module:GiveTime()
             Logger.log_verbose("PULL:GiveTime() - GroupWatch Failed")
             Module:StopNavAfterFailedMovingCheck()
             self:SetPullState(PullStates.PULL_GROUPWATCH_WAIT, groupReason)
-            local me = mq.TLO.Me
-            if me.Standing() and not me.Moving() and (me.PctHPs() < Config:GetSetting('HPMedPctStop') or me.PctMana() < Config:GetSetting('ManaMedPctStop') or me.PctEndurance() < Config:GetSetting('EndMedPctStop')) then
+            if self:ShouldSitToMed() then
                 Logger.log_verbose(
                     "PULL:GiveTime() - We are waiting for GroupWatch and we are below med stop levels, lets sit down ourselves! Note: Does not interface with medstate.")
-                me.Sit()
+                mq.TLO.Me.Sit()
             end
             return
         end
@@ -2284,9 +2329,10 @@ function Module:GiveTime()
             Logger.log_verbose("PULL:GiveTime() - PeerWatch Failed")
             Module:StopNavAfterFailedMovingCheck()
             self:SetPullState(PullStates.PULL_PEERWATCH_WAIT, peerReason)
-            local me = mq.TLO.Me
-            if me.Standing() and not me.Moving() and (me.PctHPs() < Config:GetSetting('HPMedPctStop') or me.PctMana() < Config:GetSetting('ManaMedPctStop') or me.PctEndurance() < Config:GetSetting('EndMedPctStop')) then
-                me.Sit()
+            if self:ShouldSitToMed() then
+                Logger.log_verbose(
+                    "PULL:GiveTime() - We are waiting for PeerWatch and we are below med stop levels, lets sit down ourselves! Note: Does not interface with medstate.")
+                mq.TLO.Me.Sit()
             end
             return
         end
@@ -2772,11 +2818,7 @@ function Module:GiveTime()
 
     self:SetLastPullOrCombatEndedTimer()
     self.TempSettings.TargetSpawnID = 0
-    if (self:IsPullMode("Normal") or self:IsPullMode("Chain"))
-        and campData.returnToCamp
-        and Math.GetDistanceSquared(mq.TLO.Me.X(), mq.TLO.Me.Y(),
-            campData.campSettings.AutoCampX, campData.campSettings.AutoCampY)
-            > math.max(Config:GetSetting('AutoCampRadius') ^ 2, 200 ^ 2) then
+    if (self:IsPullMode("Normal") or self:IsPullMode("Chain")) and campData.returnToCamp and Math.GetDistanceSquared(mq.TLO.Me.X(), mq.TLO.Me.Y(), campData.campSettings.AutoCampX, campData.campSettings.AutoCampY) > math.max(Config:GetSetting('AutoCampRadius') ^ 2, 200 ^ 2) then
         self:SetPullState(PullStates.PULL_WAITING_SHOULDPULL, "Awaiting return to camp")
     else
         self:SetPullState(PullStates.PULL_IDLE, "")

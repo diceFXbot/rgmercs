@@ -1,11 +1,11 @@
 local mq        = require('mq')
+local Casting   = require("utils.casting")
 local Combat    = require('utils.combat')
 local Config    = require('utils.config')
-local Globals   = require("utils.globals")
 local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
-local Casting   = require("utils.casting")
+local Globals   = require("utils.globals")
 local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
 
 return {
     _version              = "1.5 - Project Lazarus",
@@ -15,6 +15,10 @@ return {
     },
     ['ModeChecks']        = {
         IsHealing = function() return Config:GetSetting('DoHeals') end,
+    },
+    ['PetPosition']       = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']            = {
         ['DPS'] = {

@@ -1,14 +1,14 @@
 local mq           = require('mq')
-local ItemManager  = require("utils.item_manager")
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Core         = require("utils.core")
-local Ui           = require("utils.ui")
-local Targeting    = require("utils.targeting")
-local Casting      = require("utils.casting")
-local Logger       = require("utils.logger")
 local Set          = require('mq.set')
+local Casting      = require("utils.casting")
 local Combat       = require("utils.combat")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
+local ItemManager  = require("utils.item_manager")
+local Logger       = require("utils.logger")
+local Targeting    = require("utils.targeting")
+local Ui           = require("utils.ui")
 
 --todo: add a LOT of tooltips or scrap them entirely. Hopefully the former.
 local Tooltips     = {
@@ -86,6 +86,10 @@ local _ClassConfig = {
     ['Modes']         = {
         'Tank',
         'DPS',
+    },
+    ['PetPosition']   = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']        = {
         ['Tank'] = {
@@ -361,6 +365,9 @@ local _ClassConfig = {
         ['Protective'] = {
             "Protective Discipline",       -- Level 69 EQM Custom
             "Protective Surge Discipline", -- Level 45 EQM Custom
+        },
+        ['Steelwrath'] = {
+            "Steelwrath Discipline", -- Level 68 EQM Custom
         },
         ['ForPower'] = {
             "Challenge for Power", -- Level 71
@@ -861,6 +868,14 @@ local _ClassConfig = {
                     return Casting.NoDiscActive()
                 end,
             },
+            { -- for DPS mode
+                name = "Steelwrath",
+                type = "Disc",
+                load_cond = function(self) return not Core.IsTanking() end,
+                cond = function(self)
+                    return Casting.NoDiscActive()
+                end,
+            },
             {
                 name = "Harm Touch",
                 type = "AA",
@@ -908,8 +923,8 @@ local _ClassConfig = {
             {
                 name = "Protective",
                 type = "Disc",
+                load_cond = function(self) return Core.IsTanking() end,
                 cond = function(self, discSpell, target)
-                    if not Core.IsTanking() then return false end
                     return Casting.NoDiscActive()
                 end,
             },
@@ -917,8 +932,8 @@ local _ClassConfig = {
                 name = "Mantle",
                 type = "Disc",
                 tooltip = Tooltips.Mantle,
+                load_cond = function(self) return Core.IsTanking() end,
                 cond = function(self, discSpell, target)
-                    if not Core.IsTanking() then return false end
                     return Casting.NoDiscActive() and Casting.DiscOnCoolDown('Protective')
                 end,
             },

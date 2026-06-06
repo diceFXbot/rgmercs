@@ -1,25 +1,25 @@
 -- Sample Basic Class Module
 local mq          = require('mq')
-local Combat      = require('utils.combat')
-local Config      = require('utils.config')
-local Globals     = require('utils.globals')
-local Core        = require("utils.core")
-local Modules     = require("utils.modules")
-local Events      = require("utils.events")
-local Movement    = require("utils.movement")
-local Targeting   = require("utils.targeting")
-local Rotation    = require("utils.rotation")
-local Casting     = require("utils.casting")
-local Ui          = require("utils.ui")
-local Comms       = require("utils.comms")
-local Strings     = require("utils.strings")
-local Tables      = require("utils.tables")
-local Logger      = require("utils.logger")
-local Set         = require("mq.Set")
-local ClassLoader = require('utils.classloader')
-local DanNet      = require('lib.dannet.helpers')
 local Icons       = require('mq.ICONS')
 local Base        = require('modules.base')
+local Set         = require("mq.Set")
+local Casting     = require("utils.casting")
+local ClassLoader = require('utils.classloader')
+local Combat      = require('utils.combat')
+local Comms       = require("utils.comms")
+local Config      = require('utils.config')
+local Core        = require("utils.core")
+local DanNet      = require('lib.dannet.helpers')
+local Events      = require("utils.events")
+local Globals     = require('utils.globals')
+local Logger      = require("utils.logger")
+local Modules     = require("utils.modules")
+local Movement    = require("utils.movement")
+local Rotation    = require("utils.rotation")
+local Strings     = require("utils.strings")
+local Tables      = require("utils.tables")
+local Targeting   = require("utils.targeting")
+local Ui          = require("utils.ui")
 
 require('utils.datatypes')
 
@@ -66,6 +66,7 @@ Module.TempSettings.CureChecksStale          = false
 Module.TempSettings.ImmuneTargets            = {}
 Module.TempSettings.RotationClickies         = Set.new({})
 Module.TempSettings.RotationAAs              = Set.new({})
+Module.TempSettings.MidSongFireable          = {}
 
 Module.FAQ                                   = {
     {
@@ -815,6 +816,78 @@ function Module:IsCharming()
     return self.ClassConfig.ModeChecks.IsCharming()
 end
 
+--- Runs the main-loop engage step mid-song, gated to the combat target so it never re-targets off a mez/charm/cure victim.
+---@param targetId number The song's target (UseSong's targetId).
+function Module:DoMidSongEngage(targetId)
+    if (Globals.AutoTargetID or 0) <= 0 or targetId ~= Globals.AutoTargetID then return end
+
+    if not Globals.BackOffFlag then
+        Combat.FindBestAutoTarget(Combat.OkToEngagePreValidateId)
+    end
+
+    if Combat.OkToEngage(Globals.AutoTargetID) then
+        Combat.EngageTarget(Globals.AutoTargetID)
+    end
+end
+
+--- Whether a midSong-flagged entry is a fireable instant; errors once per zone when it isn't.
+---@param entry table
+---@return boolean
+function Module:MidSongAllowed(entry)
+    local cached = self.TempSettings.MidSongFireable[entry]
+    if cached ~= nil then return cached end
+
+    local entryType = (entry.type or ""):lower()
+    local castTime = 0
+    local instantType = true
+
+    if entryType == "disc" then
+        local discSpell = self.ResolvedActionMap[entry.name]
+        castTime = discSpell and discSpell.MyCastTime() or 0
+    elseif entryType == "aa" then
+        local aaName = self.ResolvedActionMap[entry.name] or entry.name
+        castTime = aaName and (mq.TLO.Me.AltAbility(aaName).Spell.MyCastTime() or 0) or 0
+    elseif entryType == "item" or entryType == "clickyitem" then
+        local itemName = entryType == "clickyitem" and (entry.name and Config:GetSetting(entry.name)) or self.ResolvedActionMap[entry.name] or entry.name
+        local item = itemName and mq.TLO.FindItem("=" .. itemName)
+        castTime = (item and item()) and ((item.Clicky() and item.Clicky.CastTime()) or item.CastTime() or 0) or 0
+    elseif entryType ~= "ability" then
+        instantType = false -- song/spell would start a song; customfunc excluded as a conservative default
+    end
+
+    local fireable = instantType and (castTime or 0) == 0
+    self.TempSettings.MidSongFireable[entry] = fireable
+    if not fireable then
+        Logger.log_error("\arMidSong: '%s' (type %s) isn't instant - it can't fire mid-song; remove its midSong flag.", entry.name or "?", entry.type or "nil")
+    end
+    return fireable
+end
+
+--- Fires the midSong-flagged instant rotation entries at the combat auto-target via ExecEntry in fire-and-return mode, so a singing bard's instants go off without clipping the song.
+function Module:DoMidSongActions()
+    local autoTargetId = Globals.AutoTargetID
+    if autoTargetId == 0 or mq.TLO.Target.ID() ~= autoTargetId then return end
+
+    local combat_state = Combat.GetCachedCombatState()
+    local enabledRotations = Config:GetSetting('EnabledRotations') or {}
+    local enabledEntries = Config:GetSetting('EnabledRotationEntries') or {}
+
+    for _, r in ipairs(self.TempSettings.RotationStates) do
+        if r.midSong and enabledRotations[r.name] ~= false then
+            if Core.SafeCallFunc("MidSong rotation cond " .. r.name, r.cond, self, combat_state) then
+                for _, entry in ipairs(self:GetRotationTable(r.name)) do
+                    if entry.midSong and enabledEntries[entry.name] ~= false and self:MidSongAllowed(entry) then
+                        Core.SafeCallFunc("MidSong entry " .. entry.name, function()
+                            if Rotation.TestConditionForEntry(self, self.ResolvedActionMap, entry, autoTargetId) then
+                                Rotation.ExecEntry(self, entry, autoTargetId, self.ResolvedActionMap, false)
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end
+end
 ---@return boolean
 function Module:CanMez()
     if not self.ClassConfig or not self.ClassConfig.ModeChecks or not self.ClassConfig.ModeChecks.CanMez then
@@ -866,6 +939,7 @@ function Module:GetRotations()
                 end
             end
             self.TempSettings.RotationTable[rname] = Tables.ConcatTables(self.TempSettings.RotationTable[rname],
+                Modules:ExecModule("Clickies", "GetClickiesForRotations", "During Rotation", rname) or
                 Modules:ExecModule("Clickies", "GetClickiesForRotation", rname) or {})
         end
     end
@@ -889,6 +963,7 @@ function Module:GetRotations()
                 end
             end
             self.TempSettings.HealRotationTable[rname] = Tables.ConcatTables(self.TempSettings.HealRotationTable[rname],
+                Modules:ExecModule("Clickies", "GetClickiesForRotations", "During Heal Rotation", rname) or
                 Modules:ExecModule("Clickies", "GetClickiesForHealRotation", rname) or {})
         end
     end
@@ -1120,20 +1195,26 @@ function Module:HealById(id)
                 selectedRotation = rotation
                 if selectedRotation then
                     self.CurrentRotation = { name = selectedRotation.name, state = selectedRotation.state or 0, }
-
+                    -- If we need to heal others we should wait on the cooldown.
+                    Casting.WaitGlobalCoolDown("Healing: ")
                     local newState, wasRun = Rotation.Run(self, self:GetHealRotationTable(selectedRotation.name), { id, },
                         self.ResolvedActionMap, selectedRotation.steps or 0, selectedRotation.state or 0,
                         self.CombatState == "Downtime", selectedRotation.doFullRotation or false, nil, Config:GetSetting('EnabledRotationEntries') or {})
                     if selectedRotation.state then selectedRotation.state = newState end
 
-                    if wasRun then
+                    if wasRun and Casting.GetLastCastResultName() == "CAST_SUCCESS" then
                         Logger.log_verbose(
-                            "\awHealById(%d):: Heal Rotation: \at%s\aw fired.", id,
+                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \agSuccessful\aw!", id,
                             rotation.name)
                         Comms.HandleAnnounce(Comms.FormatChatEvent("Heal", healTarget.CleanName(), Casting.GetLastUsedSpell()),
                             Config:GetSetting('HealAnnounceGroup'),
                             Config:GetSetting('HealAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
                         break
+                    else
+                        Logger.log_verbose(
+                            "\awHealById(%d):: Heal Rotation: \at%s\aw \agis\aw was \arNOT \awSuccessful! Conditions: wasRun(%s) castResult(%s) \ayGoing to keep trying!",
+                            id,
+                            rotation.name, Strings.BoolToColorString(wasRun), Casting.GetLastCastResultName())
                     end
                 end
             else
@@ -1534,6 +1615,51 @@ function Module:QueueAbility(type, name, targetId)
     })
 end
 
+function Module:PositionPet()
+    local petPos = self.ClassConfig.PetPosition
+    if not petPos then return end
+
+    if mq.TLO.Me.Moving() or mq.TLO.Me.Casting() then return end
+
+    local targetId = Globals.AutoTargetID
+    if targetId == 0 then return end
+
+    if (Globals.GetTimeSeconds() - (self.TempSettings.LastPetPosCheck or 0)) < 1 then return end
+    self.TempSettings.LastPetPosCheck = Globals.GetTimeSeconds()
+
+    local pet = mq.TLO.Me.Pet
+    if (pet.ID() or 0) == 0 or not pet.Combat() or (pet.Target.ID() or 0) ~= targetId then return end
+
+    local target = mq.TLO.Spawn(targetId)
+    if not target() then return end
+
+    local myHeading = mq.TLO.Me.Heading.DegreesCCW() or 0
+    local headingDelta = math.abs(myHeading - (self.TempSettings.LastPetPosHeading or myHeading))
+    self.TempSettings.LastPetPosHeading = myHeading
+    if headingDelta > 180 then headingDelta = 360 - headingDelta end
+    if headingDelta > 5 then return end
+
+    local frontArc = 180
+    local targetFacing = target.Heading.DegreesCCW() or 0
+    local inFrontArc = function(y, x)
+        local diff = (((target.HeadingToLoc(y, x).DegreesCCW() or 0) - targetFacing + 540) % 360) - 180
+        return math.abs(diff) < frontArc / 2
+    end
+
+    if not inFrontArc(pet.Y(), pet.X()) then return end
+
+    local ability
+    if inFrontArc(mq.TLO.Me.Y(), mq.TLO.Me.X()) then
+        ability = petPos.RelocateAA()
+    else
+        ability = petPos.SummonAA()
+    end
+
+    if not ability or not Casting.AAReady(ability) then return end
+
+    Logger.log_debug("PositionPet: pet in %s's front arc, using %s.", target.CleanName() or "target", ability)
+    Casting.UseAA(ability)
+end
 function Module:GiveTime()
     local combat_state = Combat.GetCachedCombatState()
 
@@ -1635,7 +1761,7 @@ function Module:GiveTime()
         self:RunCounterRotation()
     end
 
-    if Config:GetSetting('MovebackWhenBehind') then
+    if self:IsTanking() and Config:GetSetting('MovebackWhenBehind') then
         -- make sure nothing is behind us when tanking.
         -- Maybe spawn search is failing us -- look through the xtarget list
         local xtCount = mq.TLO.Me.XTarget()
@@ -1661,6 +1787,9 @@ function Module:GiveTime()
         end
     end
 
+    if combat_state == "Combat" and Config:GetSetting('DoPetPositioningBeta') then
+        self:PositionPet()
+    end
     -- stop singing after pause so we can take over again (if we are active, we will stop our own songs). If paused, allow user to manage their own songs.
     if Core.MyClassIs("BRD") and not Globals.PauseMain and mq.TLO.Me.Casting() ~= nil and not mq.TLO.Window("CastingWindow").Open() then
         Core.DoCmd("/stopsong")
@@ -1754,6 +1883,7 @@ function Module:OnZone()
     end
     Module.TempSettings.ImmuneTargets = {}   -- clear list of slow/snare/stun immune mobs
     Module.TempSettings.QueuedAbilities = {} -- clear queued actions
+    Module.TempSettings.MidSongFireable = {} -- re-check (and re-warn) mid-song eligibility each zone
 end
 
 function Module:DoGetState()

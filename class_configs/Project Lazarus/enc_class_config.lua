@@ -1,12 +1,12 @@
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Comms        = require("utils.comms")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
+local Comms        = require("utils.comms")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
 local DanNet       = require('lib.dannet.helpers')
+local Globals      = require("utils.globals")
 local Logger       = require("utils.logger")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     _version          = "1.4 - Project Lazarus",
@@ -19,6 +19,10 @@ local _ClassConfig = {
     },
     ['Modes']         = {
         'Default',
+    },
+    ['PetPosition']   = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']        = {
         ['Default'] = {

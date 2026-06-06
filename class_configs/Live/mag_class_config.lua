@@ -1,12 +1,12 @@
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require("utils.globals")
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
 local Casting   = require("utils.casting")
 local Comms     = require("utils.comms")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
 local DanNet    = require('lib.dannet.helpers')
+local Globals   = require("utils.globals")
 local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
 
 _ClassConfig    = {
     _version              = "1.3 - Live",
@@ -17,6 +17,13 @@ _ClassConfig    = {
     ['Modes']             = {
         'DPS',
         'PetTank',
+    },
+    ['PetPosition']       = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function()
+            local cdAA = mq.TLO.Me.AltAbility("Companion's Discipline")
+            return (cdAA and cdAA.Rank() or 0) >= 4 and "Companion's Discipline"
+        end,
     },
     ['OnModeChange']      = function(self, mode)
         if mode == "PetTank" then
@@ -1361,7 +1368,7 @@ _ClassConfig    = {
                 name = "Turn Summoned",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return Targeting.TargetBodyIs(target, "Undead Pet")
+                    return Targeting.IsSummoned(target)
                 end,
             },
             {
@@ -1369,7 +1376,7 @@ _ClassConfig    = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoSummonedNuke') end,
                 cond = function(self, spell, target)
-                    return Targeting.TargetBodyIs(target, "Undead Pet")
+                    return Targeting.IsSummoned(target)
                 end,
             },
             {
@@ -1388,7 +1395,7 @@ _ClassConfig    = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoSummonedNuke') end,
                 cond = function(self, spell, target)
-                    return Targeting.TargetBodyIs(target, "Undead Pet")
+                    return Targeting.IsSummoned(target)
                 end,
             },
             {
@@ -1417,7 +1424,7 @@ _ClassConfig    = {
                 name = "Turn Summoned",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return Targeting.TargetBodyIs(target, "Undead Pet")
+                    return Targeting.IsSummoned(target)
                 end,
             },
         },

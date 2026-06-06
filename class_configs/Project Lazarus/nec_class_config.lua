@@ -1,10 +1,10 @@
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Comms        = require("utils.comms")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
+local Comms        = require("utils.comms")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     _version            = "2.0 - Project Lazarus",
@@ -15,6 +15,10 @@ local _ClassConfig = {
     ['ModeChecks']      = {
         CanCharm   = function() return true end,
         IsCharming = function() return (Config:GetSetting('CharmOn') and mq.TLO.Pet.ID() == 0) end,
+    },
+    ['PetPosition']     = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']          = {
         ['DPS'] = {
@@ -102,19 +106,19 @@ local _ClassConfig = {
             "Dominate Undead", -- Level 18
         },
         ['LifeTap'] = {
-            "Ancient: Touch of Orshilak",     -- Level 70
-            "Soulspike",                      -- Level 67
-            "Touch of Mujaki",                -- Level 61
+            "Ancient: Touch of Orshilak", -- Level 70
+            "Soulspike",                  -- Level 67
+            "Touch of Mujaki",            -- Level 61
             -- "Gangrenous Touch of Zum`uul", -- Level 60
-            "Touch of Night",                 -- Level 59
-            "Deflux",                         -- Level 54
-            "Drain Soul",                     -- Level 48
-            "Drain Spirit",                   -- Level 39
-            "Spirit Tap",                     -- Level 26
-            "Siphon Life",                    -- Level 20
-            "Lifedraw",                       -- Level 12
-            "Lifespike",                      -- Level 3
-            "Lifetap",                        -- Level 1
+            "Touch of Night",             -- Level 59
+            "Deflux",                     -- Level 54
+            "Drain Soul",                 -- Level 48
+            "Drain Spirit",               -- Level 39
+            "Spirit Tap",                 -- Level 26
+            "Siphon Life",                -- Level 20
+            "Lifedraw",                   -- Level 12
+            "Lifespike",                  -- Level 3
+            "Lifetap",                    -- Level 1
         },
         -- ['DurationTap'] = {
         --     "Fang of Death",        -- Level 68
@@ -147,8 +151,8 @@ local _ClassConfig = {
             "Boil Blood",              -- Level 28
             "Heat Blood",              -- Level 10
         },
-        ['FireDot2'] = { -- because of dots that trigger other dots on laz, this is the only second fire dot feasible for use
-            "Pyre of Mori", -- Level 69
+        ['FireDot2'] = {               -- because of dots that trigger other dots on laz, this is the only second fire dot feasible for use
+            "Pyre of Mori",            -- Level 69
         },
         -- ['SplurtDot'] = {
         --     "Splort", -- Level 65
@@ -161,8 +165,8 @@ local _ClassConfig = {
             "Imprecation",            -- Level 54
             "Dark Soul",              -- Level 39
         },
-        ['CurseDot2'] = { -- because of dots that trigger other dots on laz, this is the only second curse dot feasible for use
-            "Dark Nightmare", -- Level 67
+        ['CurseDot2'] = {             -- because of dots that trigger other dots on laz, this is the only second curse dot feasible for use
+            "Dark Nightmare",         -- Level 67
         },
         ['PlagueDot'] = {
             "Chaos Plague",     -- Level 66
@@ -275,7 +279,7 @@ local _ClassConfig = {
         --     "Guard of Calliav",      -- Level 58
         --     "Ward of Calliav",       -- Level 49
         -- },
-        ['PetHealSpell'] = { -- Also has cure effect for pet
+        ['PetHealSpell'] = {  -- Also has cure effect for pet
             "Dark Salve",     -- Level 69
             "Touch of Death", -- Level 64
             "Renew Bones",    -- Level 26
@@ -544,7 +548,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoLich') end,
                 cond = function(self, spell)
-                    return Casting.SelfBuffCheck(spell) and mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana')
+                    return Casting.SelfBuffCheck(spell) and mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() <= Config:GetSetting('StartLichMana')
                 end,
             },
             {
@@ -833,7 +837,7 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoLich') end,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell)
-                    return Casting.SelfBuffCheck(spell) and mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana')
+                    return Casting.SelfBuffCheck(spell) and mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() <= Config:GetSetting('StartLichMana')
                 end,
             },
             {
@@ -962,7 +966,7 @@ local _ClassConfig = {
             Tooltip = "Choose which pet you wish to summon. Please note that rogue pets have uneven spacing at lower levels.",
             Type = "Combo",
             ComboOptions = { 'War', 'Rog', },
-            Default = 1,
+            Default = function() return Core.GetResolvedActionMapItem('RogPetSpell') and 2 or 1 end,
             Min = 1,
             Max = 2,
             RequiresLoadoutChange = true,

@@ -1,14 +1,14 @@
 local mq           = require('mq')
-local ItemManager  = require("utils.item_manager")
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Core         = require("utils.core")
-local Ui           = require("utils.ui")
-local Targeting    = require("utils.targeting")
-local Casting      = require("utils.casting")
-local Logger       = require("utils.logger")
 local Set          = require('mq.set')
+local Casting      = require("utils.casting")
 local Combat       = require("utils.combat")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
+local ItemManager  = require("utils.item_manager")
+local Logger       = require("utils.logger")
+local Targeting    = require("utils.targeting")
+local Ui           = require("utils.ui")
 
 --todo: add a LOT of tooltips or scrap them entirely. Hopefully the former.
 local Tooltips     = {
@@ -86,6 +86,10 @@ local _ClassConfig = {
     ['Modes']         = {
         'Tank',
         'DPS',
+    },
+    ['PetPosition']   = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']        = {
         ['Tank'] = {
@@ -171,14 +175,14 @@ local _ClassConfig = {
             "Augment Death",         -- Level 60
             "Strengthen Death",      -- Level 29
         },
-        ['Horror'] = {           -- HP Tap Proc
-            "Shroud of Discord", -- Level 67, -- Buff Slot 1 <
-            "Shroud of Chaos",   -- Level 63
-            "Shroud of Death",   -- Level 55
+        ['Horror'] = {               -- HP Tap Proc
+            "Shroud of Discord",     -- Level 67, -- Buff Slot 1 <
+            "Shroud of Chaos",       -- Level 63
+            "Shroud of Death",       -- Level 55
         },
-        ['Mental'] = {           -- Mana Tap Proc
-            "Mental Horror",     -- Level 65, --Buff Slot 1 >
-            "Mental Corruption", -- Level 52
+        ['Mental'] = {               -- Mana Tap Proc
+            "Mental Horror",         -- Level 65, --Buff Slot 1 >
+            "Mental Corruption",     -- Level 52
         },
         ['Skin'] = {
             "Decrepit Skin", -- Level 70

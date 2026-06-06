@@ -1,9 +1,9 @@
 local mq           = require('mq')
+local Casting      = require("utils.casting")
 local Config       = require('utils.config')
 local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
-local Casting      = require("utils.casting")
 local Logger       = require("utils.logger")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     _version              = "1.1 - Live",
@@ -1216,7 +1216,7 @@ local _ClassConfig = {
                 type = "Spell",
                 cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell) and not Targeting.TargetBodyIs(target, "Undead") and
-                        not Targeting.TargetBodyIs(target, "Undead Pet")
+                        not Targeting.IsSummoned(target)
                 end,
             },
             {

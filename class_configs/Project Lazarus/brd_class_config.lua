@@ -1,12 +1,12 @@
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
-local Strings      = require("utils.strings")
-local Logger       = require("utils.logger")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
 local ItemManager  = require('utils.item_manager')
+local Logger       = require("utils.logger")
+local Strings      = require("utils.strings")
+local Targeting    = require("utils.targeting")
 
 local Tooltips     = {
     Epic           = 'Item: Casts Epic Weapon Ability',
@@ -154,6 +154,7 @@ local _ClassConfig = {
             "McVaxius' Berserker Crescendo", -- Level 42
             "Vilia's Verses of Celerity",    -- Level 36
             "Anthem de Arms",                -- Level 10
+            "Chant of Battle",               -- Level 1
         },
         ['SlowSong'] = {
             "Requiem of Time",          -- Level 64
@@ -357,6 +358,7 @@ local _ClassConfig = {
             name = 'Downtime',
             state = 1,
             steps = 1,
+            midSong = true,
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
                 return combat_state == "Downtime" and not mq.TLO.Me.Invis()
@@ -366,6 +368,7 @@ local _ClassConfig = {
             name = 'Emergency',
             state = 1,
             steps = 1,
+            midSong = true,
             doFullRotation = true,
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
@@ -397,6 +400,7 @@ local _ClassConfig = {
             name = 'Burn',
             state = 1,
             steps = 4,
+            midSong = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat" and Casting.BurnCheck()
@@ -406,6 +410,7 @@ local _ClassConfig = {
             name = 'Combat',
             state = 1,
             steps = 1,
+            midSong = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 return combat_state == "Combat"
@@ -427,14 +432,17 @@ local _ClassConfig = {
             {
                 name = "Quick Time",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Fierce Eye",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Funeral Dirge",
                 type = "AA",
+                midSong = true,
             },
             { -- Spire, the SpireChoice setting will determine which ability is displayed/used.
                 name_func = function(self)
@@ -442,39 +450,48 @@ local _ClassConfig = {
                     return Casting.CanUseAA(spireAbil) and spireAbil or "Spire Not Purchased/Selected"
                 end,
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Bladed Song",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Song of Stone",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "ThousandBlades",
                 type = "Disc",
+                midSong = true,
             },
             {
                 name = "OoW_Chest",
                 type = "Item",
+                midSong = true,
             },
             {
                 name = "Dance of Blades",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Cacophony",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Intensity of the Resolute",
                 type = "AA",
+                midSong = true,
                 load_cond = function(self) return Config:GetSetting('DoVetAA') end,
             },
             {
                 name = "A Tune Stuck In Your Head",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "SpellAbsorbSong",
@@ -532,15 +549,29 @@ local _ClassConfig = {
             {
                 name = "Boastful Bellow",
                 type = "AA",
+                midSong = true,
             },
             {
                 name = "Vainglorious Shout",
                 type = "AA",
+                midSong = true,
                 load_cond = function(self) return Config:GetSetting('UseShout') end,
             },
             {
                 name = "Kick",
                 type = "Ability",
+                midSong = true,
+            },
+            {
+                name = "Selo's Sonata",
+                type = "AA",
+                midSong = true,
+                targetId = function(self) return { mq.TLO.Me.ID(), } end,
+                load_cond = function(self) return Config:GetSetting('UseRunBuff') and Casting.CanUseAA("Selo's Sonata") end,
+                cond = function(self, aaName)
+                    --refresh slightly before expiry for better uptime
+                    return (mq.TLO.Me.Buff(aaName).Duration.TotalSeconds() or 0) < 30
+                end,
             },
         },
         ['CombatSongs'] = {
@@ -707,10 +738,10 @@ local _ClassConfig = {
             {
                 name = "Selo's Sonata",
                 type = "AA",
+                midSong = true,
                 targetId = function(self) return { mq.TLO.Me.ID(), } end,
                 load_cond = function(self) return Config:GetSetting('UseRunBuff') and Casting.CanUseAA("Selo's Sonata") end,
                 cond = function(self, aaName)
-                    if not Config:GetSetting('UseRunBuff') then return false end
                     --refresh slightly before expiry for better uptime
                     return (mq.TLO.Me.Buff(aaName).Duration.TotalSeconds() or 0) < 30
                 end,
@@ -742,6 +773,7 @@ local _ClassConfig = {
             {
                 name = "Armor of Experience",
                 type = "AA",
+                midSong = true,
                 load_cond = function(self) return Config:GetSetting('DoVetAA') end,
                 cond = function(self, aaName)
                     return mq.TLO.Me.PctHPs() < 35
@@ -750,6 +782,7 @@ local _ClassConfig = {
             {
                 name = "Fading Memories",
                 type = "AA",
+                midSong = true,
                 cond = function(self, aaName)
                     if not Config:GetSetting('UseFading') then return false end
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and self.Helpers.UnwantedAggroCheck(self)
@@ -759,6 +792,7 @@ local _ClassConfig = {
             {
                 name = "Hymn of the Last Stand",
                 type = "AA",
+                midSong = true,
                 cond = function(self, aaName)
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart')
                 end,
@@ -766,6 +800,7 @@ local _ClassConfig = {
             {
                 name = "Shield of Notes",
                 type = "AA",
+                midSong = true,
                 cond = function(self, aaName)
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart')
                 end,

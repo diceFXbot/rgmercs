@@ -1,17 +1,21 @@
 local mq        = require('mq')
+local Casting   = require("utils.casting")
 local Combat    = require('utils.combat')
 local Config    = require('utils.config')
-local Globals   = require('utils.globals')
 local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
-local Casting   = require("utils.casting")
+local Globals   = require('utils.globals')
 local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
 
 return {
     _version              = "1.6 - EQ Might",
     _author               = "Derple, Algar",
     ['Modes']             = {
         'DPS',
+    },
+    ['PetPosition']       = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['ModeChecks']        = {
         IsHealing = function() return Config:GetSetting('DoHeals') end,
@@ -215,6 +219,9 @@ return {
             "Empathic Fury",           -- Level 69
             "Bestial Fury Discipline", -- Level 60
         },
+        ['BestialRageDisc'] = {        -- Warden alt: crit instead of damage mod (Ward of Might has dmg mod)
+            "Bestial Rage Discipline", -- Level 60 EQM Custom
+        },
         ['ProtDisc'] = {
             "Skal's Stance Discipline",     -- Level 61 EQM Custom
             "Protective Spirit Discipline", -- Level 55
@@ -392,6 +399,13 @@ return {
                 type = "AA",
             },
             {
+                name = "BestialRageDisc",
+                type = "Disc",
+                cond = function(self, discSpell)
+                    return Core.IsWarden()
+                end,
+            },
+            {
                 name = "Group Bestial Alignment",
                 type = "AA",
                 cond = function(self, aaName)
@@ -414,7 +428,7 @@ return {
                 name = "DmgModDisc",
                 type = "Disc",
                 cond = function(self, discSpell)
-                    return not self.Helpers.DmgModActive(self)
+                    return not Core.IsWarden() and not self.Helpers.DmgModActive(self)
                 end,
             },
             {

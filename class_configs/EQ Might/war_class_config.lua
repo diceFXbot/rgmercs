@@ -1,13 +1,13 @@
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
+local Set          = require('mq.set')
 local Casting      = require("utils.casting")
+local Combat       = require("utils.combat")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
 local ItemManager  = require("utils.item_manager")
 local Logger       = require("utils.logger")
-local Set          = require('mq.set')
-local Combat       = require("utils.combat")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     -- Added Mayhem line for AE taunt
@@ -109,6 +109,9 @@ local _ClassConfig = {
             "Bellow",                -- Level 52
             "Provoke",               -- Level 20
         },
+        ['AddHate2'] = {             --different timer on EQM
+            "Bazu Bellow",           -- Level 69
+        },
         ['AbsorbTaunt'] = {
             "Mock", -- Level 70
         },
@@ -126,8 +129,11 @@ local _ClassConfig = {
         },
         ['StrikeDisc'] = {
             "Mighty Blow Discipline",   -- Level 66 EQM Custom
-            "Fellstrike Discipline",    -- Level 58
+            -- "Fellstrike Discipline",    -- Level 58, dmg mod (not crit) -- I *think* Mighty Strike will be better here, especially with all the dmg mod buffs out there (incl ward of might)
             "Mighty Strike Discipline", -- Level 54
+        },
+        ['Steelwrath'] = {
+            "Steelwrath Discipline", -- Level 68 EQM Custom
         },
         ['Throat'] = {
             "Throat Jab", -- Level 71
@@ -152,6 +158,7 @@ local _ClassConfig = {
             "Revitalize",             -- Level 44 EQM Custom
         },
         ['BattlecryHeal'] = {         -- EQM Custom, restores HP/End for group, 8m reuse
+            "Rousing Battlecry",      -- Level 68 EQM Custom
             "Invigorating Battlecry", -- Level 63 EQM Custom
         },
     },
@@ -194,7 +201,7 @@ local _ClassConfig = {
         end,
         BurnDiscCheck = function(self)
             if mq.TLO.Me.ActiveDisc.Name() == "Fortitude Discipline" or mq.TLO.Me.PctHPs() < Config:GetSetting('EmergencyStart') then return false end
-            local burnDisc = { "Onslaught", "StrikeDisc", "ChargeDisc", }
+            local burnDisc = { "Onslaught", "StrikeDisc", "Steelwrath", }
             for _, buffName in ipairs(burnDisc) do
                 local resolvedDisc = self:GetResolvedActionMapItem(buffName)
                 if resolvedDisc and resolvedDisc.RankName() == mq.TLO.Me.ActiveDisc.Name() then return false end
@@ -256,11 +263,8 @@ local _ClassConfig = {
             timer = 1, -- Don't check this more often than once a second to avoid blowing every ability at once (aggro takes time to update)
             doFullRotation = true,
             load_cond = function()
-                if not Core.IsTanking() then return false end
-                local bladeDisc = Config:GetSetting('BladeDiscUse') > 1 and Core.GetResolvedActionMapItem('BladeDisc')
-                local hateAA = Config:GetSetting('AETauntAA') and Casting.CanUseAA("Area Taunt")
-                local epic = Config:GetSetting('DoEpic') and Core.GetResolvedActionMapItem("Epic")
-                return bladeDisc or hateAA or epic
+                return Core.IsTanking() and Config:GetSetting('DoAETaunt') and
+                    (Casting.CanUseAA("Area Taunt") or Core.GetResolvedActionMapItem("BladeDisc"))
             end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
@@ -311,6 +315,17 @@ local _ClassConfig = {
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
                 return combat_state == "Combat" and Casting.BurnCheck()
+            end,
+        },
+        {
+            name = 'Buffs',
+            state = 1,
+            steps = 1,
+            targetId = function(self)
+                return mq.TLO.Target.ID() == Globals.AutoTargetID and { Globals.AutoTargetID, } or { mq.TLO.Me.ID(), }
+            end,
+            cond = function(self, combat_state)
+                return combat_state == "Combat" or (combat_state == "Downtime" and Casting.OkayToBuff())
             end,
         },
         { --Non-threat combat actions
@@ -367,6 +382,10 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "AddHate2",
+                type = "Disc",
+            },
+            {
                 name = "Grappling Strike",
                 type = "AA",
             },
@@ -412,18 +431,15 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "AddHate2",
+                type = "Disc",
+            },
+            {
                 name = "Grappling Strike",
                 type = "AA",
             },
         },
         ['AEHateTools'] = {
-            {
-                name = "Epic",
-                type = "Item",
-                cond = function(self, itemName)
-                    return Config:GetSetting('DoAEDamage')
-                end,
-            },
             {
                 name = "BladeDisc",
                 type = "Disc",
@@ -435,6 +451,13 @@ local _ClassConfig = {
             {
                 name = "AreaTaunt",
                 type = "AA",
+            },
+            {
+                name = "Rampage",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    return Config:GetSetting("DoAEDamage")
+                end,
             },
         },
         ['EmergencyDefenses'] = {
@@ -505,6 +528,7 @@ local _ClassConfig = {
                 name = "Protective",
                 type = "Disc",
                 cond = function(self, discSpell, target)
+                    if not Core.IsTanking() then return false end
                     return self.Helpers.DefenseBuffCheck(self)
                 end,
             },
@@ -543,7 +567,13 @@ local _ClassConfig = {
                     return Casting.NoDiscActive() and Casting.DiscOnCoolDown('Protective') and Casting.DiscOnCoolDown('StandDisc')
                 end,
             },
-
+            {
+                name = "Epic",
+                type = "Item",
+                cond = function(self, itemName)
+                    return Config:GetSetting('DoEpic')
+                end,
+            },
         },
         ['Burn'] = {
             {
@@ -555,22 +585,39 @@ local _ClassConfig = {
             {
                 name = "Onslaught",
                 type = "Disc",
+                load_cond = function(self) return not Core.IsTanking() end,
                 cond = function(self, discSpell)
-                    return not Core.IsTanking() and self.Helpers.BurnDiscCheck(self)
+                    return self.Helpers.BurnDiscCheck(self)
                 end,
             },
             {
                 name = "StrikeDisc",
                 type = "Disc",
+                load_cond = function(self) return not Core.IsTanking() end,
                 cond = function(self, discSpell)
-                    return not Core.IsTanking() and self.Helpers.BurnDiscCheck(self)
+                    return self.Helpers.BurnDiscCheck(self)
+                end,
+            },
+            {
+                name = "Steelwrath",
+                type = "Disc",
+                load_cond = function(self) return not Core.IsTanking() end,
+                cond = function(self, discSpell)
+                    return self.Helpers.BurnDiscCheck(self)
                 end,
             },
             {
                 name = "Vehement Rage",
                 type = "AA",
-                cond = function(self, aaName)
-                    return not Core.IsTanking()
+                load_cond = function(self) return not Core.IsTanking() end,
+            },
+            {
+                name = "Rampage",
+                type = "AA",
+                load_cond = function(self) return not (Core.IsTanking() and Config:GetSetting('DoAETaunt')) end,
+                cond = function(self, aaName, target)
+                    if not Config:GetSetting("DoAEDamage") then return false end
+                    return Combat.AETargetCheck(true)
                 end,
             },
             {
@@ -582,6 +629,16 @@ local _ClassConfig = {
                 type = "Disc",
                 cond = function(self, discSpell, target)
                     return mq.TLO.Me.PctHPs() < Config:GetSetting('EmergencyStart') or Targeting.BigGroupHealsNeeded()
+                end,
+            },
+        },
+        ['Buffs'] = {
+            {
+                name = "Infused by Rage",
+                type = "AA",
+                load_cond = function(self) return Core.IsTanking() end,
+                cond = function(self, aaName)
+                    return Casting.SelfBuffAACheck(aaName)
                 end,
             },
         },
@@ -638,15 +695,6 @@ local _ClassConfig = {
             {
                 name = "Throat",
                 type = "Disc",
-            },
-            {
-                name = "Rampage",
-                type = "AA",
-                cond = function(self, aaName, target)
-                    if not Config:GetSetting("DoAEDamage") or Config:GetSetting('UseRampage') == 1 then return false end
-                    return (Config:GetSetting('UseRampage') == 3 or (Config:GetSetting('UseRampage') == 2 and Casting.BurnCheck())) and
-                        Combat.AETargetCheck(true)
-                end,
             },
             {
                 name = "Call of Challenge",
@@ -737,32 +785,16 @@ local _ClassConfig = {
             Min = 1,
             Max = 3,
         },
-        ['UseRampage']      = {
-            DisplayName = "Rampage Use:",
-            Group = "Abilities",
-            Header = "Damage",
-            Category = "AE",
-            Index = 102,
-            Tooltip = "Use Rampage 1-Never 2-Burns 3-Always",
-            Type = "Combo",
-            ComboOptions = { 'Never', 'Burns Only', 'All Combat', },
-            Default = 3,
-            Min = 1,
-            Max = 3,
-            ConfigType = "Advanced",
-        },
-
         --Hate Tools
-        ['AETauntAA']       = {
-            DisplayName = "Use AE Taunt AA",
+        ['DoAETaunt']       = {
+            DisplayName = "Do AE Taunts",
             Group = "Abilities",
             Header = "Tanking",
             Category = "Hate Tools",
-            Index = 101,
-            Tooltip = "Use the Area Taunt AA.",
+            Index = 100,
+            Tooltip = "Use AE hatred Discs and AA (see FAQ for specifics).",
             RequiresLoadoutChange = true,
             Default = true,
-            ConfigType = "Advanced",
         },
         --Defenses
         ['DiscCount']       = {

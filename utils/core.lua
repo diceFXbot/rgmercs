@@ -1,12 +1,12 @@
 local mq      = require('mq')
-local Config  = require('utils.config')
-local Globals = require('utils.globals')
 local Comms   = require("utils.comms")
-local Modules = require("utils.modules")
+local Config  = require('utils.config')
 local DanNet  = require('lib.dannet.helpers')
+local Globals = require('utils.globals')
 local Logger  = require("utils.logger")
-local Strings = require("utils.strings")
 local LuaFS   = require('lfs')
+local Modules = require("utils.modules")
+local Strings = require("utils.strings")
 
 local Core    = { _version = '1.0', _name = "Core", _author = 'Derple', }
 Core.__index  = Core
@@ -81,6 +81,12 @@ end
 ---@return boolean True if connected to an EQ Might server.
 function Core.OnMight()
     return Globals.CurServer:lower() == "eq might" or Globals.CurServer:lower() == "project might"
+end
+
+--- Returns true if a Ward of Might buff is active.
+---@return boolean True if the Ward of Might buff is active.
+function Core.IsWarden()
+    return (mq.TLO.Me.Buff("Ward of Might").ID() or 0) > 0
 end
 
 --- Formats and executes an MQ command, logging it at debug level.

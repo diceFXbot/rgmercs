@@ -1,10 +1,10 @@
 local mq                     = require('mq')
 local Config                 = require('utils.config')
-local Events                 = require('utils.events')
-local Logger                 = require("utils.logger")
 local Core                   = require("utils.core")
-local Modules                = require("utils.modules")
+local Events                 = require('utils.events')
 local Globals                = require("utils.globals")
+local Logger                 = require("utils.logger")
+local Modules                = require("utils.modules")
 
 local Movement               = { _version = '1.0', _name = "Movement", _author = 'Derple', }
 Movement.__index             = Movement
@@ -170,13 +170,13 @@ function Movement:GetSecondsSinceLastNav()
     return Globals.GetTimeSeconds() - self.LastDoNav
 end
 
---- Navigates to targetId during combat, then optionally sticks. Blocks
---- until nav or moveto completes, processing events along the way.
+--- Navigates to the combat target then sticks; bNoWait issues the nav and returns immediately instead of waiting for arrival.
 ---@param targetId number Spawn ID of the combat target.
 ---@param distance number Desired distance to maintain from the target.
 ---@param bDontStick boolean If true, skips the final DoStick call.
 ---@param bCalledFromInsideEvent boolean? If true, skips mq.doevents during nav.
-function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideEvent)
+---@param bNoWait boolean? If true, issues the nav and returns immediately (skips the wait loop and trailing stick).
+function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideEvent, bNoWait)
     if bCalledFromInsideEvent == nil then bCalledFromInsideEvent = false end
 
     if not Config:GetSetting('DoAutoEngage') then return end
@@ -187,8 +187,9 @@ function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideE
     end
 
     if mq.TLO.Navigation.PathExists("id " .. tostring(targetId) .. " distance " .. tostring(distance))() then
+        Globals.CombatNavTargetId = targetId
         Movement:DoNav(false, "id %d distance=%d log=off lineofsight=on", targetId, distance or 15)
-        while mq.TLO.Navigation.Active() and mq.TLO.Navigation.Velocity() > 0 do
+        while not bNoWait and mq.TLO.Navigation.Active() and mq.TLO.Navigation.Velocity() > 0 do
             mq.delay(100)
             if not bCalledFromInsideEvent then
                 mq.doevents()
@@ -198,7 +199,7 @@ function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideE
     else
         Movement:MoveToSpawnId(targetId, distance)
 
-        while mq.TLO.MoveTo.Moving() and not mq.TLO.MoveUtils.Stuck() do
+        while not bNoWait and mq.TLO.MoveTo.Moving() and not mq.TLO.MoveUtils.Stuck() do
             mq.delay(100)
             if not bCalledFromInsideEvent then
                 mq.doevents()
@@ -207,7 +208,7 @@ function Movement:NavInCombat(targetId, distance, bDontStick, bCalledFromInsideE
         end
     end
 
-    if not bDontStick then
+    if not bDontStick and not bNoWait then
         self:DoStick(targetId)
     end
 end

@@ -1,20 +1,20 @@
 -- Sample Basic Class Module
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require('utils.globals')
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
-local Combat    = require("utils.combat")
-local Casting   = require("utils.casting")
-local Ui        = require("utils.ui")
-local Comms     = require("utils.comms")
-local Tables    = require("utils.tables")
-local Strings   = require("utils.strings")
-local Logger    = require("utils.logger")
-local Modules   = require("utils.modules")
-local Events    = require("utils.events")
 local Icons     = require('mq.ICONS')
 local Base      = require("modules.base")
+local Casting   = require("utils.casting")
+local Combat    = require("utils.combat")
+local Comms     = require("utils.comms")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Events    = require("utils.events")
+local Globals   = require('utils.globals')
+local Logger    = require("utils.logger")
+local Modules   = require("utils.modules")
+local Strings   = require("utils.strings")
+local Tables    = require("utils.tables")
+local Targeting = require("utils.targeting")
+local Ui        = require("utils.ui")
 
 require('utils.datatypes')
 
@@ -380,6 +380,16 @@ function Module:CharmNow(charmId, useAA)
 
 	mq.doevents()
 
+	if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS and mq.TLO.Pet.ID() > 0 then
+		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Success", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
+			Config:GetSetting('CharmAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+	else
+		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Failed", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
+			Config:GetSetting('CharmAnnounce'),
+			Config:GetSetting('AnnounceToRaidIfInRaid'))
+	end
+
+	mq.doevents()
 	Targeting.SetTarget(currentTargetID)
 end
 
@@ -629,6 +639,7 @@ function Module:GiveTime()
 
 	if not Core.IsCharming() then return end
 
+	if mq.TLO.Navigation.Active() or mq.TLO.MoveTo.Moving() then return end
 	-- dead... whoops
 	if mq.TLO.Me.Hovering() then return end
 

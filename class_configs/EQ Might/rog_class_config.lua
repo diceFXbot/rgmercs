@@ -1,11 +1,11 @@
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require("utils.globals")
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
 local Casting   = require("utils.casting")
-local Strings   = require("utils.strings")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Globals   = require("utils.globals")
 local Logger    = require("utils.logger")
+local Strings   = require("utils.strings")
+local Targeting = require("utils.targeting")
 
 return {
     _version          = "2.2 - EQ Might",
@@ -57,10 +57,12 @@ return {
             "Thief's Eyes", -- Level 68
         },
         ['Kinesthetics'] = {
+            "Twinblade Discipline",    -- Level 67 EQM Custom
             "Kinesthetics Discipline", -- Level 57
         },
         ['Duelist'] = {
-            "Duelist Discipline", -- Level 59
+            "Assassin Discipline", -- Level 70
+            "Duelist Discipline",  -- Level 59
         },
         ['ChanceDisc'] = {
             "Twisted Chance Discipline", -- Level 65
@@ -200,6 +202,9 @@ return {
             {
                 name = "Duelist",
                 type = "Disc",
+                cond = function(self, discSpell, target)
+                    return not Core.IsWarden()
+                end,
             },
             {
                 name = "ChanceDisc",

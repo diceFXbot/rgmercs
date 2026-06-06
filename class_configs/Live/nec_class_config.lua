@@ -9,12 +9,12 @@
 -- towards the top of the list.
 
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Comms        = require("utils.comms")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
+local Comms        = require("utils.comms")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     _version            = "1.1 - Live",
@@ -27,6 +27,13 @@ local _ClassConfig = {
         IsRezing   = function() return Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0 end,
         CanCharm   = function() return true end,
         IsCharming = function() return (Config:GetSetting('CharmOn') and mq.TLO.Pet.ID() == 0) end,
+    },
+    ['PetPosition']     = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function()
+            local cdAA = mq.TLO.Me.AltAbility("Companion's Discipline")
+            return (cdAA and cdAA.Rank() or 0) >= 7 and "Companion's Discipline"
+        end,
     },
     ['Themes']          = {
         ['DPS'] = {
@@ -912,7 +919,7 @@ local _ClassConfig = {
                 cond = function(self, spell)
                     return Config:GetSetting('DoLich') and Casting.SelfBuffCheck(spell) and
                         (not Config:GetSetting('DoUnity') or not Casting.AAReady("Mortifier's Unity")) and
-                        mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana')
+                        mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() <= Config:GetSetting('StartLichMana')
                 end,
             },
             {
@@ -1021,8 +1028,8 @@ local _ClassConfig = {
                 name = "ManaDrain",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return not Casting.IHaveBuff(spell.Name() .. " Recourse") and
-                        (mq.TLO.Target.PctMana() or -1) > 0 and mq.TLO.Group.LowMana(40)() > 2
+                    if not spell or not spell() then return false end
+                    return Casting.IHaveBuff(spell.Name() .. " Recourse") and (mq.TLO.Target.PctMana() or -1) > 0 and mq.TLO.Group.LowMana(40)() > 2
                 end,
             },
             {
@@ -1546,7 +1553,7 @@ local _ClassConfig = {
             Tooltip = "1 = War, 2 = Rog",
             Type = "Combo",
             ComboOptions = { 'War', 'Rog', },
-            Default = 2,
+            Default = function() return Core.GetResolvedActionMapItem('RogPetSpell') and 2 or 1 end,
             Min = 1,
             Max = 2,
             RequiresLoadoutChange = true,

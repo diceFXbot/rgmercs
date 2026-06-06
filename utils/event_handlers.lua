@@ -1,16 +1,16 @@
 local mq          = require('mq')
-local Config      = require('utils.config')
-local Globals     = require('utils.globals')
-local Modules     = require("utils.modules")
-local Core        = require("utils.core")
-local Combat      = require("utils.combat")
 local Casting     = require("utils.casting")
-local Targeting   = require("utils.targeting")
-local Comms       = require("utils.comms")
-local Logger      = require("utils.logger")
-local Movement    = require("utils.movement")
 local ClassLoader = require('utils.classloader')
+local Combat      = require("utils.combat")
+local Comms       = require("utils.comms")
+local Config      = require('utils.config')
+local Core        = require("utils.core")
+local Globals     = require('utils.globals')
+local Logger      = require("utils.logger")
+local Modules     = require("utils.modules")
+local Movement    = require("utils.movement")
 local Strings     = require("utils.strings")
+local Targeting   = require("utils.targeting")
 
 
 -- [ CANT SEE HANDLERS ] --
@@ -34,7 +34,7 @@ mq.event("CantSee", "You cannot see your target.", function()
     else
         if Config:GetSetting('HandleCantSeeTarget') then
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') or haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() or haterCount > 0 then
                 local helpers = Core.GetHelpers()
                 if helpers and helpers.combatNav then
                     Logger.log_debug("CantSee: \ayWe are in COMBAT and Cannot see our target - using custom combatNav!")
@@ -62,7 +62,7 @@ mq.event("CantSee", "You cannot see your target.", function()
                             end
 
                             Logger.log_debug("CantSee: Can't See target (%s [%d]). Naving to %d away.", target.CleanName() or "", target.ID(), desiredDistance)
-                            Movement:NavInCombat(target.ID(), desiredDistance, false, true)
+                            Movement:NavInCombat(target.ID(), desiredDistance, false, true, true)
                         end
                     end
                 end
@@ -111,7 +111,7 @@ mq.event("TooClose", "Your target is too close to use a ranged weapon!", functio
     else
         if Config:GetSetting('HandleTooClose') then
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
                 Logger.log_debug("TooCloseHandler: Pull State not detected, using Combat Nav.")
                 local helpers = Core.GetHelpers()
                 if helpers and helpers.combatNav then
@@ -157,9 +157,9 @@ local function tooFarHandler()
         if Config:GetSetting('HandleTooFar') then
             local helpers = Core.GetHelpers()
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and haterCount > 0 then
+            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
                 if helpers and helpers.combatNav then
-                    Core.SafeCallFunc("Custom Nav", helpers.combatNav, true)
+                    Core.SafeCallFunc("Custom Nav", helpers.combatNav)
                 elseif Config:GetSetting('DoMelee') then
                     Logger.log_debug("TooFar: \ayWe are in COMBAT and too far from our target!")
                     if Config:GetSetting('DoAutoEngage') and Combat.OkToEngage(target.ID() or 0) then
@@ -177,7 +177,7 @@ local function tooFarHandler()
                         else
                             local navDist = maxRange * 0.7
                             Logger.log_debug("TooFar: Too Far from Target (%s [%d]). Naving to %d away.", target.CleanName() or "", target.ID() or 0, navDist)
-                            Movement:NavInCombat(target.ID(), navDist, false, true)
+                            Movement:NavInCombat(target.ID(), navDist, false, true, true)
                         end
                     else
                         Logger.log_debug("TooFar event detected, but we are not ok to engage or autoengage is disabled.")

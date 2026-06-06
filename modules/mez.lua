@@ -1,18 +1,18 @@
 -- Sample Basic Class Module
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require('utils.globals')
-local Combat    = require("utils.combat")
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
+local Base      = require("modules.base")
 local Casting   = require("utils.casting")
+local Combat    = require("utils.combat")
 local Comms     = require("utils.comms")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local Events    = require("utils.events")
+local Globals   = require('utils.globals')
+local Logger    = require("utils.logger")
 local Modules   = require("utils.modules")
 local Strings   = require("utils.strings")
 local Tables    = require("utils.tables")
-local Logger    = require("utils.logger")
-local Events    = require("utils.events")
-local Base      = require("modules.base")
+local Targeting = require("utils.targeting")
 require('utils.datatypes')
 
 local Module   = { _version = '0.1a', _name = "Mez", _author = 'Derple', }
@@ -379,6 +379,16 @@ function Module:MezNow(mezId, useAE, useAA)
             Casting.UseAA("Dirge of the Sleepwalker", mezId)
 
             mq.doevents('ImmuneMez')
+            if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
+                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), "AA:Dirge of the Sleepwalker"), Config:GetSetting('MezAnnounceGroup'),
+                    Config:GetSetting('MezAnnounce'),
+                    Config:GetSetting('AnnounceToRaidIfInRaid'))
+            else
+                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Failed", mq.TLO.Spawn(mezId).CleanName(), "AA:Dirge of the Sleepwalker"), Config:GetSetting('MezAnnounceGroup'),
+                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+            end
+
+            mq.doevents('ImmuneMez')
             return
         end
 
@@ -421,6 +431,14 @@ function Module:MezNow(mezId, useAE, useAA)
 
             -- In case they're mez immune
             mq.doevents('ImmuneMez')
+
+            if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
+                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), mezSpell.RankName()), Config:GetSetting('MezAnnounceGroup'),
+                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+            else
+                Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Failed", mq.TLO.Spawn(mezId).CleanName(), mezSpell.RankName()), Config:GetSetting('MezAnnounceGroup'),
+                    Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+            end
         end
 
         mq.doevents('ImmuneMez')
@@ -746,6 +764,7 @@ function Module:GiveTime()
 
     if not Core.IsMezzing() then return end
 
+    if mq.TLO.Navigation.Active() or mq.TLO.MoveTo.Moving() then return end
     -- dead... whoops
     if mq.TLO.Me.Hovering() then return end
 

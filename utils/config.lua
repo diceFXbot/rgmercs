@@ -1,12 +1,12 @@
 local mq       = require('mq')
-local Modules  = require("utils.modules")
-local Tables   = require("utils.tables")
-local Strings  = require("utils.strings")
-local Logger   = require("utils.logger")
-local Comms    = require("utils.comms")
 local Set      = require("mq.Set")
+local Comms    = require("utils.comms")
 local Files    = require("utils.files")
 local Globals  = require("utils.globals")
+local Logger   = require("utils.logger")
+local Modules  = require("utils.modules")
+local Strings  = require("utils.strings")
+local Tables   = require("utils.tables")
 
 local Config   = {
     _version    = '2.1.4',
@@ -918,10 +918,7 @@ Config.DefaultConfig                                     = {
             "Refer to the Named List FAQs for more details.",
         Default = true,
         ConfigType = "Advanced",
-        OnChange = function()
-            Modules.ModuleList["Named"].LastZoneID = -1
-            Modules.ModuleList["Named"]:RefreshAutoTargetProfile()
-        end,
+        OnChange = function() Modules:ExecModule("Named", "InvalidateNamedList") end,
         FAQ = "What does the Use Immune Data setting do?",
         Answer = "The RGMercs named list *may* contain known immunity data for nameds - elemental (Fire/Cold/Magic/Poison/Disease) or status (Slow/Snare/Stun). " ..
             "When this setting is enabled, RGMercs will use that data to automatically avoid casting spells those mobs are immune to.\n\n" ..
@@ -1061,7 +1058,7 @@ Config.DefaultConfig                                     = {
         Header = "Positioning",
         Category = "General Positioning",
         Index = 3,
-        Tooltip = "If Melee Combat is disabled, pin at 19 units on named with a dragon bodytype in case of possible bellycaster.",
+        Tooltip = "If Melee Combat is disabled, pin at 40 units on named with a dragon bodytype in case of possible bellycaster.",
         Default = false,
         ConfigType = "Advanced",
     },
@@ -1161,6 +1158,15 @@ Config.DefaultConfig                                     = {
         FAQ = "I want to control my character's movement but still have it use abilities, how can I do that?",
         Answer =
         "If you enable Manual Mode, it will disable all automated movement options for your character, but will still allow it to use abilities as normal. This is ideal for those who want to control their character's positioning manually, but still want to benefit from the spell and item usage of RGMercs. Please note that enabling this will also disable some features that rely on movement automation, such as handling 'cannot see target' messages or auto-facing the target in combat.",
+    },
+    ['DoPetPositioningBeta']       = {
+        DisplayName = "Reposition Pet",
+        Group = "Combat",
+        Header = "Positioning",
+        Category = "General Positioning",
+        Index = 10,
+        Tooltip = "Use summon and move AA to reposition your pet to avoid ripostes.",
+        Default = false, --flip to true after beta period
     },
 
     -- Positioning/Tank
@@ -3920,6 +3926,10 @@ end
 --- @param listName string The setting name of the zone-keyed list.
 --- @param zoneKey string? Optional zone short name (lowercase). Defaults to current zone.
 function Config:ZoneListAdd(name, listName, zoneKey)
+    if not name or name == "" then
+        Logger.log_error("\ar%s Add: this command requires a valid argument!", listName)
+        return
+    end
     zoneKey = zoneKey or (mq.TLO.Zone.ShortName() or ""):lower()
     local list = self:GetSetting(listName) or {}
     list[zoneKey] = list[zoneKey] or {}

@@ -1,16 +1,20 @@
 local mq           = require('mq')
-local Config       = require('utils.config')
-local Globals      = require("utils.globals")
-local Comms        = require("utils.comms")
-local Core         = require("utils.core")
-local Targeting    = require("utils.targeting")
 local Casting      = require("utils.casting")
+local Comms        = require("utils.comms")
+local Config       = require('utils.config')
+local Core         = require("utils.core")
+local Globals      = require("utils.globals")
+local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
     _version            = "2.1 - EQ Might",
     _author             = "Algar, Derple",
     ['Modes']           = {
         'DPS',
+    },
+    ['PetPosition']     = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['ModeChecks']      = {
         CanCharm   = function() return true end,
@@ -352,6 +356,10 @@ local _ClassConfig = {
             "Minionskin",         -- Level 43 EQM Custom
             "Lesser Minionskin",  -- Level 30 EQM Custom
         },
+        ['ColdDot'] = {
+            "Chillgrave", -- Level 69 EQM Custom
+            "Frostgrave", -- Level 63 EQ Custom
+        },
     },
     ['AASets']          = {
         ['DeadSwarm'] = {
@@ -566,7 +574,7 @@ local _ClassConfig = {
                 type = "Spell",
                 load_cond = function(self) return Config:GetSetting('DoLich') end,
                 cond = function(self, spell)
-                    return mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana')
+                    return mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() <= Config:GetSetting('StartLichMana')
                 end,
             },
             {
@@ -601,6 +609,14 @@ local _ClassConfig = {
                 name = "FireDot",
                 type = "Spell",
                 load_cond = function() return Config:GetSetting('DoFireDot') > 1 end,
+                cond = function(self, spell, target)
+                    return Casting.DotSpellCheck(spell, target)
+                end,
+            },
+            {
+                name = "ColdDot",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoColdDot') end,
                 cond = function(self, spell, target)
                     return Casting.DotSpellCheck(spell, target)
                 end,
@@ -819,7 +835,7 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoLich') end,
                 active_cond = function(self, spell) return Casting.IHaveBuff(spell) end,
                 cond = function(self, spell)
-                    return mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() < Config:GetSetting('StartLichMana')
+                    return mq.TLO.Me.PctHPs() > Config:GetSetting('StopLichHP') and mq.TLO.Me.PctMana() <= Config:GetSetting('StartLichMana')
                 end,
             },
             {
@@ -940,12 +956,13 @@ local _ClassConfig = {
                 { name = "ScentDebuff2", cond = function(self) return Config:GetSetting('ScentDebuffUse') == 3 end, },
                 { name = "PoisonNuke", },
                 { name = "FireDot",      cond = function(self) return Config:GetSetting('DoFireDot') > 1 end, },
-                { name = "FireDot2",     cond = function(self) return Config:GetSetting('DoFireDot') > 2 end, },
-                { name = "FireDot3",     cond = function(self) return Config:GetSetting('DoFireDot') > 3 end, },
+                { name = "ColdDot",      cond = function(self) return Config:GetSetting('DoColdDot') end, },
                 { name = "CurseDot",     cond = function(self) return Config:GetSetting('DoCurseDot') > 1 end, },
-                { name = "CurseDot2",    cond = function(self) return Config:GetSetting('DoCurseDot') > 2 end, },
                 { name = "PoisonDot",    cond = function(self) return Config:GetSetting('DoPoisonDot') > 1 end, },
+                { name = "FireDot2",     cond = function(self) return Config:GetSetting('DoFireDot') > 2 end, },
+                { name = "CurseDot2",    cond = function(self) return Config:GetSetting('DoCurseDot') > 2 end, },
                 { name = "PoisonDot2",   cond = function(self) return Config:GetSetting('DoPoisonDot') > 2 end, },
+                { name = "FireDot3",     cond = function(self) return Config:GetSetting('DoFireDot') > 3 end, },
                 { name = "DurationTap",  cond = function(self) return Config:GetSetting('DoDurationTap') end, },
                 { name = "PlagueDot",    cond = function(self) return Config:GetSetting('DoPlagueDot') end, },
                 { name = "LichSpell",    cond = function(self) return Config:GetSetting('DoLich') end, },
@@ -979,7 +996,7 @@ local _ClassConfig = {
             Tooltip = "Choose which pet you wish to summon. Please note that rogue pets have uneven spacing at lower levels.",
             Type = "Combo",
             ComboOptions = { 'War', 'Rog', },
-            Default = 1,
+            Default = function() return Core.GetResolvedActionMapItem('RogPetSpell') and 2 or 1 end,
             Min = 1,
             Max = 2,
             RequiresLoadoutChange = true,
@@ -1119,6 +1136,16 @@ local _ClassConfig = {
             Category = "Over Time",
             Index = 104,
             Tooltip = "Use your plague (disease) line of dots.",
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
+        ['DoColdDot']         = {
+            DisplayName = "Do Cold Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 105,
+            Tooltip = "Use your grave (cold) line of dots.",
             RequiresLoadoutChange = true,
             Default = true,
         },

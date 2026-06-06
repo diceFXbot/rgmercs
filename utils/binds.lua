@@ -1,15 +1,15 @@
 local mq          = require('mq')
-local Config      = require('utils.config')
-local Globals     = require('utils.globals')
-local Core        = require("utils.core")
-local Comms       = require("utils.comms")
-local Combat      = require("utils.combat")
-local Modules     = require("utils.modules")
-local Targeting   = require("utils.targeting")
-local Strings     = require("utils.strings")
-local Logger      = require("utils.logger")
-local ConfigShare = require("utils.rg_config_share")
 local Set         = require('mq.set')
+local Combat      = require("utils.combat")
+local Comms       = require("utils.comms")
+local Config      = require('utils.config')
+local ConfigShare = require("utils.rg_config_share")
+local Core        = require("utils.core")
+local Globals     = require('utils.globals')
+local Logger      = require("utils.logger")
+local Modules     = require("utils.modules")
+local Strings     = require("utils.strings")
+local Targeting   = require("utils.targeting")
 
 local Binds       = { _version = '0.1a', _name = "Binds", _author = 'Derple', }
 
@@ -341,6 +341,10 @@ Binds.Handlers    = {
                 Globals.BackOffFlag = true
             else
                 Globals.BackOffFlag = false
+            end
+
+            if Globals.BackOffFlag and Config:GetSetting('DoPetCommands') and mq.TLO.Me.Pet.ID() > 0 then
+                Core.DoCmd("/squelch /pet back off")
             end
 
             Logger.log_info("\ayBackoff \awset to: %s", Strings.BoolToColorString(Globals.BackOffFlag))

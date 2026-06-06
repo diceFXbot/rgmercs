@@ -1,13 +1,13 @@
 local mq                    = require('mq')
-local Config                = require('utils.config')
-local Globals               = require('utils.globals')
-local Core                  = require('utils.core')
-local Comms                 = require("utils.comms")
-local Modules               = require("utils.modules")
-local Logger                = require("utils.logger")
-local Strings               = require("utils.strings")
-local Movement              = require("utils.movement")
 local Set                   = require('mq.set')
+local Comms                 = require("utils.comms")
+local Config                = require('utils.config')
+local Core                  = require('utils.core')
+local Globals               = require('utils.globals')
+local Logger                = require("utils.logger")
+local Modules               = require("utils.modules")
+local Movement              = require("utils.movement")
+local Strings               = require("utils.strings")
 
 local Targeting             = { _version = '1.0', _name = "Targeting", _author = 'Derple', }
 Targeting.__index           = Targeting
@@ -81,6 +81,16 @@ function Targeting.TargetBodyIs(target, type)
 
     local targetBody = (target() and target.Body() and target.Body.Name()) or "none"
     return targetBody:lower() == type:lower()
+end
+
+-- Returns true if the proper body type for magician/druid anti-summoned spells
+function Targeting.IsSummoned(target)
+    if not target then target = mq.TLO.Target end
+    if not target or not target() then return false end
+
+    local targetBody = target.Body() and target.Body.Name() or "none"
+
+    return targetBody:lower() == "construct" or targetBody:lower() == "undead pet"
 end
 
 --- Returns true if target's class short name is in classTable (string or array).

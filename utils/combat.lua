@@ -1,17 +1,17 @@
 local mq        = require('mq')
+local Set       = require('mq.set')
+local Comms     = require("utils.comms")
 local Config    = require('utils.config')
+local Core      = require("utils.core")
+local DanNet    = require('lib.dannet.helpers')
+local Events    = require("utils.events")
 local Globals   = require('utils.globals')
 local Logger    = require("utils.logger")
-local Modules   = require("utils.modules")
 local Math      = require("utils.math")
-local Comms     = require("utils.comms")
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
-local Set       = require('mq.set')
-local Strings   = require("utils.strings")
+local Modules   = require("utils.modules")
 local Movement  = require("utils.movement")
-local Events    = require("utils.events")
-local DanNet    = require('lib.dannet.helpers')
+local Strings   = require("utils.strings")
+local Targeting = require("utils.targeting")
 
 local Combat    = { _version = '1.0', _name = "Combat", _author = 'Derple', }
 Combat.__index  = Combat
@@ -124,7 +124,7 @@ function Combat.EngageTarget(autoTargetId)
                     Logger.log_verbose("EngageTarget(): Target is too far! %d>%d attempting to nav to it.", target.Distance3D(),
                         target.MaxRangeTo())
 
-                    Movement:NavInCombat(autoTargetId, Targeting.GetTargetMaxRangeTo(target), false)
+                    Movement:NavInCombat(autoTargetId, Targeting.GetTargetMaxRangeTo(target), false, false, true)
                 else
                     Logger.log_verbose("EngageTarget(): Target is in range moving to combat")
                     if mq.TLO.Navigation.Active() then
@@ -164,7 +164,7 @@ function Combat.EngageTarget(autoTargetId)
 
                 if not Config:GetSetting('DoMelee') and Config:GetSetting("BellyCastStick") and Globals.Constants.RGCasters:contains(mq.TLO.Me.Class.ShortName()) and target.Body.Name() == "Dragon" and Globals.AutoTargetIsNamed then
                     Logger.log_verbose("\awNOTICE:\ax EngageTarget(%s) Dragon Named detected, sticking for belly cast.", Targeting.GetTargetCleanName())
-                    Movement:DoStickCmd("pin 19")
+                    Movement:DoStickCmd("pin 40")
                 end
 
                 if Core.MyClassIs("RNG") and not mq.TLO.Me.AutoFire() then
@@ -705,6 +705,11 @@ function Combat.FindBestAutoTarget(validateFn)
     end
 end
 
+---@return boolean
+function Combat.CombatNavActive()
+    return mq.TLO.Navigation.Active() and Globals.CombatNavTargetId > 0 and Globals.CombatNavTargetId == Globals.AutoTargetID
+end
+
 --- Validates if it is acceptable to engage with a target based on its ID.
 --- This function performs pre-validation checks to determine if engagement is permissible.
 ---
@@ -848,6 +853,8 @@ end
 ---@param targetId number The ID of the target to attack.
 ---@param sendSwarm boolean Whether to send a swarm attack or not.
 function Combat.PetAttack(targetId, sendSwarm)
+    if Globals.BackOffFlag then return end
+
     local pet = mq.TLO.Me.Pet
 
     local target = mq.TLO.Spawn(targetId)
@@ -910,7 +917,7 @@ function Combat.AutoCampCheck(tempConfig, bCalledFromInsideEvent)
 
     local distanceToCamp = Math.GetDistance(me.Y(), me.X(), tempConfig.AutoCampY, tempConfig.AutoCampX)
 
-    if distanceToCamp >= 400 then
+    if distanceToCamp >= 400 and not Config:GetSetting('DoPull') then
         Comms.PrintGroupMessage("I'm over 400 units from camp, not returning!")
         Core.DoCmd("/rgl campoff")
         return

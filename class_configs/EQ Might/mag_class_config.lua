@@ -1,13 +1,13 @@
 local mq        = require('mq')
-local Config    = require('utils.config')
-local Globals   = require('utils.globals')
-local Core      = require("utils.core")
-local Targeting = require("utils.targeting")
 local Casting   = require("utils.casting")
-local Comms     = require("utils.comms")
-local DanNet    = require('lib.dannet.helpers')
-local Logger    = require("utils.logger")
 local Combat    = require("utils.combat")
+local Comms     = require("utils.comms")
+local Config    = require('utils.config')
+local Core      = require("utils.core")
+local DanNet    = require('lib.dannet.helpers')
+local Globals   = require('utils.globals')
+local Logger    = require("utils.logger")
+local Targeting = require("utils.targeting")
 
 _ClassConfig    = {
     _version          = "1.4 - EQ Might",
@@ -18,6 +18,10 @@ _ClassConfig    = {
     ['Modes']         = {
         'DPS',
         'PBAE',
+    },
+    ['PetPosition']   = {
+        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Themes']        = {
         ['DPS'] = {
@@ -793,7 +797,7 @@ _ClassConfig    = {
                 name = "Turn Summoned",
                 type = "AA",
                 cond = function(self, aaName, target)
-                    return Targeting.TargetBodyIs(target, "Undead Pet")
+                    return Targeting.IsSummoned(target)
                 end,
             },
         },
