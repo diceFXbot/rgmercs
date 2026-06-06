@@ -1,5 +1,28 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+## マージ固定ルール（kesh-custom <- origin/main）
+
+- 目的:
+  - main 追従を維持しつつ、kesh 独自仕様を毎回同じ方針で保持する。
+
+- 固定方針:
+  - `utils/casting.lua` は kesh-custom 側（ours）を優先して維持する。
+  - `class_configs/` は origin/main 側（theirs）を優先して取り込む。
+  - 上記以外は原則 main 取り込みを優先し、必要な kesh 差分のみ明示的に残す。
+
+- `utils/casting.lua` で必ず維持する kesh 独自仕様:
+  - `UseSpell` / `UseAA` / `UseItem` の `bAsync`
+  - `SetActiveCastMonitor` / `IsCastBusy` ベースの非同期フロー
+  - `ITEM_SOFT_COOLDOWN_SEC` / `GetItemSoftCooldownRemaining` / `ItemReady` 連携
+  - `WaitCastFinish` の監視コンテキスト寄り実装
+  - `BurnMinCon` を使う `Targeting.GetXTHaterCount(false, burnMinCon)` 判定
+
+- マージ後の確認項目（必須）:
+  - 未解消競合が 0 件であること（`git diff --name-only --diff-filter=U` が空）
+  - 競合マーカーが 0 件であること（`<<<<<<<` / `=======` / `>>>>>>>`）
+  - `UseExactSpellNames` の参照が 0 件であること
+  - 上記「kesh 独自仕様」が `utils/casting.lua` に残っていること
+
 2026-05-19
 
 - EQ Might-kesh RNG: DD Proc Choice を OFF / Ice / Fire / Magic / Jolt に再設計。
