@@ -23,6 +23,116 @@
   - `UseExactSpellNames` の参照が 0 件であること
   - 上記「kesh 独自仕様」が `utils/casting.lua` に残っていること
 
+2026-06-08
+
+- Live-kesh: 全16クラスの class_configs を追加（Live ベースの kesh カスタム）。
+  - file: class_configs/Live-kesh/*
+  - detail: ENC/DRU Charm、PAL Yaulp、DRU Dot/スネア/バフ等の kesh 向け調整を Live サーバー用に分離。`Core.ScanConfigDirs` のディレクトリスキャンで選択可能。
+
+2026-06-07
+
+- ENC/DRU Charm On: トグル時に Spell Loadout を変更しない。
+  - file: modules/charm.lua, class_configs/Live-kesh/enc_class_config.lua, class_configs/Live-kesh/dru_class_config.lua
+  - detail: CharmOn から RequiresLoadoutChange を削除。CharmSpell は Spell Loadout から除外（手動メモ想定）。実行は CharmOn のみ制御。
+
+- Charm: Auto Level Range ON でも CharmMinLevel を維持（ENC/DRU/NEC 共通）。
+  - file: modules/charm.lua
+  - detail: Auto ON 時に minLevel=0 へ上書きしていた挙動を削除。GetCharmLevelRange() を追加し、UpdateCharmList / IsValidCharmTarget / ProcessCharmList / CharmNow で min/max を一貫適用。詠唱直前のレベル再チェックを追加。
+
+- Live-kesh PAL: Combat ローテの Yaulp 修正（Knight's Yaulp AA + PAL 用スペルフォールバック）。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: PAL の AA は `Knight's Yaulp`（CLR の `Yaulp` とは別名）。Yaulp V 以降は CLR 専用のため YaulpSpell は Yaulp〜IV のみ。No Spell Detected 修正。
+
+- Live-kesh DRU: SunrayDot / HordeDot / WinterFireDD に個別トグルを追加。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: DoSunrayDot / DoHordeDot / DoWinterFireDD（RequiresLoadoutChange、デフォルト ON）。OFF 時は DPS ローテ load_cond と Spell Loadout から除外。
+
+- Live-kesh DRU: SingleHPBuff（Skin like Wood 系シングル HP バフ）を追加。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: EQ Resource spell line 100060100 を ActionMap に追加。DoSingleHPBuff ON 時に GroupBuff ローテで使用。SingleHPBuffTarget（Everyone / Tank Only）で対象を選択。
+
+- RGMercs: チャームされた対象への攻撃継続を防止。
+  - file: utils/combat.lua, init.lua
+  - symptom: MA やメレーが攻撃中の Mob がチャームされてもオートアタック／ペット攻撃が止まらない。
+  - cause: OkToEngage に Charmed 判定がなく MA は IAmMA で常に通過。Combat 中は OkToEngage 失敗時に attack off もされない。
+  - fix: TargetIsCharmedSpawn（Charmed.ID / PC Master）を追加。OkToEngage・EngageTarget・PetAttack・FindAutoTarget で除外。Combat 中 DisengageCharmedTarget で attack off と pet back off。
+
+- RGMercs: 敵1体に減ったあと MA 対象へ再メズしようとする不具合を修正。
+  - file: modules/mez.lua
+  - symptom: 2体戦で1体メズ後、残り1体を MA が殴り始めると ENC が再メズしようとする。
+  - cause: UpdateMezList は MezStartCount 未満で止まるが ProcessMezList は MezTracker 残存時に継続（<=0 修正後の非対称）。
+  - fix: DoMez で GetXTHaterCount() < MezStartCount ならトラッカーをクリアして return。
+
+- Live-kesh DRU: HordeDot（Stinging Swarm 系）の Mana モード限定を解除。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: DPS ローテの HordeDot cond から Core.IsModeActive("Mana") を削除。Heal モードでも DoDot ON なら HordeDot を使用。
+
+- Live-kesh DRU: SingleDS（Shield of Thistles 系）を有効化しタンク限定で GroupBuff ローテに追加。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: ActionMap の SingleDS コメント解除。GroupDmgShield の直後に SingleDS エントリを追加し、Targeting.TargetIsATank + GroupBuffCheck で WAR/PAL/SHD のみにシングル DS を付与。
+
+- RGMercs: Med Aggro Check に現ターゲットの ToT 判定を追加。
+  - file: utils/targeting.lua
+  - symptom: DoMed=In and Out of Combat で、敵にターゲットされている（ToT が自分）のに AutoMed が Sit する。
+  - cause: ShouldBlockMedSit が PctAggro と XTHaterTargetingMe（XT→Spawn）のみ。Target 中 mob の Me.TargetOfTarget を見ていなかった。
+  - fix: CurrentTargetThreatensMe（npc/npcpet かつ Me.TargetOfTarget.ID()==Me.ID() または Target.Target==Me）を ShouldBlockMedSit に追加（最優先）。enc_class_config Emergency cond と同じ ToT パターン。
+
+- RGMercs: XTHaterTargetingMe の nil Target クラッシュを修正。
+  - file: utils/targeting.lua
+  - symptom: ShouldBlockMedSit → AutoMed 実行時に targeting.lua attempt to index field 'Target' (a nil value)。
+  - cause: XT hater の Spawn は有効でも Target TLO が nil のことがある。hater.Target.ID() を無防備に参照。
+  - fix: TargetOfTarget と同様に hater.Target and hater.Target.ID の安全参照に変更。
+
+- RGMercs: メズ詠唱中に DD ローテが割り込む不具合を修正。
+  - file: utils/casting.lua, modules/mez.lua
+  - symptom: 複数 mob 時、メズ詠唱中に async DD（AutoTarget 向け）が割り込みメズが止まる。
+  - cause: Mez が DD へ StopCast しても ActiveCastContext（DD 用・AutoTarget）が残存。次 tick の TickActiveCastMonitor がメズ詠唱に DD 向け InterruptCastIfNeeded を誤適用し StopCast → Class が DD 再発行。
+  - fix: Casting.StopCast() を追加（無条件で ActiveCastContext = nil）。Mez・InterruptCastIfNeeded・TickActiveCastMonitor から共通利用。
+
+- RGMercs: DoMed 戦闘中メドの「座る」判定に Med Aggro Check を適用。
+  - file: utils/targeting.lua, utils/casting.lua
+  - symptom: In and Out of Combat かつ Med Aggro Check ON でも、立っている状態から毎 tick Sit し続ける（敵にターゲットされているが aggro% が閾値未満）。
+  - cause: AutoMed の早期 return と座り中の起立のみ IHaveAggro を参照。立ってから座る分岐にはアグロ判定が無かった。IHaveAggro は PctAggro のみで「自分を Target している hater」を見ていない。
+  - fix: ShouldBlockMedSit（IHaveAggro または XTHaterTargetingMe）を追加。AutoMed の早期 return・起立・新規 sit の3箇所で共有。
+
+- RGMercs: DoMed「In and Out of Combat」戦闘中の詠唱 interrupt 連発を修正。
+  - file: init.lua, utils/casting.lua
+  - symptom: DoMed=3 で戦闘中、ローテ詠唱の合間に AutoMed が Sit し interrupt が連発（2026-05-22 の IsCastBusy 対策だけでは不足）。
+  - cause: init ループで AutoMed が GiveTime（ヒール/DPS ローテ）より先に実行され、mana 閾値で毎 tick Sit 試行。InMedState 維持で詠唱開始直後にも再 sit。
+  - fix: 戦闘中 AutoMed を GiveTime 後に移動。戦闘中の新規 sit に OkayToNotHeal ガードと Memorizing チェックを追加。
+
+- RGMercs: Manual Mode トグルコマンドを追加。
+  - file: utils/binds.lua
+  - detail: 戦闘 Positioning の Manual Mode（設定名 ManualMode）を ON/OFF 交互に切り替える専用コマンドを追加。従来は /rgl set ManualMode true|false のみ。
+  - command: /rgl togglemanualmode（自キャラ）、/rgl togglemanualmodeall（DanNet 全クライアント）
+  - behavior: Manual Mode ON で DoAutoNav / DoAutoStick / FaceTarget / HandleCantSee・TooClose・TooFar を自動オフ。スキル・ローテは継続。切替時に Manual Mode has been enabled/disabled をログ出力。
+
+- RGMercs: Drag オフ・Rez オンでも死体を引き寄せ続ける不具合を修正。
+  - file: utils/core.lua, utils/casting.lua, utils/config.lua, modules/drag.lua
+  - symptom: DoDrag および Drag サブ設定をすべてオフにしても /corpse が続く（リズクラスで DoRez オン時に顕著）。
+  - cause: Drag モジュール（DoDrag）とは別に、リズ判定 Casting.OkayToRez() が 25 単位超の死体へ無条件で /corpse していた。
+  - fix: (1) 新設定 DoRezCorpseDrag（Recovery > Rezzing、デフォルト false）を追加しリズ用引き寄せを独立化。(2) OkayToRez は DoRezCorpseDrag が true のときのみ /corpse。(3) Core.DoCmd で /corpse を一括ガード。DoDrag と DoRezCorpseDrag が両方 false なら drag.lua / OkayToRez 含め全経路でブロック。
+
+- RGMercs: メズ ProcessMezList の Spawn.Mezzed 参照クラッシュを修正。
+  - file: modules/mez.lua
+  - detail: Spawn TLO では Mezzed() を関数呼び出しできない。casting.lua と同様 spawn.Mezzed.ID() の安全参照に変更。
+
+- RGMercs: メズ切れ後に再メズしない場合を修正。
+  - file: modules/mez.lua
+  - detail: ProcessMezList の MezTracker<=1 早期 return を空リスト時のみに変更（2体戦で MA 除外後にメズ対象1体が残ると再メズ処理が永久停止していた）。あわせて未メズ mob はトラッカー duration 待ちせず再メズ判定へ進むよう修正。
+
+- Live-kesh DRU: スネアを Alpha (Live) 版と同様の専用 Snare ローテに変更。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: Debuff ローテから Entrap/SnareSpell を分離。Snare ローテ追加（DoSnare / SnareCount / 非ネームド / XT 数上限 / OkayToNotHeal）。DoSnare デフォルト false、SnareCount 設定追加。Spell メモ条件を DoSnare and not Entrap に統一。
+
+- Live-kesh DRU: WinterFireDD を Heal モードでも使用可能に。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: DPS ローテの WinterFireDD 条件から Core.IsModeActive("Mana") 制限を削除（DoFire + OkayToNuke のみ）。
+
+- Live-kesh PAL: Healing Rotations が読み込まれない場合を修正。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: HealRotationOrder の二重ネスト（HealRotationOrder キー内に再度 HealRotationOrder）を解消。ipairs で列挙できず MainHeal 等が TouchHeal（Minor Healing 等）が動作・表示されなかった。
+
 2026-05-19
 
 - EQ Might-kesh RNG: DD Proc Choice を OFF / Ice / Fire / Magic / Jolt に再設計。
@@ -43,9 +153,9 @@
   - file: class_configs/EQ Might-kesh/rng_class_config.lua
   - detail: Emu では近接でも TooClose メッセージが出ないため BowNavDistance を 30 未満に設定可能に（Min 10）。combatNav の tooClose 固定 30 を min(30, BowNavDistance*0.7) に変更（近距離弓設定時に不要な moveback を抑制）。
 
-- RGMercs: med 中バフ詠唱時の AutoMed 再 sit 防止。
+- RGMercs: med 中バフ詠唱時の AutoMed 再 sit 防止（部分修正）。
   - file: utils/casting.lua
-  - detail: async で ActionPrep 後 /cast 直後 Me.Casting() 未更新の tick に AutoMed が InMedState で me.Sit() し詠唱不能に。AutoMed の early return と sit 条件に IsCastBusy() を追加。
+  - detail: async で ActionPrep 後 /cast 直後 Me.Casting() 未更新の tick に AutoMed が InMedState で me.Sit() し詠唱不能に。AutoMed の early return と sit 条件に IsCastBusy() を追加。DoMed=3 戦闘中のローテ合間 interrupt は 2026-06-07 の GiveTime 後 AutoMed 移動で対応。
 
 - RGMercs: async 詠唱の二重 /cast 防止（詠唱やり直し）。
   - file: utils/casting.lua, utils/rotation.lua, modules/class.lua, init.lua

@@ -357,6 +357,63 @@ function Targeting.IHaveAggro(pct)
     return false
 end
 
+--- Returns true if xtSpawn is an active XTarget hater entry.
+---@param xtSpawn MQSpawn|nil
+---@return boolean
+local function isXTHaterEntry(xtSpawn)
+    if not xtSpawn or not xtSpawn() or (xtSpawn.ID() or 0) <= 0 then return false end
+    return xtSpawn.Aggressive() or (xtSpawn.TargetType() or ""):lower() == "auto hater" or xtSpawn.ID() == Globals.ForceTargetID
+end
+
+--- Returns true if the current in-game target is an NPC/NPC pet targeting the player.
+--- Uses Me.TargetOfTarget (same pattern as enc_class_config Emergency cond) and Target.Target.
+---@return boolean
+function Targeting.CurrentTargetThreatensMe()
+    local me = mq.TLO.Me
+    local target = mq.TLO.Target
+
+    if not target() or target.Dead() or Targeting.TargetIsType("corpse", target) then return false end
+    if not (Targeting.TargetIsType("npc", target) or Targeting.TargetIsType("npcpet", target)) then return false end
+
+    if (me.TargetOfTarget.ID() or 0) == me.ID() then return true end
+
+    local targetTargetId = target.Target and target.Target.ID and target.Target.ID() or 0
+    if targetTargetId == me.ID() then return true end
+
+    return false
+end
+
+--- Returns true if any XT hater spawn is directly targeting the player.
+---@return boolean
+function Targeting.XTHaterTargetingMe()
+    local meId = mq.TLO.Me.ID()
+    local xtCount = mq.TLO.Me.XTarget()
+
+    for i = 1, xtCount do
+        local xtSpawn = mq.TLO.Me.XTarget(i)
+        if isXTHaterEntry(xtSpawn) then
+            local hater = mq.TLO.Spawn(xtSpawn.ID())
+            if hater() then
+                local haterTargetId = hater.Target and hater.Target.ID and hater.Target.ID() or 0
+                if haterTargetId == meId then return true end
+                local totId = hater.TargetOfTarget and hater.TargetOfTarget.ID and hater.TargetOfTarget.ID() or 0
+                if totId == meId then return true end
+            end
+        end
+    end
+
+    return false
+end
+
+--- True when Med Aggro Check should block sitting (combat meditate).
+---@return boolean
+function Targeting.ShouldBlockMedSit()
+    if not Config:GetSetting('MedAggroCheck') then return false end
+    if Targeting.CurrentTargetThreatensMe() then return true end
+    if Targeting.IHaveAggro(Config:GetSetting('MedAggroPct')) then return true end
+    return Targeting.XTHaterTargetingMe()
+end
+
 --- Returns true if spawn meets minimum con color (Globals.Constants.ConColors index).
 ---@param spawn MQSpawn|MQTarget? Spawn to check.
 ---@param minConLevel number? Minimum con index (1=Grey … 7=Red); nil or 1 = any.

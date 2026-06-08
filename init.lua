@@ -447,9 +447,6 @@ local function Main()
             Core.DoCmd("/squelch /face fast")
         end
 
-        if Config:GetSetting('DoMed') == 3 then
-            Casting.AutoMed()
-        end
     else
         if Globals.CurrentState ~= "Downtime" then
             Logger.log_debug("Switching to Downtime state.")
@@ -520,6 +517,8 @@ local function Main()
 
     -- Handles state for when we're in combat
     if Globals.CurrentState == "Combat" then
+        Combat.DisengageCharmedTarget()
+
         if ((Globals.GetTimeSeconds() - Globals.LastPetCmd) > 2) then
             Globals.LastPetCmd = Globals.GetTimeSeconds()
             if Config:GetSetting('DoPetCommands') and mq.TLO.Pet.ID() > 0 and Targeting.GetTargetPctHPs(Targeting.GetAutoTarget()) <= Config:GetSetting('PetEngagePct') then
@@ -592,6 +591,11 @@ local function Main()
     end
 
     Modules:ExecAll("GiveTime")
+
+    -- In-combat meditate runs after rotations so heals/DPS fire before sit attempts.
+    if Globals.CurrentState == "Combat" and Config:GetSetting('DoMed') == 3 then
+        Casting.AutoMed()
+    end
 
     mq.doevents()
     Logger.log_super_verbose("Completed Main loop.")

@@ -103,6 +103,8 @@ function Combat.EngageTarget(autoTargetId)
 
     local target = mq.TLO.Target
 
+    if Combat.TargetIsCharmedSpawn(target) then return end
+
     if (mq.TLO.Me.Feigning() or mq.TLO.Me.State():lower() == "feign") and Config:GetSetting('AutoStandFD') then
         mq.TLO.Me.Stand()
     end
@@ -668,6 +670,15 @@ function Combat.FindBestAutoTarget(validateFn)
         end
     end
 
+    if Globals.AutoTargetID > 0 and Combat.TargetIsCharmedSpawn(mq.TLO.Spawn(Globals.AutoTargetID)) then
+        Logger.log_debug("FindAutoTarget(): Clearing charmed AutoTarget %d", Globals.AutoTargetID)
+        Globals.AutoTargetID = 0
+        targetValidated = false
+        assistTargetIsNamed = false
+        Globals.AutoTargetElementalImmunities = {}
+        Globals.AutoTargetStatusImmunities = {}
+    end
+
     if Globals.AutoTargetID > 0 then
         if assistTargetIsNamed ~= nil then
             Globals.AutoTargetIsNamed = assistTargetIsNamed
@@ -710,6 +721,33 @@ function Combat.CombatNavActive()
     return mq.TLO.Navigation.Active() and Globals.CombatNavTargetId > 0 and Globals.CombatNavTargetId == Globals.AutoTargetID
 end
 
+--- Returns true if spawn is charmed (Charmed buff) or a PC-owned pet (charm pet).
+---@param spawn MQSpawn?
+---@return boolean
+function Combat.TargetIsCharmedSpawn(spawn)
+    if not (spawn and spawn()) then return false end
+    local charmedId = spawn.Charmed and spawn.Charmed.ID and spawn.Charmed.ID()
+    if charmedId and charmedId > 0 then return true end
+    if spawn.Master() and (spawn.Master.Type() or ""):lower() == "pc" then return true end
+    return false
+end
+
+--- Stops auto-attack and pet combat when the current or pet target is charmed.
+function Combat.DisengageCharmedTarget()
+    local target = mq.TLO.Target
+    if Combat.TargetIsCharmedSpawn(target) then
+        Core.DoCmd("/attack off")
+    end
+
+    local pet = mq.TLO.Me.Pet
+    if pet() and pet.ID() > 0 then
+        local petTarget = pet.Target
+        if Combat.TargetIsCharmedSpawn(petTarget) then
+            Core.DoCmd("/squelch /pet back off")
+        end
+    end
+end
+
 --- Validates if it is acceptable to engage with a target based on its ID.
 --- This function performs pre-validation checks to determine if engagement is permissible.
 ---
@@ -727,6 +765,11 @@ function Combat.OkToEngagePreValidateId(targetId)
 
     if target.Dead() then
         Logger.log_verbose("\ayOkToEngagePrevalidate check for %s(ID: %d) - Target Spawn Dead --> Not Engaging", targetName, targetId)
+        return false
+    end
+
+    if Combat.TargetIsCharmedSpawn(target) then
+        Logger.log_verbose("\ayOkToEngagePrevalidate check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
         return false
     end
 
@@ -819,6 +862,11 @@ function Combat.OkToEngage(autoTargetId)
         return false
     end
 
+    if Combat.TargetIsCharmedSpawn(target) then
+        Logger.log_verbose("\ayOkToEngage check for %s(ID: %d) - Target Charmed --> Not Engaging", targetName, targetId)
+        return false
+    end
+
     -- can only check this on engage check, and not during prevalidate, as .Mezzed is a cached buff
     if target.Mezzed() and target.Mezzed.ID() and not Config:GetSetting('AllowMezBreak') then
         Logger.log_verbose("\ayOkToEngage check for %s(ID: %d) - Target Mezzed and Allow Mez Break disabled --> Not Engaging", targetName, targetId)
@@ -861,6 +909,7 @@ function Combat.PetAttack(targetId, sendSwarm)
 
     if not target() then return end
     if pet.ID() == 0 then return end
+    if Combat.TargetIsCharmedSpawn(target) then return end
 
     if Config:GetSetting('DoPetCommands') and (not pet.Combat() or pet.Target.ID() ~= targetId) and (targetId == Globals.ForceTargetID or targetId == Globals.AutoTargetID or Targeting.TargetIsType("npc", target)) then
         Core.DoCmd("/squelch /pet attack %d", targetId)

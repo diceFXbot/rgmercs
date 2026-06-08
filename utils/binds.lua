@@ -465,6 +465,21 @@ Binds.Handlers    = {
             Logger.log_info("\agAll clients unpaused!")
         end,
     },
+    ['togglemanualmode'] = {
+        usage = "/rgl togglemanualmode",
+        about = "Toggle combat positioning Manual Mode (disables auto nav/stick/face and range handlers).",
+        handler = function()
+            Config:ToggleSetting('ManualMode')
+        end,
+    },
+    ['togglemanualmodeall'] = {
+        usage = "/rgl togglemanualmodeall",
+        about = "Toggle Manual Mode for every client running RGMercs.",
+        handler = function()
+            Config:ToggleSetting('ManualMode')
+            Core.DoCmd("/squelch /dge /rgl togglemanualmode")
+        end,
+    },
     ['rescanloadout'] = {
         usage = "/rgl rescanloadout",
         about = "Rescans your current loadout for changes.",

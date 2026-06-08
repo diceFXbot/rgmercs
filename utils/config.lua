@@ -1820,6 +1820,16 @@ Config.DefaultConfig                                     = {
         FAQ = "Why am I conning corpses? I play on a server with no exp penalty, or where we don't need to loot corpses.",
         Answer = "The Check for Previous Rez setting is enabled by default on emu, this can be adjusted on the Heal/Rez options tab.",
     },
+    ['DoRezCorpseDrag']            = {
+        DisplayName = "Drag Corpses for Rez",
+        Group = "Abilities",
+        Header = "Recovery",
+        Category = "Rezzing",
+        Index = 7,
+        Tooltip = "When enabled, rez logic may /corpse distant corpses into range before casting rez. Independent of the Drag module (DoDrag).",
+        Default = false,
+        ConfigType = "Advanced",
+    },
 
     -- Burning
     ['BurnAuto']                   = {

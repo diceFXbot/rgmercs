@@ -639,9 +639,8 @@ function Module:ProcessMezList()
 
     if not mezSpell or not mezSpell() then return end
 
-    if Tables.GetTableSize(self.TempSettings.MezTracker) <= 1 then
-        -- If we have only one spawn we're tracking, we don't need to be mezzing
-        Logger.log_debug("\ayProcessMezList(%d) :: No Mob requires mez.")
+    if Tables.GetTableSize(self.TempSettings.MezTracker) <= 0 then
+        Logger.log_debug("\ayProcessMezList() :: Mez tracker is empty.")
         return
     end
 
@@ -664,15 +663,18 @@ function Module:ProcessMezList()
                 Logger.log_debug("\ayProcessMezList(%d) :: Mob id is in immune list - removing...", id)
                 table.insert(removeList, id)
             else
-                -- Our mob is still alive, but their mez timer isn't up or they're out of x/y range
-                -- Only worry about mezzing if their mez timer less than the time it will take to cast
-                -- the mez spell. MyCastTime is in ms, timer is in deciseconds.
-                -- We already fudge the mez timer when we set it.
+                -- Recast when the mob is not mezzed, or when the tracked timer is about to expire.
+                -- MyCastTime is in ms, Mezzed.Duration is in deciseconds.
                 local spell = mezSpell
-                if data.duration > (spell.MyCastTime() / 100) or spawn.Distance() > Config:GetSetting('MezRadius') or not spawn.LineOfSight() then
-                    Logger.log_debug("\ayProcessMezList(%d) :: Timer(%s > %s) Distance(%d) LOS(%s)", id,
+                local castWindow = spell.MyCastTime() / 100
+                local mezzedId = spawn.Mezzed and spawn.Mezzed.ID and spawn.Mezzed.ID()
+                local isMezzed = mezzedId and mezzedId > 0
+                local outOfRange = spawn.Distance() > Config:GetSetting('MezRadius') or not spawn.LineOfSight()
+                if outOfRange or (isMezzed and data.duration > castWindow) then
+                    Logger.log_debug("\ayProcessMezList(%d) :: Mezzed(%s) Timer(%s > %s) Distance(%d) LOS(%s)", id,
+                        Strings.BoolToColorString(isMezzed),
                         Strings.FormatTime(data.duration / 1000),
-                        Strings.FormatTime(spell.MyCastTime() / 100), spawn.Distance() or 0,
+                        Strings.FormatTime(castWindow), spawn.Distance() or 0,
                         Strings.BoolToColorString(spawn.LineOfSight()))
                 else
                     if id == Globals.AutoTargetID then
@@ -739,6 +741,14 @@ function Module:DoMez()
         self:UpdateMezList()
     end
 
+    if Targeting.GetXTHaterCount() < Config:GetSetting('MezStartCount') then
+        if Tables.GetTableSize(self.TempSettings.MezTracker) > 0 then
+            Logger.log_debug("\ayDoMez() :: Hater count below MezStartCount (%d), clearing mez tracker.", Config:GetSetting('MezStartCount'))
+            self.TempSettings.MezTracker = {}
+        end
+        return
+    end
+
     local tableSize = Tables.GetTableSize(self.TempSettings.MezTracker)
     if mezSpell and mezSpell() and tableSize >= 1 then
         self:ProcessMezList()
@@ -786,10 +796,9 @@ function Module:StopAttack()
 end
 
 function Module:StopCast()
-    if mq.TLO.Me.Casting() then
+    if mq.TLO.Me.Casting() or Casting.ActiveCastContext then
         Logger.log_debug("\awMEZ:\ax Stopping cast or song so I can mez.")
-        mq.TLO.Me.StopCast()
-        mq.delay("3s", function() return mq.TLO.Window("CastingWindow").Open() == false end)
+        Casting.StopCast(true)
     end
 end
 

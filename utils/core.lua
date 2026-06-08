@@ -89,12 +89,24 @@ function Core.IsWarden()
     return (mq.TLO.Me.Buff("Ward of Might").ID() or 0) > 0
 end
 
+--- True when corpse dragging is allowed (Drag module and/or rez corpse drag).
+---@return boolean
+function Core.CorpseDragAllowed()
+    if not Config:SettingsLoaded() then return false end
+    return Config:GetSetting('DoDrag', true) == true or Config:GetSetting('DoRezCorpseDrag', true) == true
+end
+
 --- Formats and executes an MQ command, logging it at debug level.
 ---@param cmd string Format string for the command.
 ---@param ... any Arguments for the format string.
 function Core.DoCmd(cmd, ...)
     local formatted = cmd
     if ... ~= nil then formatted = string.format(cmd, ...) end
+    if formatted:match("^%s*/corpse") and not Core.CorpseDragAllowed() then
+        Logger.log_verbose("\atRGMercs \awblocked /corpse (DoDrag=%s, DoRezCorpseDrag=%s)",
+            Strings.BoolToString(Config:GetSetting('DoDrag', true) == true), Strings.BoolToString(Config:GetSetting('DoRezCorpseDrag', true) == true))
+        return
+    end
     Logger.log_debug("\atRGMercs \awsent MQ \amCommand\aw: >> \ag%s\aw <<", formatted)
     mq.cmd(formatted)
 end

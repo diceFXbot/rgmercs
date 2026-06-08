@@ -41,8 +41,7 @@ Module.DefaultConfig                 = {
 		Category              = "Charm General",
 		Index                 = 1,
 		Default               = false,
-		Tooltip               = "Enables the memorization and use of charm spells.",
-		RequiresLoadoutChange = true,
+		Tooltip               = "Enables the use of charm spells. Does not change your spell loadout when toggled.",
 	},
 	['DireCharm']                              = {
 		DisplayName = "Dire Charm",
@@ -118,7 +117,7 @@ Module.DefaultConfig                 = {
 		Default     = 1,
 		Min         = 1,
 		Max         = 200,
-		Tooltip     = "If Auto Level Range is disabled, the minimum level of a potential charm target for charm spells.",
+		Tooltip     = "The minimum level of a potential charm target for charm spells. Always applied; Auto Level Range only adjusts the maximum.",
 		ConfigType  = "Advanced",
 	},
 	['CharmMaxLevel']                          = {
@@ -350,11 +349,39 @@ function Module:GetCharmSpell()
 	return Modules:ExecModule("Class", "GetResolvedActionMapItem", "CharmSpell")
 end
 
+--- Returns min/max level for charm target filtering. Min always uses CharmMinLevel;
+--- max uses spell MaxLevel when AutoLevelRangeCharm is enabled.
+---@return number minLevel
+---@return number maxLevel
+function Module:GetCharmLevelRange()
+	local minLevel = Config:GetSetting('CharmMinLevel')
+	local maxLevel = Config:GetSetting('CharmMaxLevel')
+	if Config:GetSetting('AutoLevelRangeCharm') then
+		local charmSpell = self:GetCharmSpell()
+		if charmSpell and charmSpell() then
+			maxLevel = charmSpell.MaxLevel()
+			Config:SetSetting('CharmMaxLevel', maxLevel)
+		end
+	end
+	return minLevel, maxLevel
+end
+
 function Module:CharmNow(charmId, useAA)
 	-- First thing we target the mob if we haven't already targeted them.
 	Core.DoCmd("/attack off")
 	local currentTargetID = mq.TLO.Target.ID()
 	if charmId == Globals.AutoTargetID then return end
+
+	local charmSpawn = mq.TLO.Spawn(charmId)
+	if not charmSpawn or not charmSpawn() then return end
+	local minLevel, maxLevel = self:GetCharmLevelRange()
+	local mobLevel = charmSpawn.Level() or 0
+	if mobLevel < minLevel or mobLevel > maxLevel then
+		Logger.log_debug("CharmNow: Skipping Mob ID: %d Level: %d - Outside charm level range (%d-%d).",
+			charmId, mobLevel, minLevel, maxLevel)
+		return
+	end
+
 	Targeting.SetTarget(charmId)
 
 	local charmSpell = self:GetCharmSpell()
@@ -390,6 +417,7 @@ function Module:CharmNow(charmId, useAA)
 	end
 
 	mq.doevents()
+
 	Targeting.SetTarget(currentTargetID)
 end
 
@@ -465,6 +493,14 @@ function Module:IsValidCharmTarget(mobId)
 		return false
 	end
 
+	local minLevel, maxLevel = self:GetCharmLevelRange()
+	local mobLevel = spawn.Level() or 0
+	if mobLevel < minLevel or mobLevel > maxLevel then
+		Logger.log_debug("\ayUpdateCharmList: Skipping Mob ID: %d Name: %s Level: %d - Outside charm level range (%d-%d).",
+			spawn.ID() or 0, spawn.CleanName() or "Unknown", mobLevel, minLevel, maxLevel)
+		return false
+	end
+
 	return true
 end
 
@@ -479,13 +515,7 @@ function Module:UpdateCharmList()
 	end
 
 	for _, t in ipairs(searchTypes) do
-		local minLevel = Config:GetSetting('CharmMinLevel')
-		local maxLevel = Config:GetSetting('CharmMaxLevel')
-		if Config:GetSetting('AutoLevelRangeCharm') and charmSpell and charmSpell() then
-			minLevel = 0
-			maxLevel = charmSpell.MaxLevel()
-			Config:SetSetting('CharmMaxLevel', maxLevel)
-		end
+		local minLevel, maxLevel = self:GetCharmLevelRange()
 		-- streamline search by body type for druids/necros this saves work when checking invalid.
 		local npcType = ''
 		if Core.MyClassIs("dru") then
@@ -549,7 +579,13 @@ function Module:ProcessCharmList()
 				Logger.log_debug("\ayProcessCharmList(%d) :: Mob id is in immune list - removing...", id)
 				table.insert(removeList, id)
 			else
-				if spawn.Distance() > Config:GetSetting('CharmRadius') or not spawn.LineOfSight() then
+				local minLevel, maxLevel = self:GetCharmLevelRange()
+				local mobLevel = spawn.Level() or 0
+				if mobLevel < minLevel or mobLevel > maxLevel then
+					Logger.log_debug("\ayProcessCharmList(%d) :: Level %d outside charm range (%d-%d), removing...", id,
+						mobLevel, minLevel, maxLevel)
+					table.insert(removeList, id)
+				elseif spawn.Distance() > Config:GetSetting('CharmRadius') or not spawn.LineOfSight() then
 					Logger.log_debug("\ayProcessCharmList(%d) :: Distance(%d) LOS(%s)", id,
 						spawn.Distance(), Strings.BoolToColorString(spawn.LineOfSight()))
 				else
@@ -640,6 +676,7 @@ function Module:GiveTime()
 	if not Core.IsCharming() then return end
 
 	if mq.TLO.Navigation.Active() or mq.TLO.MoveTo.Moving() then return end
+
 	-- dead... whoops
 	if mq.TLO.Me.Hovering() then return end
 

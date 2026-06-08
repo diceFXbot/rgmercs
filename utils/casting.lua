@@ -965,7 +965,7 @@ end
 
 --- Targets and /consider's the corpse (EMU only, ConCorpseForRez)
 --- to check for prior rez, waits up to 1s for con event. Summons
---- corpse via /corpse if beyond 25 units.
+--- corpse via /corpse if beyond 25 units (only when DoRezCorpseDrag is enabled).
 ---@param corpseId number The spawn ID of the corpse to evaluate.
 ---@return boolean True if the corpse is present, in range, and unrezzed.
 function Casting.OkayToRez(corpseId)
@@ -1004,8 +1004,10 @@ function Casting.OkayToRez(corpseId)
     end
 
     if mq.TLO.Spawn(corpseId).Distance3D() > 25 then
-        Targeting.SetTarget(corpseId, true)
-        Core.DoCmd("/corpse")
+        if Config:GetSetting('DoRezCorpseDrag', true) then
+            Targeting.SetTarget(corpseId, true)
+            Core.DoCmd("/corpse")
+        end
     end
 
     return true
@@ -2166,6 +2168,20 @@ function Casting.IsCastBusy()
     return Casting.IsCasting() or Casting.ActiveCastContext ~= nil
 end
 
+--- Clears async cast monitor state and stops the in-game cast when one is active.
+--- ActiveCastContext is always cleared (even when Me.Casting() is nil) so TickActiveCastMonitor
+--- does not apply stale DD interrupt rules to a new mez cast.
+---@param waitForWindowClose boolean? If true, wait until CastingWindow closes (mez path).
+function Casting.StopCast(waitForWindowClose)
+    Casting.ActiveCastContext = nil
+    if mq.TLO.Me.Casting() then
+        mq.TLO.Me.StopCast()
+        if waitForWindowClose then
+            mq.delay("3s", function() return mq.TLO.Window("CastingWindow").Open() == false end)
+        end
+    end
+end
+
 --- Records target/range metadata for async cast interrupt checks (GiveTime tick).
 ---@param targetId number?
 ---@param bAllowDead boolean?
@@ -2206,7 +2222,7 @@ end
 ---@return boolean
 function Casting.InterruptCastIfNeeded(ctx, currentCast, logPrefix)
     if Globals.StopCast then
-        mq.TLO.Me.StopCast()
+        Casting.StopCast()
         return true
     end
 
@@ -2215,37 +2231,37 @@ function Casting.InterruptCastIfNeeded(ctx, currentCast, logPrefix)
     if ctx.targetId and ctx.targetId > 0 then
         local target = mq.TLO.Spawn(ctx.targetId)
         if (not target or not target() or Targeting.TargetIsType("corpse", target)) and not ctx.bAllowDead then
-            mq.TLO.Me.StopCast()
+            Casting.StopCast()
             Logger.log_debug("%s(): Canceled casting %s because target is dead or no longer exists.", logPrefix, currentCast)
             return true
         elseif ctx.spellRange and target() and not Targeting.TargetIsMyself(target) and Targeting.GetTargetDistance(target) > (ctx.spellRange * 1.1) then
-            mq.TLO.Me.StopCast()
+            Casting.StopCast()
             Logger.log_debug("%s(): Canceled casting %s because spellTarget(%d, range %d) is out of spell range(%d)", logPrefix, currentCast, target.ID(),
                 Targeting.GetTargetDistance(target), ctx.spellRange)
             return true
         elseif target() and Casting.IsDetrimentalCast(currentCast) then
             if not Targeting.GetTargetLOS(target) then
-                mq.TLO.Me.StopCast()
+                Casting.StopCast()
                 Logger.log_debug("%s(): Canceled damage cast %s because target(%s/%d) is out of line of sight.", logPrefix, currentCast or "?",
                     target.CleanName() or "", target.ID() or 0)
                 return true
             end
             local mezzedId = target.Mezzed and target.Mezzed.ID and target.Mezzed.ID()
             if mezzedId and mezzedId > 0 then
-                mq.TLO.Me.StopCast()
+                Casting.StopCast()
                 Logger.log_debug("%s(): Canceled damage cast %s because target(%s/%d) became mezzed.", logPrefix, currentCast or "?",
                     target.CleanName() or "", target.ID() or 0)
                 return true
             end
             local charmedId = target.Charmed and target.Charmed.ID and target.Charmed.ID()
             if charmedId and charmedId > 0 then
-                mq.TLO.Me.StopCast()
+                Casting.StopCast()
                 Logger.log_debug("%s(): Canceled damage cast %s because target(%s/%d) became charmed.", logPrefix, currentCast or "?",
                     target.CleanName() or "", target.ID() or 0)
                 return true
             end
             if target.Master() and (target.Master.Type() or ""):lower() == "pc" then
-                mq.TLO.Me.StopCast()
+                Casting.StopCast()
                 Logger.log_debug("%s(): Canceled damage cast %s because target(%s/%d) is a PC-owned pet.", logPrefix, currentCast or "?",
                     target.CleanName() or "", target.ID() or 0)
                 return true
@@ -2261,7 +2277,7 @@ function Casting.InterruptCastIfNeeded(ctx, currentCast, logPrefix)
             Strings.BoolToColorString(mq.TLO.Window("CastingWindow").Open()), Globals.AutoTargetID)
         Logger.log_debug(msg)
         Comms.PrintGroupMessage(msg)
-        mq.TLO.Me.StopCast()
+        Casting.StopCast()
         return true
     end
 
@@ -2312,7 +2328,7 @@ function Casting.TickActiveCastMonitor()
                 Strings.BoolToColorString(mq.TLO.Window("CastingWindow").Open()), Globals.AutoTargetID)
             Logger.log_debug(msg)
             Comms.PrintGroupMessage(msg)
-            mq.TLO.Me.StopCast()
+            Casting.StopCast()
         end
         Casting.ActiveCastContext = nil
         return false
@@ -2807,8 +2823,8 @@ function Casting.AutoMed()
         return
     end
 
-    if Config:GetSetting('MedAggroCheck') and Targeting.IHaveAggro(Config:GetSetting("MedAggroPct")) then
-        Logger.log_verbose("Sit check returning early due to aggro.")
+    if Config:GetSetting('MedAggroCheck') and Targeting.ShouldBlockMedSit() then
+        Logger.log_verbose("Sit check returning early due to aggro or combat threat.")
         return
     end
 
@@ -2864,7 +2880,14 @@ function Casting.AutoMed()
 
     -- This could likely be refactored
     if me.Sitting() and not Casting.Memorizing then
-        if Targeting.GetXTHaterCount() > 0 and (Config:GetSetting('DoMed') ~= 3 or Config:GetSetting('DoMelee') or ((Config:GetSetting('MedAggroCheck') and Targeting.IHaveAggro(Config:GetSetting('MedAggroPct'))))) then
+        if Config:GetSetting('MedAggroCheck') and Targeting.ShouldBlockMedSit() then
+            Globals.InMedState = false
+            Logger.log_debug("Forcing stand - Med Aggro Check threat detected.")
+            me.Stand()
+            return
+        end
+
+        if Targeting.GetXTHaterCount() > 0 and (Config:GetSetting('DoMed') ~= 3 or Config:GetSetting('DoMelee')) then
             Globals.InMedState = false
             Logger.log_debug("Forcing stand - Combat or aggro threshold reached.")
             me.Stand()
@@ -2880,10 +2903,17 @@ function Casting.AutoMed()
     end
 
     -- if we aren't sitting, see if we were already medding and we got interrupted, or if our checks above say we should start medding
-    if not me.Sitting() and not Casting.IsCastBusy() and (Globals.InMedState or forcesit) then
-        Globals.InMedState = true
-        Logger.log_debug("Forcing sit - all conditions met.")
-        me.Sit()
+    if not me.Sitting() and not Casting.IsCastBusy() and not Casting.Memorizing and (Globals.InMedState or forcesit) then
+        if Config:GetSetting('MedAggroCheck') and Targeting.ShouldBlockMedSit() then
+            Logger.log_verbose("Skipping sit - Med Aggro Check blocked.")
+        elseif Targeting.GetXTHaterCount() > 0 and Config:GetSetting('DoMed') == 3 and not Core.OkayToNotHeal() then
+            Globals.InMedState = false
+            Logger.log_verbose("Skipping combat sit - heals/cures still needed (OkayToNotHeal).")
+        else
+            Globals.InMedState = true
+            Logger.log_debug("Forcing sit - all conditions met.")
+            me.Sit()
+        end
     end
 end
 
