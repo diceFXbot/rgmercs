@@ -25,6 +25,10 @@
 
 2026-06-08
 
+- RGMercs: origin/main (#1220–#1223) を kesh-custom にマージ。
+  - file: class_configs/*, extras/version.lua, init.lua, modules/class.lua, utils/casting.lua, utils/combat.lua, utils/event_handlers.lua, utils/item_manager.lua
+  - detail: 競合なし（自動マージ）。casting.lua は kesh async 版を維持（AbilityReady の taunt 特例削除・コメント整理のみ main 取り込み）。class_configs は main 優先。kesh 独自（async cast, MovebackWhenBehindMode, BurnMinCon, 6/7 修正, Live-kesh）は維持。main 取り込み: #1220 Handler/PetAttack、#1221 named fallback scan、#1222 Autoinv broadcast、#1223 bug fixes。
+
 - Live-kesh: 全16クラスの class_configs を追加（Live ベースの kesh カスタム）。
   - file: class_configs/Live-kesh/*
   - detail: ENC/DRU Charm、PAL Yaulp、DRU Dot/スネア/バフ等の kesh 向け調整を Live サーバー用に分離。`Core.ScanConfigDirs` のディレクトリスキャンで選択可能。
