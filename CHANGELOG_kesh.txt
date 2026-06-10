@@ -1,0 +1,20 @@
+# kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
+
+## 2026-06-11 — 運用方針（upstream 取り込み）
+
+- upstream main は **`lua/rgmercs` に展開**する（[DerpleDude/rgmercs](https://github.com/DerpleDude/rgmercs) main）。
+- **`lua/rgmercs-kesh` への取り込みは git pull しない。** `rgmercs` 展開後、`rgmercs` と `rgmercs-kesh` をコード比較しながら必要な変更だけマージする。
+- カスタム開発・kesh 独自仕様の編集は **`lua/rgmercs-kesh` のみ**行う。`lua/rgmercs` は upstream 参照用（直接カスタムしない）。
+- `kesh-custom` は凍結（`archives/rgmercs-kesh-custom-20260611.zip`）。
+
+### upstream main 更新時の手順
+
+1. upstream main を `lua/rgmercs` に展開する（上書き更新）。
+2. `rgmercs` と `rgmercs-kesh` を比較し、取り込みたい upstream 変更を `rgmercs-kesh` に反映する。
+3. マージ後、`utils/globals.lua` の `LuaPackageName` / `ConfigDirName` が `rgmercs-kesh` 用のまま維持されているか確認する。
+
+## 2026-06-11 — rgmercs-kesh 新規ベースライン
+
+- ベースコミット: `a9e8432` — Major Mez Refactor (#1227)
+- パッケージ名: `rgmercs-kesh`（起動: `/lua run rgmercs-kesh`）
+- 設定ディレクトリ: `config/rgmercs-kesh/`（`config/rgmercs/` とは分離）

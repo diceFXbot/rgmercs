@@ -22,11 +22,11 @@ OptionsUI.lastSortTime          = 0
 OptionsUI.lastHighlightTime     = 0
 OptionsUI.selectedCharacter     = ""
 OptionsUI.lastPeerUpdate        = 0
-OptionsUI.bgImg                 = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/rgmercs/extras/options_bg.png")
+OptionsUI.bgImg                 = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/" .. Globals.LuaPackageName .. "/extras/options_bg.png")
 OptionsUI.ToastStates           = {}
 
 function OptionsUI.LoadIcon(icon)
-    return mq.CreateTexture(mq.TLO.Lua.Dir() .. "/rgmercs/extras/" .. icon .. ".png")
+    return mq.CreateTexture(mq.TLO.Lua.Dir() .. "/" .. Globals.LuaPackageName .. "/extras/" .. icon .. ".png")
 end
 
 OptionsUI.Groups                = { --- Add a default of the same name for any key that has nothing in its table once these are finished

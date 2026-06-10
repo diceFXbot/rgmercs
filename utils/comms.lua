@@ -83,14 +83,14 @@ end
 --- @param event string The event type to broadcast.
 --- @param data table? The data payload for the event.
 function Comms.BroadcastMessage(module, event, data)
-    Comms.Actors.send({ mailbox = 'RGMercs', script = 'rgmercs', }, {
+    Comms.Actors.send({ mailbox = 'RGMercs', script = Globals.LuaPackageName, }, {
         From = Comms.GetPeerName(),
         Script = Comms.ScriptName,
         Module = module,
         Event = event,
         Data = data,
     })
-    Comms.Actors.send({ mailbox = 'RGMercs-Heartbeat', script = 'rgmercs/heartbeat', }, {
+    Comms.Actors.send({ mailbox = 'RGMercs-Heartbeat', script = Globals.LuaPackageName .. '/heartbeat', }, {
         From = Comms.GetPeerName(),
         Script = Comms.ScriptName,
         Module = module,
@@ -108,7 +108,7 @@ end
 --- @param data table? The data payload for the event.
 function Comms.SendMessage(peer, module, event, data)
     local char, server = Comms.GetNameAndServerFromPeer(peer)
-    Comms.Actors.send({ mailbox = 'RGMercs', script = 'rgmercs', server = server, character = char, }, {
+    Comms.Actors.send({ mailbox = 'RGMercs', script = Globals.LuaPackageName, server = server, character = char, }, {
         From = Comms.GetPeerName(),
         Script = Comms.ScriptName,
         Module = module,
@@ -349,8 +349,8 @@ function Comms.ValidatePeers(timeout)
 end
 
 function Comms.HeartbeatWatchdog()
-    if mq.TLO.Lua.Script('rgmercs/heartbeat').Status() ~= 'RUNNING' then
-        mq.cmd("/lua run rgmercs/heartbeat directed")
+    if mq.TLO.Lua.Script(Globals.LuaPackageName .. '/heartbeat').Status() ~= 'RUNNING' then
+        mq.cmd("/lua run " .. Globals.LuaPackageName .. "/heartbeat directed")
     end
 end
 

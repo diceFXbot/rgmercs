@@ -24,7 +24,7 @@ function ClassLoader.getClassConfigFileName(class)
 
     if classConfigDir:find("Custom: ") ~= nil then
         classConfigDir = classConfigDir:sub(9) -- remove "Custom:"
-        configFile = string.format("%s/rgmercs/class_configs/%s/%s_class_config.lua", mq.configDir, classConfigDir, class:lower())
+        configFile = string.format("%s/%s/class_configs/%s/%s_class_config.lua", mq.configDir, Globals.ConfigDirName, classConfigDir, class:lower())
     end
 
     if deprecated or not Files.file_exists(configFile) then
@@ -78,10 +78,11 @@ function ClassLoader.writeCustomConfig(class)
         currentConfigPath = mq.configDir
         currentConfigDir = currentConfigDir:sub(9)
     end
-    local current_File = string.format("%s/rgmercs/class_configs/%s/%s_class_config.lua", currentConfigPath, currentConfigDir, class:lower())
+    local currentPkgName = (currentConfigPath == mq.configDir) and Globals.ConfigDirName or Globals.LuaPackageName
+    local current_File = string.format("%s/%s/class_configs/%s/%s_class_config.lua", currentConfigPath, currentPkgName, currentConfigDir, class:lower())
     local configType = Globals.ServerEnv -- use server name for emu, "Live" otherwise
-    local customFile = string.format("%s/rgmercs/class_configs/%s/%s_class_config.lua", mq.configDir, Globals.ServerEnv, class:lower())
-    local backupFile = string.format("%s/rgmercs/class_configs/%s/%s_class_config_%s.lua", mq.configDir, configType, class:lower(), os.date("%Y%m%d_%H%M%S"))
+    local customFile = string.format("%s/%s/class_configs/%s/%s_class_config.lua", mq.configDir, Globals.ConfigDirName, Globals.ServerEnv, class:lower())
+    local backupFile = string.format("%s/%s/class_configs/%s/%s_class_config_%s.lua", mq.configDir, Globals.ConfigDirName, configType, class:lower(), os.date("%Y%m%d_%H%M%S"))
 
     -- Backup the custom config file if one exists
     local fileCustom = io.open(customFile, "r")

@@ -16,7 +16,7 @@ local Config   = {
     _author     = 'Lead Devs: Derple, Algar',
 }
 Config.__index = Config
-Config.Db      = require("utils.config_db").new(mq.configDir .. '/rgmercs/rgmercs_config.db')
+Config.Db      = require("utils.config_db").new(mq.configDir .. '/' .. Globals.ConfigDirName .. '/rgmercs_config.db')
 Config.Db:setCollectStats(true)
 Config.moduleDefaultSettings                             = {}
 Config.moduleTempSettings                                = {}
@@ -2817,13 +2817,13 @@ function Config.GetConfigFileName(moduleName, returnExisting)
     end
 
     local schemas = {
-        mq.configDir .. '/rgmercs/PCConfigs/' ..
+        mq.configDir .. '/' .. Globals.ConfigDirName .. '/PCConfigs/' ..
         moduleName .. "_" .. Globals.CurServer .. "_" .. Globals.CurLoadedChar .. '.lua',
-        mq.configDir .. '/rgmercs/PCConfigs/' ..
+        mq.configDir .. '/' .. Globals.ConfigDirName .. '/PCConfigs/' ..
         moduleName .. "_" .. Globals.CurServerNormalized .. "_" .. Globals.CurLoadedChar .. '.lua',
-        mq.configDir .. '/rgmercs/PCConfigs/' ..
+        mq.configDir .. '/' .. Globals.ConfigDirName .. '/PCConfigs/' ..
         moduleName .. "_" .. Globals.CurServerNormalized .. "_" .. Globals.CurLoadedChar .. "_" .. Globals.CurLoadedClass:lower() .. '.lua',
-        string.format("%s/rgmercs/PCConfigs/%s/%s/%s/%s.lua", mq.configDir, Globals.CurServerNormalized, Globals.CurLoadedChar, Globals.CurLoadedClass:lower(),
+        string.format("%s/%s/PCConfigs/%s/%s/%s/%s.lua", mq.configDir, Globals.ConfigDirName, Globals.CurServerNormalized, Globals.CurLoadedChar, Globals.CurLoadedClass:lower(),
             moduleName),
     }
 

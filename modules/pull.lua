@@ -291,7 +291,7 @@ Module.DefaultConfig                   = {
         Default = { "poknowledge", "neighborhood", "guildhall", "guildlobby", "bazaar", },
         FAQ = "How do I make it so my puller doesn't pull in certain zones?",
         Answer = "You can add a zone to the [PullSafeZones] and it will not pull in that zone.\n" ..
-            "This list is found in /config/rgmercs/PCConfigs/Pull_<Server>_<Character>.lua",
+            "This list is found in /config/" .. Globals.ConfigDirName .. "/PCConfigs/Pull_<Server>_<Character>.lua",
     },
     [string.format("%s_Popped", Module._name)] = {
         DisplayName = Module._name .. " Popped",

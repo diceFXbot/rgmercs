@@ -2,11 +2,11 @@
     heartbeat.lua - Standalone RGMercs heartbeat sender / status viewer.
 
     Usage:
-        /lua run rgmercs/heartbeat directed  -- sends heartbeats only
-        /lua run rgmercs/heartbeat           -- sends + receives + renders MercsStatus popout
+        /lua run rgmercs-kesh/heartbeat directed  -- sends heartbeats only
+        /lua run rgmercs-kesh/heartbeat           -- sends + receives + renders MercsStatus popout
 
     In sender-only mode, this script publishes a minimal RGMercs heartbeat
-    payload once per second so other peers running rgmercs can see this
+    payload once per second so other peers running rgmercs-kesh can see this
     character in their MercsStatus panel.
 
     In standalone mode, it additionally registers an actor handler to

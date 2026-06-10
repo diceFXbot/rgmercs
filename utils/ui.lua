@@ -189,7 +189,7 @@ Ui.MercThemeNames          = {}
 Ui.SelectedMercThemeImport = 1
 
 Ui.LoadMercThemes          = function()
-    local themes, err = loadfile(mq.configDir .. '/rgmercs/themes.lua')
+    local themes, err = loadfile(mq.configDir .. '/' .. Globals.ConfigDirName .. '/themes.lua')
     if err or not themes then
         Logger.log_debug("\ayNo themes.lua file found in your rgmercs config directory.")
     else
@@ -209,7 +209,7 @@ Ui.LoadMercThemes()
 
 --- Serializes Ui.MercThemes to the rgmercs/themes.lua config file.
 function Ui.SaveThemes()
-    mq.pickle(mq.configDir .. '/rgmercs/themes.lua', Ui.MercThemes)
+    mq.pickle(mq.configDir .. '/' .. Globals.ConfigDirName .. '/themes.lua', Ui.MercThemes)
 end
 
 -- The built-in ImGui color and style variable names and Ids seem to be out of sync so pulling these directly from C++ and caching them

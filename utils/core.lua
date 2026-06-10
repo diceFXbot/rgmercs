@@ -31,7 +31,7 @@ function Core.ScanConfigDirs()
         end
     end
 
-    local customConfigFile = string.format("%s/rgmercs/class_configs", mq.configDir)
+    local customConfigFile = string.format("%s/%s/class_configs", mq.configDir, Globals.ConfigDirName)
     for dir in LuaFS.dir(customConfigFile) do
         if dir ~= "." and dir ~= ".." and LuaFS.attributes(customConfigFile .. "/" .. dir).mode == "directory" then
             -- scan for valid configs inside this directory.

@@ -1,25 +1,27 @@
 local mq           = require('mq')
+local Globals      = require('utils.globals')
 local Logger       = require('utils.logger')
 
 local Signatures   = {}
 
 local registry     = nil
-local CACHE_FILE   = mq.configDir .. '/rgmercs/signatures_cache.lua'
+local CACHE_FILE   = mq.configDir .. '/' .. Globals.ConfigDirName .. '/signatures_cache.lua'
+local luaPkg       = mq.luaDir .. '/' .. Globals.LuaPackageName
 
 local SOURCE_FILES = {
-    { prefix = 'Combat',      path = mq.luaDir .. '/rgmercs/utils/combat.lua', },
-    { prefix = 'Targeting',   path = mq.luaDir .. '/rgmercs/utils/targeting.lua', },
-    { prefix = 'Core',        path = mq.luaDir .. '/rgmercs/utils/core.lua', },
-    { prefix = 'Casting',     path = mq.luaDir .. '/rgmercs/utils/casting.lua', },
-    { prefix = 'Movement',    path = mq.luaDir .. '/rgmercs/utils/movement.lua', },
-    { prefix = 'Comms',       path = mq.luaDir .. '/rgmercs/utils/comms.lua', },
-    { prefix = 'Config',      path = mq.luaDir .. '/rgmercs/utils/config.lua', },
-    { prefix = 'ItemManager', path = mq.luaDir .. '/rgmercs/utils/item_manager.lua', },
-    { prefix = 'Math',        path = mq.luaDir .. '/rgmercs/utils/math.lua', },
-    { prefix = 'Rotation',    path = mq.luaDir .. '/rgmercs/utils/rotation.lua', },
-    { prefix = 'Strings',     path = mq.luaDir .. '/rgmercs/utils/strings.lua', },
-    { prefix = 'Tables',      path = mq.luaDir .. '/rgmercs/utils/tables.lua', },
-    { prefix = 'Ui',          path = mq.luaDir .. '/rgmercs/utils/ui.lua', },
+    { prefix = 'Combat',      path = luaPkg .. '/utils/combat.lua', },
+    { prefix = 'Targeting',   path = luaPkg .. '/utils/targeting.lua', },
+    { prefix = 'Core',        path = luaPkg .. '/utils/core.lua', },
+    { prefix = 'Casting',     path = luaPkg .. '/utils/casting.lua', },
+    { prefix = 'Movement',    path = luaPkg .. '/utils/movement.lua', },
+    { prefix = 'Comms',       path = luaPkg .. '/utils/comms.lua', },
+    { prefix = 'Config',      path = luaPkg .. '/utils/config.lua', },
+    { prefix = 'ItemManager', path = luaPkg .. '/utils/item_manager.lua', },
+    { prefix = 'Math',        path = luaPkg .. '/utils/math.lua', },
+    { prefix = 'Rotation',    path = luaPkg .. '/utils/rotation.lua', },
+    { prefix = 'Strings',     path = luaPkg .. '/utils/strings.lua', },
+    { prefix = 'Tables',      path = luaPkg .. '/utils/tables.lua', },
+    { prefix = 'Ui',          path = luaPkg .. '/utils/ui.lua', },
 }
 
 local function parseFile(path, out)

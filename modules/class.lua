@@ -91,7 +91,7 @@ Module.FAQ                                   = {
     {
         Question = "How do I create a Custom Class Config?",
         Answer = "  The GUI can be found on the Class Tab. Near the config load area, you will find a button to create the custom config.\n\n" ..
-            "  The final destination will vary by server, but all files will be created in the (MQconfigdir)/rgmercs/class_configs directory. If you are currently on Live or Test, look for the 'Live folder there, otherwise, on emu, look for a server-specifc folder.\n\n" ..
+            "  The final destination will vary by server, but all files will be created in the (MQconfigdir)/" .. Globals.ConfigDirName .. "/class_configs directory. If you are currently on Live or Test, look for the 'Live folder there, otherwise, on emu, look for a server-specifc folder.\n\n" ..
             "  The process will copy the currently loaded config, so ensure you have selected the config you wish to use as a base before hitting the button. If the currently loaded config is *already* a custom config, it will be backed up with a date/time append on the old config.",
         Settings_Used = "",
     },
@@ -364,7 +364,7 @@ end
 -- Builds the per-user header prepended to the AI editing guide so the AI gets this character's exact save path.
 function Module:BuildAIEnvBlock()
     local class = Globals.CurLoadedClass:lower()
-    local savePath = string.format("%s/rgmercs/class_configs/%s/%s_class_config.lua", mq.configDir, Globals.ServerEnv, class)
+    local savePath = string.format("%s/%s/class_configs/%s/%s_class_config.lua", mq.configDir, Globals.ConfigDirName, Globals.ServerEnv, class)
     savePath = savePath:gsub("/", "\\")
     local onCustom = (Config:GetSetting('ClassConfigDir') or ""):find("Custom: ") ~= nil
     local statusLine = onCustom and
