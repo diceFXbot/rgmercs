@@ -4,7 +4,7 @@
     使い方:
         1. mob をメズする
         2. カーソルを別ターゲット（MA 等）に移す（メズした mob を直接ターゲットしない）
-        3. /lua run rgmercs/extras/mez_xt_verify
+        3. /lua run rgmercs-kesh-custom/extras/mez_xt_verify
         4. コンソール出力を確認（約 2 秒ごと）
         5. 終了: /mezxt stop
 
@@ -188,7 +188,7 @@ mq.bind('/mezxt', function(cmd)
     elseif c == 'once' or c == 'scan' then
         scanOnce()
     elseif c == 'help' or c == '?' then
-        printf('\ay[MezXT]\ax Commands: /mezxt once | /mezxt stop | /lua run rgmercs/extras/mez_xt_verify')
+        printf('\ay[MezXT]\ax Commands: /mezxt once | /mezxt stop | /lua run rgmercs-kesh-custom/extras/mez_xt_verify')
     else
         scanOnce()
     end

@@ -13,6 +13,7 @@ Globals.Config                        = nil
 
 Globals.MainAssist                    = ""
 Globals.ScriptDir                     = ""
+Globals.LuaPackageName                = "rgmercs-kesh-custom"
 Globals.AutoTargetID                  = 0
 Globals.AggroTargetID                 = 0
 Globals.ForceTargetID                 = 0

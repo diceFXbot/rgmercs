@@ -4,8 +4,8 @@ local Globals         = require('utils.globals')
 local ImagesUI        = { _version = '1.0', _name = "ImagesUI", _author = 'Derple', }
 ImagesUI.__index      = ImagesUI
 -- Icon Rendering
-ImagesUI.derpImg      = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/rgmercs/extras/derpdog_60.png")
-ImagesUI.burnImg      = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/rgmercs/extras/algar2_60.png")
+ImagesUI.derpImg      = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/" .. Globals.LuaPackageName .. "/extras/derpdog_60.png")
+ImagesUI.burnImg      = mq.CreateTexture(mq.TLO.Lua.Dir() .. "/" .. Globals.LuaPackageName .. "/extras/algar2_60.png")
 ImagesUI.imgDisplayed = ImagesUI.derpImg
 
 function ImagesUI:InitLoader()

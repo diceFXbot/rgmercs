@@ -44,7 +44,7 @@ Module.DefaultConfig   = {
 		Default = false,
 		OnChange = function(oldValue, newValue)
 			if newValue == true and mq.TLO.Lua.Script('lootnscoot').Status() ~= 'RUNNING' then
-				Core.DoCmd("/lua run lootnscoot directed rgmercs")
+				Core.DoCmd("/lua run lootnscoot directed " .. Globals.LuaPackageName)
 				suppressWarning = true
 				if not Module.Actor then Module:LootMessageHandler() end
 			elseif newValue == false and mq.TLO.Lua.Script('lootnscoot').Status() == 'RUNNING' then
@@ -115,7 +115,7 @@ function Module:Init()
 				Core.DoCmd("/lua stop lootnscoot")
 				requireDelay = true
 			end
-			Core.DoCmd("%s/lua run lootnscoot directed rgmercs", requireDelay and "/timed 15 " or "")
+			Core.DoCmd("%s/lua run lootnscoot directed %s", requireDelay and "/timed 15 " or "", Globals.LuaPackageName)
 		end
 		self.TempSettings.Looting = false
 		Logger.log_debug("\ay[LOOT]: \agLoot(LNS) module Loaded.")
