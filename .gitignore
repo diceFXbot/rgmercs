@@ -1,2 +1,10 @@
 rgmercs.code-workspace
 .vscode/
+
+# local helper scripts/logs (not for repo)
+/_cleanup_hang.bat
+/_commit_push.bat
+/_run_cleanup.vbs
+/_stop_all.bat
+/_stop_all.vbs
+/_*.log
