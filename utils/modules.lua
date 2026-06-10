@@ -6,13 +6,13 @@ local Modules       = { _version = '0.1a', _author = 'Derple', }
 Modules.__index     = Modules
 
 Modules.ModuleOrder = {
+    "Charm",
+    "Mez",
     "Class",
     "Movement",
     "Clickies",
     "Pull",
     "Drag",
-    "Charm",
-    "Mez",
     "Travel",
     "Named",
     "Map",

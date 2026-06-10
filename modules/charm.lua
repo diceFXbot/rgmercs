@@ -144,6 +144,26 @@ Module.DefaultConfig                 = {
 		Tooltip     = "If Auto Level Range is disabled, the maximum level of a potential charm target for Dire Charm.",
 		ConfigType  = "Advanced",
 	},
+	['CharmExcludeMATarget']                   = {
+		DisplayName = "Exclude MA Target",
+		Group       = "Abilities",
+		Header      = "Charm",
+		Category    = "Charm Targets",
+		Index       = 6,
+		Default     = false,
+		Tooltip     = "When enabled, do not charm the Main Assist's current target (AutoTargetID).",
+		ConfigType  = "Advanced",
+	},
+	['CharmExcludeMezzed']                     = {
+		DisplayName = "Exclude Mezzed Mobs",
+		Group       = "Abilities",
+		Header      = "Charm",
+		Category    = "Charm Targets",
+		Index       = 7,
+		Default     = true,
+		Tooltip     = "When enabled, do not charm mobs that are currently mezzed (uses Mez module detection). Disable to allow charming mezzed targets.",
+		ConfigType  = "Advanced",
+	},
 	[string.format("%s_Popped", Module._name)] = {
 		DisplayName = Module._name .. " Popped",
 		Type = "Custom",
@@ -341,12 +361,98 @@ function Module:ResetCharmStates()
 	self.TempSettings.CharmTracker = {}
 end
 
+function Module:GetCharmSpellSetName()
+	return Core.MyClassIs("BRD") and "CharmSong" or "CharmSpell"
+end
+
+function Module:GetCharmSpellTable()
+	local classConfig = Modules:ExecModule("Class", "GetClassConfig")
+	if not classConfig or not classConfig.AbilitySets then return nil end
+	return classConfig.AbilitySets[self:GetCharmSpellSetName()]
+end
+
+--- True when spell belongs to this class's CharmSpell / CharmSong ability set (BaseName match).
+---@param spell MQSpell?
+---@param spellTable string[]?
+---@return boolean
+function Module:IsCharmSetSpell(spell, spellTable)
+	if not spell or not spell() or not spellTable then return false end
+	local baseName = (spell.BaseName() or ""):lower()
+	if baseName == "" then return false end
+	for _, spellName in ipairs(spellTable) do
+		local ref = mq.TLO.Spell(spellName)
+		if ref() and (ref.BaseName() or ""):lower() == baseName then
+			return true
+		end
+	end
+	return false
+end
+
+--- Prefer the highest-level charm memorized in a gem (manual mem); fall back to ResolvedActionMap.
 function Module:GetCharmSpell()
-	if Core.MyClassIs("BRD") then
-		return Modules:ExecModule("Class", "GetResolvedActionMapItem", "CharmSong")
+	local spellTable = self:GetCharmSpellTable()
+	local bestGemSpell = nil
+	local bestGemLevel = 0
+
+	for gem = 1, mq.TLO.Me.NumGems() do
+		local gemSpell = mq.TLO.Me.Gem(gem)
+		if gemSpell() and self:IsCharmSetSpell(gemSpell, spellTable) then
+			local resolved = mq.TLO.Spell(gemSpell.RankName.Name())
+			if resolved() then
+				local level = resolved.Level() or 0
+				if level > bestGemLevel then
+					bestGemLevel = level
+					bestGemSpell = resolved
+				end
+			end
+		end
 	end
 
-	return Modules:ExecModule("Class", "GetResolvedActionMapItem", "CharmSpell")
+	if bestGemSpell then
+		Logger.log_verbose("GetCharmSpell: using memorized gem spell %s (level %d).", bestGemSpell.RankName.Name(), bestGemLevel)
+		return bestGemSpell
+	end
+
+	return Modules:ExecModule("Class", "GetResolvedActionMapItem", self:GetCharmSpellSetName())
+end
+
+--- Config toggle stored as boolean or 1/0 in saved settings.
+---@param settingName string
+---@return boolean
+function Module:IsConfigOn(settingName)
+	local v = Config:GetSetting(settingName)
+	return v == true or v == 1
+end
+
+--- True when mob is on CharmTracker awaiting ProcessCharmList (Charm runs before Mez same tick).
+---@param mobId number
+---@return boolean
+function Module:IsCharmPending(mobId)
+	if mobId == 0 or not self:IsConfigOn('CharmOn') then return false end
+	return self.TempSettings.CharmTracker[mobId] ~= nil
+end
+
+--- Gate for ProcessCharmList (spell ready, or Dire Charm AA path for non-bards).
+---@param charmSpell MQSpell?
+---@return boolean
+function Module:ShouldProcessCharmList(charmSpell)
+	if not self:IsConfigOn('CharmOn') then return false end
+	if Tables.GetTableSize(self.TempSettings.CharmTracker) < 1 then return false end
+	if Core.MyClassIs("BRD") then
+		return self:CharmSpellReady(charmSpell)
+	end
+	return self:CharmSpellReady(charmSpell) or self:IsConfigOn('DireCharm')
+end
+
+--- True when the current charm spell is ready to cast (gem + timer + CastCheck).
+---@param charmSpell MQSpell?
+---@return boolean
+function Module:CharmSpellReady(charmSpell)
+	if not charmSpell or not charmSpell() then return false end
+	if Core.MyClassIs("BRD") then
+		return Casting.SongReady(charmSpell)
+	end
+	return Casting.SpellReady(charmSpell)
 end
 
 --- Returns min/max level for charm target filtering. Min always uses CharmMinLevel;
@@ -370,7 +476,16 @@ function Module:CharmNow(charmId, useAA)
 	-- First thing we target the mob if we haven't already targeted them.
 	Core.DoCmd("/attack off")
 	local currentTargetID = mq.TLO.Target.ID()
-	if charmId == Globals.AutoTargetID then return end
+
+	if self:IsMATargetExcludedFromCharm(charmId) then
+		Logger.log_debug("CharmNow: Skipping Mob ID: %d - MA assist target (CharmExcludeMATarget).", charmId)
+		return
+	end
+
+	if self:IsMezzedExcludedFromCharm(charmId) then
+		Logger.log_debug("CharmNow: Skipping Mob ID: %d - mezzed (CharmExcludeMezzed).", charmId)
+		return
+	end
 
 	local charmSpawn = mq.TLO.Spawn(charmId)
 	if not charmSpawn or not charmSpawn() then return end
@@ -388,7 +503,7 @@ function Module:CharmNow(charmId, useAA)
 
 	if not charmSpell or not charmSpell() then return end
 	if not Core.MyClassIs("BRD") then
-		local dCharm = Config:GetSetting("DireCharm", true) == true
+		local dCharm = self:IsConfigOn('DireCharm')
 		if dCharm and mq.TLO.Me.AltAbilityReady('Dire Charm') and (mq.TLO.Spawn(charmId).Level() or 0) <= Config:GetSetting('DireCharmMaxLvl') then
 			Comms.HandleAnnounce(Comms.FormatChatEvent("Dire Charm", mq.TLO.Spawn(charmId).CleanName(), mq.TLO.Me.DisplayName()),
 				Config:GetSetting('CharmAnnounceGroup'),
@@ -410,10 +525,13 @@ function Module:CharmNow(charmId, useAA)
 	if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS and mq.TLO.Pet.ID() > 0 then
 		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Success", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
 			Config:GetSetting('CharmAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
+		self:RemoveCCTarget(charmId)
 	else
 		Comms.HandleAnnounce(Comms.FormatChatEvent("Charm Failed", mq.TLO.Spawn(charmId).CleanName(), charmSpell.RankName()), Config:GetSetting('CharmAnnounceGroup'),
 			Config:GetSetting('CharmAnnounce'),
 			Config:GetSetting('AnnounceToRaidIfInRaid'))
+		self:RemoveCCTarget(charmId)
+		Logger.log_debug("CharmNow: Mob %d charm failed — removed from tracker (mez eligible).", charmId)
 	end
 
 	mq.doevents()
@@ -427,13 +545,18 @@ function Module:RemoveCCTarget(mobId)
 end
 
 function Module:AddCCTarget(mobId)
-	if mobId == 0 then return end
-	local spawn = mq.TLO.Spawn(mobId)
+	if mobId == 0 then return false end
 	if self:IsCharmImmune(mobId) then
 		Logger.log_debug("\awNOTICE:\ax Unable to charm %d - it is immune", mobId)
 		return false
 	end
 
+	if self.TempSettings.CharmTracker[mobId] then
+		self.TempSettings.CharmTracker[mobId].last_check = Globals.GetTimeMS()
+		return true
+	end
+
+	local spawn = mq.TLO.Spawn(mobId)
 	Targeting.SetTarget(mobId)
 
 	self.TempSettings.CharmTracker[mobId] = {
@@ -445,10 +568,61 @@ function Module:AddCCTarget(mobId)
 		charm_spell = mq.TLO
 			.Target.Charmed() or "None",
 	}
+	return true
+end
+
+--- Mez module integration: true when mob is mezzed (cache, XT, or buff).
+---@param mobId number
+---@return boolean
+function Module:IsMobMezzedForCharm(mobId)
+	local mezMod = Modules:GetModule("Mez")
+	if not mezMod or not mezMod.GetMobMezzedState then return false end
+
+	local xtSpawn = nil
+	local xtCount = mq.TLO.Me.XTarget() or 0
+	for i = 1, xtCount do
+		local xt = mq.TLO.Me.XTarget(i)
+		if xt() and (xt.ID() or 0) == mobId then
+			xtSpawn = xt
+			break
+		end
+	end
+
+	local isMezzed = mezMod:GetMobMezzedState(mobId, xtSpawn)
+	return isMezzed == true
+end
+
+---@param mobId number
+---@return boolean
+function Module:IsMATargetExcludedFromCharm(mobId)
+	if not Config:GetSetting('CharmExcludeMATarget') then return false end
+	local assistId = Globals.AutoTargetID or 0
+	return assistId > 0 and mobId == assistId
+end
+
+---@param mobId number
+---@return boolean
+function Module:IsMezzedExcludedFromCharm(mobId)
+	if not Config:GetSetting('CharmExcludeMezzed') then return false end
+	return self:IsMobMezzedForCharm(mobId)
 end
 
 function Module:IsValidCharmTarget(mobId)
 	local spawn = mq.TLO.Spawn(mobId)
+
+	if self:IsMATargetExcludedFromCharm(mobId) then
+		Logger.log_debug(
+			"\ayUpdateCharmList: Skipping Mob ID: %d Name: %s - MA assist target (CharmExcludeMATarget).",
+			spawn.ID() or 0, spawn.CleanName() or "Unknown")
+		return false
+	end
+
+	if self:IsMezzedExcludedFromCharm(mobId) then
+		Logger.log_debug(
+			"\ayUpdateCharmList: Skipping Mob ID: %d Name: %s - mezzed (CharmExcludeMezzed).",
+			spawn.ID() or 0, spawn.CleanName() or "Unknown")
+		return false
+	end
 
 	-- Is the mob ID in our charm immune list? If so, skip.
 	if self:IsCharmImmune(mobId) then
@@ -493,6 +667,12 @@ function Module:IsValidCharmTarget(mobId)
 		return false
 	end
 
+	if math.abs((spawn.Z() or 0) - (mq.TLO.Me.Z() or 0)) > Config:GetSetting('CharmZRadius') then
+		Logger.log_debug("\ayUpdateCharmList: Skipping Mob ID: %d Name: %s Level: %d - Out of Charm ZRadius",
+			spawn.ID() or 0, spawn.CleanName() or "Unknown", spawn.Level() or 0)
+		return false
+	end
+
 	local minLevel, maxLevel = self:GetCharmLevelRange()
 	local mobLevel = spawn.Level() or 0
 	if mobLevel < minLevel or mobLevel > maxLevel then
@@ -504,8 +684,9 @@ function Module:IsValidCharmTarget(mobId)
 	return true
 end
 
+--- Refresh CharmTracker from current XTarget haters (range/LOS/level filters in IsValidCharmTarget).
 function Module:UpdateCharmList()
-	local searchTypes = { "npc", }
+	if mq.TLO.Me.Pet.ID() ~= 0 then return end
 
 	local charmSpell = self:GetCharmSpell()
 
@@ -514,34 +695,30 @@ function Module:UpdateCharmList()
 		return
 	end
 
-	for _, t in ipairs(searchTypes) do
-		local minLevel, maxLevel = self:GetCharmLevelRange()
-		-- streamline search by body type for druids/necros this saves work when checking invalid.
-		local npcType = ''
-		if Core.MyClassIs("dru") then
-			npcType = ' body Animal'
-		elseif Core.MyClassIs("nec") then
-			npcType = ' body Undead'
+	local haterIds = Targeting.GetXTHaterIDs()
+	local haterSet = {}
+	for _, id in ipairs(haterIds) do
+		haterSet[id] = true
+	end
+
+	for id, _ in pairs(self.TempSettings.CharmTracker) do
+		if self:IsMezzedExcludedFromCharm(id) or not haterSet[id] then
+			self:RemoveCCTarget(id)
 		end
-		local searchString = string.format("%s radius %d zradius %d range %d %d targetable playerstate 4%s", t,
-			Config:GetSetting('CharmRadius') * 2, Config:GetSetting('CharmZRadius') * 2, minLevel, maxLevel, npcType)
+	end
 
-		local mobCount = mq.TLO.SpawnCount(searchString)()
-		Logger.log_debug("\ayUpdateCharmList: Search String: '\at%s\ay' -- Count :: \am%d", searchString, mobCount)
-		for i = 1, mobCount do
-			local spawn = mq.TLO.NearestSpawn(i, searchString)
+	Logger.log_debug("\ayUpdateCharmList: XTarget hater scan -- Count :: \am%d", #haterIds)
+	for i, id in ipairs(haterIds) do
+		local spawn = mq.TLO.Spawn(id)
+		if spawn and spawn() then
+			Logger.log_verbose(
+				"\ayUpdateCharmList: XT hater %d -- ID: %d Name: %s Level: %d BodyType: %s", i, id,
+				spawn.CleanName() or "?", spawn.Level() or 0, spawn.Body.Name() or "?")
 
-			if spawn and spawn() and spawn.ID() > 0 then
-				Logger.log_debug(
-					"\ayUpdateCharmList: Processing MobCount %d -- ID: %d Name: %s Level: %d BodyType: %s", i, spawn.ID(),
-					spawn.CleanName(), spawn.Level(),
-					spawn.Body.Name())
-
-				if self:IsValidCharmTarget(spawn.ID()) then
-					Logger.log_debug("\agAdding to Charm List: %d -- ID: %d Name: %s Level: %d BodyType: %s", i,
-						spawn.ID(), spawn.CleanName(), spawn.Level(), spawn.Body.Name())
-					self:AddCCTarget(spawn.ID())
-				end
+			if self:IsValidCharmTarget(id) then
+				Logger.log_debug("\agAdding to Charm List: %d -- ID: %d Name: %s Level: %d BodyType: %s", i,
+					id, spawn.CleanName() or "?", spawn.Level() or 0, spawn.Body.Name() or "?")
+				self:AddCCTarget(id)
 			end
 		end
 	end
@@ -585,37 +762,41 @@ function Module:ProcessCharmList()
 					Logger.log_debug("\ayProcessCharmList(%d) :: Level %d outside charm range (%d-%d), removing...", id,
 						mobLevel, minLevel, maxLevel)
 					table.insert(removeList, id)
-				elseif spawn.Distance() > Config:GetSetting('CharmRadius') or not spawn.LineOfSight() then
-					Logger.log_debug("\ayProcessCharmList(%d) :: Distance(%d) LOS(%s)", id,
-						spawn.Distance(), Strings.BoolToColorString(spawn.LineOfSight()))
+				elseif spawn.Distance() > Config:GetSetting('CharmRadius')
+					or math.abs((spawn.Z() or 0) - (mq.TLO.Me.Z() or 0)) > Config:GetSetting('CharmZRadius')
+					or not spawn.LineOfSight() then
+					Logger.log_debug("\ayProcessCharmList(%d) :: Distance(%d) ZDelta(%d) LOS(%s)", id,
+						spawn.Distance() or 0,
+						math.abs((spawn.Z() or 0) - (mq.TLO.Me.Z() or 0)),
+						Strings.BoolToColorString(spawn.LineOfSight()))
+				elseif self:IsMATargetExcludedFromCharm(id) then
+					Logger.log_debug("\ayProcessCharmList(%d) :: MA assist target - skipping charm.", id)
+				elseif self:IsMezzedExcludedFromCharm(id) then
+					Logger.log_debug("\ayProcessCharmList(%d) :: Mezzed (CharmExcludeMezzed) - removing from charm tracker.", id)
+					table.insert(removeList, id)
 				else
-					if id == Globals.AutoTargetID then
-						Logger.log_debug("\ayProcessCharmList(%d) :: Mob is MA's target skipping", id)
-						table.insert(removeList, id)
-					else
-						Logger.log_debug("\ayProcessCharmList(%d) :: Mob needs charmed.", id)
-						if mq.TLO.Me.Combat() or mq.TLO.Me.Casting() then
-							Logger.log_debug(
-								" \awNOTICE:\ax Stopping Melee/Singing -- must retarget to start charm.")
-							Core.DoCmd("/attack off")
-							mq.delay("3s", function() return not mq.TLO.Me.Combat() end)
-							Core.DoCmd("/stopcast")
-							Core.DoCmd("/stopsong")
-							mq.delay("3s", function() return mq.TLO.Window("CastingWindow").Open() == false end)
-						end
-
-						Targeting.SetTarget(id)
-
-						local maxWait = 5000
-						while not Casting.SpellReady(charmSpell) and maxWait > 0 do
-							mq.delay(100)
-							maxWait = maxWait - 100
-							mq.doevents()
-							Events.DoEvents()
-						end
-
-						self:CharmNow(id, false)
+					Logger.log_debug("\ayProcessCharmList(%d) :: Mob needs charmed.", id)
+					if mq.TLO.Me.Combat() or mq.TLO.Me.Casting() then
+						Logger.log_debug(
+							" \awNOTICE:\ax Stopping Melee/Singing -- must retarget to start charm.")
+						Core.DoCmd("/attack off")
+						mq.delay("3s", function() return not mq.TLO.Me.Combat() end)
+						Core.DoCmd("/stopcast")
+						Core.DoCmd("/stopsong")
+						mq.delay("3s", function() return mq.TLO.Window("CastingWindow").Open() == false end)
 					end
+
+					Targeting.SetTarget(id)
+
+					local maxWait = 5000
+					while not Casting.SpellReady(charmSpell) and maxWait > 0 do
+						mq.delay(100)
+						maxWait = maxWait - 100
+						mq.doevents()
+						Events.DoEvents()
+					end
+
+					self:CharmNow(id, false)
 				end
 			end
 		end
@@ -625,6 +806,10 @@ function Module:ProcessCharmList()
 		self:RemoveCCTarget(id)
 	end
 
+	if Globals.AutoTargetID > 0 and Core.ValidCombatTarget(Globals.AutoTargetID) and mq.TLO.Target.ID() ~= Globals.AutoTargetID then
+		Targeting.SetTarget(Globals.AutoTargetID, true)
+	end
+
 	mq.doevents()
 end
 
@@ -632,31 +817,22 @@ function Module:DoCharm()
 	local charmSpell = self:GetCharmSpell()
 	self:UpdateTimings()
 
+	if mq.TLO.Me.Pet.ID() ~= 0 then
+		Logger.log_verbose("DoCharm(): Pet active - skipping charm list update/process.")
+		return
+	end
+
 	if Targeting.GetXTHaterCount() >= Config:GetSetting('CharmStartCount') then
 		self:UpdateCharmList()
 	end
-	if not Core.MyClassIs("BRD") then
-		if ((charmSpell and charmSpell() and mq.TLO.Me.SpellReady(charmSpell.RankName.Name())()) or (Config:GetSetting("DireCharm", true) == true)) and
-			Tables.GetTableSize(self.TempSettings.CharmTracker) >= 1 then
-			self:ProcessCharmList()
-		else
-			Logger.log_verbose("DoCharm() : Skipping Charm list processing: Spell(%s) Ready(%s) TableSize(%d)",
-				charmSpell and charmSpell() or "None",
-				charmSpell and charmSpell() and
-				Strings.BoolToColorString(mq.TLO.Me.SpellReady(charmSpell.RankName.Name())()) or "NoSpell",
-				Tables.GetTableSize(self.TempSettings.CharmTracker))
-		end
-	else
-		if (charmSpell and charmSpell() and mq.TLO.Me.SpellReady(charmSpell.RankName.Name())()) and
-			Tables.GetTableSize(self.TempSettings.CharmTracker) >= 1 then
-			self:ProcessCharmList()
-		else
-			Logger.log_verbose("DoCharm() : Skipping Charm list processing: Spell(%s) Ready(%s) TableSize(%d)",
-				charmSpell and charmSpell() or "None",
-				charmSpell and charmSpell() and
-				Strings.BoolToColorString(mq.TLO.Me.SpellReady(charmSpell.RankName.Name())()) or "NoSpell",
-				Tables.GetTableSize(self.TempSettings.CharmTracker))
-		end
+	if self:ShouldProcessCharmList(charmSpell) then
+		self:ProcessCharmList()
+	elseif self:IsConfigOn('CharmOn') and Tables.GetTableSize(self.TempSettings.CharmTracker) >= 1 then
+		Logger.log_debug("DoCharm: Skipping ProcessCharmList — Spell(%s) Ready(%s) DireCharm(%s) Tracker(%d)",
+			charmSpell and charmSpell() and charmSpell.RankName.Name() or "None",
+			charmSpell and Strings.BoolToColorString(self:CharmSpellReady(charmSpell)) or "NoSpell",
+			tostring(Config:GetSetting('DireCharm')),
+			Tables.GetTableSize(self.TempSettings.CharmTracker))
 	end
 end
 

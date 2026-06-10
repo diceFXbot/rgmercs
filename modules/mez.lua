@@ -11,7 +11,6 @@ local Globals   = require('utils.globals')
 local Logger    = require("utils.logger")
 local Modules   = require("utils.modules")
 local Strings   = require("utils.strings")
-local Tables    = require("utils.tables")
 local Targeting = require("utils.targeting")
 require('utils.datatypes')
 
@@ -25,6 +24,7 @@ Module.CombatState             = "None"
 
 Module.TempSettings            = {}
 Module.TempSettings.MezImmune  = {}
+--- Slim CC list: mezzed mob IDs we cast on (or synced from XT), with countdown. Off-XT mobs stay monitored (HateClear).
 Module.TempSettings.MezTracker = {}
 
 Module.DefaultConfig           = {
@@ -113,24 +113,12 @@ Module.DefaultConfig           = {
         Tooltip = "The maximum distance away a potential mez target can be from the PC.",
         ConfigType = "Advanced",
     },
-    ['MezZRadius']                             = {
-        DisplayName = "Mez ZRadius",
-        Group = "Abilities",
-        Header = "Mez",
-        Category = "Mez General",
-        Index = 9,
-        Default = 25,
-        Min = 1,
-        Max = 200,
-        Tooltip = "The maximum height difference between the potential mez target and the PC.",
-        ConfigType = "Advanced",
-    },
     ['SafeAEMez']                              = {
         DisplayName = "AE Mez Safety Check",
         Group = "Abilities",
         Header = "Mez",
         Category = "Mez General",
-        Index = 10,
+        Index = 9,
         Tooltip =
         "Check to ensure there aren't neutral mobs in range we could aggro if AE mez is used. May result in non-use due to false positives.",
         Default = false,
@@ -217,9 +205,9 @@ function Module:Render()
                 ImGui.TableSetupColumn('Name', (ImGuiTableColumnFlags.WidthFixed), 250.0)
                 ImGui.TableSetupColumn('Spell', (ImGuiTableColumnFlags.WidthStretch), 150.0)
                 ImGui.TableHeadersRow()
-                for id, data in pairs(self.TempSettings.MezTracker) do
+                for _, data in ipairs(self:GetTrackerDisplayRows()) do
                     ImGui.TableNextColumn()
-                    ImGui.Text(tostring(id))
+                    ImGui.Text(tostring(data.id))
                     ImGui.TableNextColumn()
                     if data.duration > 30000 then
                         ImGui.PushStyleColor(ImGuiCol.Text, Globals.Constants.Colors.ConditionPassColor)
@@ -263,6 +251,12 @@ end
 
 function Module:HandleMezBroke(mobName, breakerName)
     Logger.log_debug("%s broke mez on ==> %s", breakerName, mobName)
+    for id, data in pairs(self.TempSettings.MezTracker) do
+        local spawn = mq.TLO.Spawn(id)
+        if (spawn() and (spawn.CleanName() or "") == mobName) or (data.name or "") == mobName then
+            self.TempSettings.MezTracker[id] = nil
+        end
+    end
     Comms.HandleAnnounce(
         Comms.FormatChatEvent("Mez Broken", mobName, breakerName), Config:GetSetting('MezAnnounceGroup'),
         Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
@@ -302,10 +296,30 @@ function Module:GetAEMezSpell()
     return Modules:ExecModule("Class", "GetResolvedActionMapItem", "MezAESpell")
 end
 
-function Module:MezNow(mezId, useAE, useAA)
-    -- First thing we target the mob if we haven't already targeted them.
-    Core.DoCmd("/attack off")
+--- True when any XT hater still needs mez (or refresh). Class skips DPS rotations while true.
+---@return boolean
+function Module:HasPendingXtCcWork()
+    if not Config:GetSetting('MezOn') then return false end
+    local mezSpell = self:GetMezSpell()
+    if not mezSpell or not mezSpell() then return false end
+    local castWindow = self:GetMezCastWindow(mezSpell)
+    local haterCount = Targeting.GetXTHaterCount()
+    local needsWork = self:ScanXtMezNeeds(Globals.AutoTargetID, castWindow, haterCount, mezSpell)
+    return needsWork
+end
+
+---@param skipInitialAttackOff boolean? When true, caller already stopped attack (DoMez path).
+function Module:MezNow(mezId, useAE, useAA, skipInitialAttackOff)
+    if mezId == 0 or not self:IsValidMezTarget(mezId) then
+        Logger.log_debug("\ayMezGate:\ax MezNow skipped for %d — not a valid mez target (charmed/immune/etc).", mezId)
+        return
+    end
+
+    if not skipInitialAttackOff then
+        Core.DoCmd("/attack off")
+    end
     local currentTargetID = mq.TLO.Target.ID()
+    local retryCount = Config:GetSetting('CastRetryCountBeta')
 
     Targeting.SetTarget(mezId, true)
 
@@ -327,7 +341,7 @@ function Module:MezNow(mezId, useAE, useAA)
                 Comms.HandleAnnounce(Comms.FormatChatEvent("Mez", "AoE Around " .. (mq.TLO.Spawn(mezId).CleanName() or "Unknown"), "AA: Beam of Slumber"),
                     Config:GetSetting('MezAnnounceGroup'),
                     Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-                Casting.UseAA("Beam of Slumber", mezId)
+                Casting.UseAA("Beam of Slumber", mezId, false, retryCount)
                 mq.doevents('ImmuneMez')
                 return
             elseif (mq.TLO.Me.GemTimer(aeMezSpell.RankName())() or -1) == 0 then
@@ -358,9 +372,9 @@ function Module:MezNow(mezId, useAE, useAA)
                 Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
 
             if Core.MyClassIs("brd") then
-                Casting.UseSong(aeMezSpell.RankName(), mezId, false, 2)
+                Casting.UseSong(aeMezSpell.RankName(), mezId, false, retryCount)
             else
-                Casting.UseSpell(aeMezSpell.RankName(), mezId, false, true, 2)
+                Casting.UseSpell(aeMezSpell.RankName(), mezId, false, true, retryCount)
             end
         end
 
@@ -368,6 +382,11 @@ function Module:MezNow(mezId, useAE, useAA)
         mq.doevents('ImmuneMez')
     else
         Logger.log_debug("Performing Single Target MEZ --> %d", mezId)
+        if not Casting.BeginMezMAWatch(mezId) then
+            Targeting.SetTarget(currentTargetID, true)
+            return
+        end
+
         if useAA and Core.MyClassIs("brd") and Casting.AAReady("Dirge of the Sleepwalker") and Config:GetSetting('DoAAMez') then
             -- Bard AA Mez is Dirge of the Sleepwalker
             -- Only bards have single target AA Mez
@@ -376,10 +395,11 @@ function Module:MezNow(mezId, useAE, useAA)
                 Comms.FormatChatEvent("Mez", mq.TLO.Spawn(mezId).CleanName(), "AA: Dirge of the Sleepwalker"),
                 Config:GetSetting('MezAnnounceGroup'),
                 Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
-            Casting.UseAA("Dirge of the Sleepwalker", mezId)
+            Casting.UseAA("Dirge of the Sleepwalker", mezId, false, retryCount)
 
             mq.doevents('ImmuneMez')
             if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
+                self:RecordMezSuccess(mezId, "Dirge of the Sleepwalker")
                 Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), "AA:Dirge of the Sleepwalker"), Config:GetSetting('MezAnnounceGroup'),
                     Config:GetSetting('MezAnnounce'),
                     Config:GetSetting('AnnounceToRaidIfInRaid'))
@@ -389,19 +409,33 @@ function Module:MezNow(mezId, useAE, useAA)
             end
 
             mq.doevents('ImmuneMez')
+            Casting.ClearMezMAWatch()
+            Targeting.SetTarget(currentTargetID, true)
             return
         end
 
-        if not mezSpell or not mezSpell() then return end
+        if not mezSpell or not mezSpell() then
+            Casting.ClearMezMAWatch()
+            Targeting.SetTarget(currentTargetID, true)
+            return
+        end
 
         if not Casting.SpellReady(mezSpell) then
             if (mq.TLO.Me.GemTimer(mezSpell.RankName())() or -1) == 0 then
                 local maxWaitToMez = 1500 + (mq.TLO.Window("CastingWindow").Open() and (mq.TLO.Me.Casting.MyCastTime() or 3000) or 0)
                 while maxWaitToMez > 0 do
                     Logger.log_verbose("MEZ: Waiting for cast or movement to finish to use ST Mez.")
+                    if Casting.MezTargetIsMA(mezId) then
+                        Logger.log_debug("\ayMezGate:\ax Abort ST mez wait — mob %d became MA AutoTarget.", mezId)
+                        Casting.ClearMezMAWatch()
+                        Targeting.SetTarget(currentTargetID, true)
+                        return
+                    end
                     if aeMezSpell and aeMezSpell() and Targeting.GetXTHaterCount() >= Config:GetSetting('MezAECount') and ((mq.TLO.Me.GemTimer(aeMezSpell.RankName())() or -1) == 0 or (Config:GetSetting('DoAAMez') and mq.TLO.Me.AltAbilityReady("Beam of Slumber"))) then
                         Logger.log_debug("Mez: Waiting for single mez to be ready, but high number of targets, let's check if AE Mez is needed again before we start singles.")
                         self:AEMezCheck()
+                        Casting.ClearMezMAWatch()
+                        Targeting.SetTarget(currentTargetID, true)
                         return
                     end
                     if Casting.SpellReady(mezSpell) then
@@ -421,18 +455,20 @@ function Module:MezNow(mezId, useAE, useAA)
         end
 
         -- we might have waited.
-        if Casting.SpellReady(mezSpell) then
+        if Casting.SpellReady(mezSpell) and not Casting.MezTargetIsMA(mezId) then
             if Core.MyClassIs("brd") then
-                Casting.UseSong(mezSpell.RankName(), mezId, false, 2)
+                Casting.UseSong(mezSpell.RankName(), mezId, false, retryCount)
             else
                 -- This may not work for Bards but will work for NEC/ENCs
-                Casting.UseSpell(mezSpell.RankName(), mezId, false, false, 2)
+                Casting.UseSpell(mezSpell.RankName(), mezId, false, false, retryCount)
             end
 
             -- In case they're mez immune
             mq.doevents('ImmuneMez')
 
-            if Casting.GetLastCastResultId() == Globals.Constants.CastResults.CAST_SUCCESS then
+            local castResult = Casting.GetLastCastResultId()
+            if castResult == Globals.Constants.CastResults.CAST_SUCCESS or castResult == Globals.Constants.CastResults.CAST_TAKEHOLD then
+                self:RecordMezSuccess(mezId, mezSpell.RankName.Name())
                 Comms.HandleAnnounce(Comms.FormatChatEvent("Mez Success", mq.TLO.Spawn(mezId).CleanName(), mezSpell.RankName()), Config:GetSetting('MezAnnounceGroup'),
                     Config:GetSetting('MezAnnounce'), Config:GetSetting('AnnounceToRaidIfInRaid'))
             else
@@ -442,6 +478,9 @@ function Module:MezNow(mezId, useAE, useAA)
         end
 
         mq.doevents('ImmuneMez')
+        Casting.ClearMezMAWatch()
+        Targeting.SetTarget(currentTargetID, true)
+        return
     end
 
     Targeting.SetTarget(currentTargetID, true)
@@ -508,49 +547,509 @@ function Module:AEMezCheck()
     mq.doevents('ImmuneMez')
 end
 
-function Module:RemoveCCTarget(mobId)
-    if mobId == 0 then return end
-    self.TempSettings.MezTracker[mobId] = nil
+--- True when a Mezzed buff TLO is present (ID, spell name, or readable duration).
+--- Magical spawns often expose Mezzed() / Duration but not Mezzed.ID.
+---@param mezBuff any?
+---@return boolean
+function Module:MezzedBuffActive(mezBuff)
+    if not mezBuff then return false end
+    if mezBuff.ID and (mezBuff.ID() or 0) > 0 then return true end
+    local spellName = mezBuff()
+    if spellName and spellName ~= "" then return true end
+    local durationMs = self:GetMezBuffDurationMs(mezBuff)
+    return durationMs ~= nil and durationMs > 0
 end
 
-function Module:AddCCTarget(mobId)
-    if mobId == 0 then return end
+--- Spell name from a Mezzed buff TLO child (nil-safe; XT/Spawn may omit Mezzed entirely).
+---@param mezBuff any?
+---@return string?
+function Module:GetMezzedSpellName(mezBuff)
+    if not mezBuff then return nil end
+    local name = mezBuff()
+    if name and name ~= "" then return name end
+    return nil
+end
 
-    if #self.TempSettings.MezTracker >= Config:GetSetting('MaxMezCount') and self.TempSettings.MezTracker[mobId] == nil then
-        Logger.log_debug("\awNOTICE:\ax Unable to mez %d - mez list is full", mobId)
-        return false
+--- Remaining mez buff time in milliseconds (nil when unreadable).
+---@param mezBuff any Mezzed buff TLO (XT / Spawn / Target)
+---@return number?
+function Module:GetMezBuffDurationMs(mezBuff)
+    if not mezBuff then return nil end
+    local dur = mezBuff.Duration
+    if not dur then return nil end
+    if dur.TotalMilliseconds then
+        local ms = dur.TotalMilliseconds()
+        if ms and ms > 0 then return ms end
+    end
+    if dur.TotalSeconds then
+        local sec = dur.TotalSeconds()
+        if sec and sec > 0 then return sec * 1000 end
+    end
+    return nil
+end
+
+--- Cast safety window in milliseconds (time to refresh before mez breaks).
+---@param mezSpell any?
+---@return number
+function Module:GetMezCastWindow(mezSpell)
+    mezSpell = mezSpell or self:GetMezSpell()
+    if not mezSpell or not mezSpell() then return 0 end
+    return mezSpell.MyCastTime() or 0
+end
+
+--- Mezzed state via Spawn TLO (no cursor change).
+---@param spawnId number
+---@return boolean isMezzed
+---@return number? durationMs
+function Module:GetSpawnMezzedState(spawnId)
+    if spawnId == 0 then return false, nil end
+    local spawn = mq.TLO.Spawn(spawnId)
+    if not spawn or not spawn() or not spawn.Mezzed then return false, nil end
+    if not self:MezzedBuffActive(spawn.Mezzed) then return false, nil end
+    return true, self:GetMezBuffDurationMs(spawn.Mezzed)
+end
+
+--- Mezzed state for an XTarget entry via XT + Spawn TLO (no cursor change).
+---@param spawnId number
+---@param xtSpawn MQSpawn?
+---@return boolean isMezzed
+---@return number? durationMs nil when mezzed but remaining time is unreadable
+function Module:GetXtMezzedState(spawnId, xtSpawn)
+    if spawnId == 0 then return false, nil end
+
+    local xt = xtSpawn
+    if xt and xt() and xt.Mezzed and self:MezzedBuffActive(xt.Mezzed) then
+        return true, self:GetMezBuffDurationMs(xt.Mezzed)
     end
 
-    if self:IsMezImmune(mobId) then
-        Logger.log_debug("\awNOTICE:\ax Unable to mez %d - it is immune", mobId)
-        return false
+    return self:GetSpawnMezzedState(spawnId)
+end
+
+--- True when XT spawn is in a known mez animation set.
+---@param xtSpawn MQSpawn?
+---@return boolean
+function Module:XtHasMezAnimation(xtSpawn)
+    if not xtSpawn or not xtSpawn() then return false end
+    return Globals.Constants.RGMezzedAnims:contains(xtSpawn.Animation() or 0)
+end
+
+--- Safe Spawn.FindBuff wrapper (MQ requires id/name/detspa syntax, not bare spell names).
+---@param spawn MQSpawn?
+---@param search string
+---@return any? buff TLO
+function Module:TrySpawnFindBuff(spawn, search)
+    if not spawn or not spawn() or not spawn.FindBuff or not search or search == "" then return nil end
+    local buff = spawn.FindBuff(search)
+    if buff and buff() then return buff end
+    return nil
+end
+
+--- Find an active mez/mesmerize buff on spawn (fallback when Mezzed TLO is incomplete).
+---@param spawnId number
+---@param mezSpell any?
+---@return any? buff TLO
+function Module:FindMezBuffOnSpawn(spawnId, mezSpell)
+    local spawn = mq.TLO.Spawn(spawnId)
+    if not spawn or not spawn() then return nil end
+
+    mezSpell = mezSpell or self:GetMezSpell()
+    if mezSpell and mezSpell() then
+        local spellId = mezSpell.ID()
+        if spellId and spellId > 0 then
+            local byId = self:TrySpawnFindBuff(spawn, "id " .. tostring(spellId))
+            if byId then return byId end
+        end
+        local rankName = mezSpell.RankName.Name()
+        if rankName and rankName ~= "" then
+            local byName = self:TrySpawnFindBuff(spawn, 'name "' .. rankName .. '"')
+            if byName then return byName end
+        end
     end
 
-    self:StopAttack()
+    -- SPA 31 = Mesmerize
+    return self:TrySpawnFindBuff(spawn, "detspa 31")
+end
 
-    Targeting.SetTarget(mobId)
+---@param mobId number
+---@return number? remainingMs
+function Module:GetTrackerRemainingMs(mobId)
+    local entry = self.TempSettings.MezTracker[mobId]
+    if not entry then return nil end
+    local remaining = entry.remainingMs or 0
+    if remaining > 0 then return remaining end
+    return nil
+end
 
+---@param durationMs number raw buff duration from TLO or spell metadata
+---@param castWindow number
+---@return number
+function Module:ComputeTrackerRemainingMs(durationMs, castWindow)
+    return math.max(durationMs - castWindow, castWindow)
+end
+
+---@param durationMs number?
+---@param castWindow number
+---@return "stable"|"refresh"|"unreadable"
+function Module:ClassifyMezDuration(durationMs, castWindow)
+    if durationMs and durationMs > castWindow then return "stable" end
+    if durationMs and durationMs > 0 then return "refresh" end
+    return "unreadable"
+end
+
+---@param mobId number
+---@param durationMs number
+---@param spellName string?
+---@param mobName string?
+---@param castWindow number?
+function Module:SetTrackerEntry(mobId, durationMs, spellName, mobName, castWindow)
+    if mobId == 0 or not durationMs or durationMs <= 0 then return end
+
+    castWindow = castWindow or self:GetMezCastWindow()
+    local spawn = mq.TLO.Spawn(mobId)
     self.TempSettings.MezTracker[mobId] = {
-        name = mq.TLO.Target.CleanName(),
-        duration = mq.TLO.Target.Mezzed.Duration() or 0,
+        name = mobName or (spawn() and spawn.CleanName()) or "?",
+        remainingMs = self:ComputeTrackerRemainingMs(durationMs, castWindow),
         last_check = Globals.GetTimeMS(),
-        mez_spell = mq.TLO
-            .Target.Mezzed() or "None",
+        mez_spell = spellName or "Unknown",
     }
+    Logger.log_debug("\ayMezGate:\ax Tracking mez on %d (%s) for ~%s (spell %s).", mobId,
+        self.TempSettings.MezTracker[mobId].name,
+        Strings.FormatTime(self.TempSettings.MezTracker[mobId].remainingMs / 1000),
+        self.TempSettings.MezTracker[mobId].mez_spell)
+end
+
+--- Refresh tracker countdown from a live TLO duration read.
+---@param mobId number
+---@param durationMs number
+---@param castWindow number?
+function Module:RefreshTrackerDuration(mobId, durationMs, castWindow)
+    local entry = self.TempSettings.MezTracker[mobId]
+    if not entry or not durationMs or durationMs <= 0 then return end
+    castWindow = castWindow or self:GetMezCastWindow()
+    entry.remainingMs = self:ComputeTrackerRemainingMs(durationMs, castWindow)
+    entry.last_check = Globals.GetTimeMS()
+end
+
+--- Decrement MezTracker remaining times (Original UpdateTimings equivalent).
+function Module:UpdateMezTimings()
+    local now = Globals.GetTimeMS()
+    for _, data in pairs(self.TempSettings.MezTracker) do
+        if data.last_check then
+            local elapsed = now - data.last_check
+            data.remainingMs = math.max(0, (data.remainingMs or 0) - elapsed)
+        end
+        data.last_check = now
+    end
+end
+
+--- Spawn ID lookup only (no cursor). True when manual or auto charm applied Charmed / PC pet Master.
+---@param mobId number
+---@return boolean
+function Module:IsCharmedSpawnId(mobId)
+    if mobId == 0 then return false end
+    return Combat.TargetIsCharmedSpawn(mq.TLO.Spawn(mobId))
+end
+
+--- Drop dead, corpse, charmed, out-of-range, or MA entries from the tracker.
+function Module:PruneMezTracker()
+    local assistId = Globals.AutoTargetID
+    local mezRadius = Config:GetSetting('MezRadius')
+
+    for id, _ in pairs(self.TempSettings.MezTracker) do
+        if id == assistId then
+            self.TempSettings.MezTracker[id] = nil
+        else
+            local spawn = mq.TLO.Spawn(id)
+            if not spawn or not spawn() or spawn.Dead() or (spawn.Type() or ""):lower() == "corpse" then
+                self.TempSettings.MezTracker[id] = nil
+            elseif Combat.TargetIsCharmedSpawn(spawn) then
+                Logger.log_debug("\ayMezGate:\ax Tracker %d (%s) charmed — removing keep entry.", id, spawn.CleanName() or "?")
+                self.TempSettings.MezTracker[id] = nil
+            elseif (spawn.Distance() or 999) > mezRadius then
+                Logger.log_verbose("\ayMezGate:\ax Tracker %d (%s) out of mez radius — removing.", id, spawn.CleanName() or "?")
+                self.TempSettings.MezTracker[id] = nil
+            end
+        end
+    end
+end
+
+---@param mobId number
+---@param castWindow number
+---@param mezSpell any?
+---@param xtSpawn MQSpawn?
+---@return boolean
+function Module:IsTrackerStable(mobId, castWindow, mezSpell, xtSpawn)
+    local isMezzed, durationMs = self:GetMobMezzedState(mobId, xtSpawn, mezSpell)
+    if not isMezzed then return false end
+    if not durationMs then return true end
+    return durationMs > castWindow
+end
+
+--- Resolve mez duration after a successful cast (TLO → FindBuff → spell metadata fallback).
+---@param mobId number
+---@param spellName string
+---@return number durationMs
+function Module:ResolveMezDurationMs(mobId, spellName)
+    local targetMezzed = mq.TLO.Target() and mq.TLO.Target.Mezzed or nil
+    local durationMs = self:GetMezBuffDurationMs(targetMezzed)
+    if not durationMs or durationMs <= 0 then
+        local buff = self:FindMezBuffOnSpawn(mobId)
+        durationMs = buff and self:GetMezBuffDurationMs(buff) or nil
+    end
+    if not durationMs or durationMs <= 0 then
+        local spell = mq.TLO.Spell(spellName)
+        if spell and spell() then
+            local dur = spell.MyDuration
+            if dur and dur.TotalMilliseconds then
+                durationMs = dur.TotalMilliseconds()
+            elseif dur and dur.TotalSeconds then
+                durationMs = (dur.TotalSeconds() or 0) * 1000
+            end
+        end
+    end
+    if not durationMs or durationMs <= 0 then
+        durationMs = 60000
+    end
+    return durationMs
+end
+
+--- Register a mob on the slim tracker after ST mez success (Magical / weak Mezzed TLO).
+---@param mobId number
+---@param spellName string
+function Module:RecordMezSuccess(mobId, spellName)
+    if mobId == 0 then return end
+    self:SetTrackerEntry(mobId, self:ResolveMezDurationMs(mobId, spellName), spellName)
+end
+
+--- Live mez probe without MezTracker. nil = inconclusive (Magical / unreadable TLO).
+---@param spawnId number
+---@param xtSpawn MQSpawn?
+---@param mezSpell any?
+---@return boolean? isMezzed true = mezzed, false = slot read confirms no mez, nil = inconclusive
+---@return number? durationMs
+function Module:ProbeLiveMezzedState(spawnId, xtSpawn, mezSpell)
+    if spawnId == 0 then return false, nil end
+
+    local spawn = mq.TLO.Spawn(spawnId)
+    if not spawn or not spawn() then return false, nil end
+
+    local mezzedSlotEmpty = false
+
+    if xtSpawn and xtSpawn() then
+        if xtSpawn.Mezzed then
+            if self:MezzedBuffActive(xtSpawn.Mezzed) then
+                return true, self:GetMezBuffDurationMs(xtSpawn.Mezzed)
+            end
+            mezzedSlotEmpty = true
+        end
+        if self:XtHasMezAnimation(xtSpawn) then
+            return true, nil
+        end
+    end
+
+    if spawn.Mezzed then
+        if self:MezzedBuffActive(spawn.Mezzed) then
+            return true, self:GetMezBuffDurationMs(spawn.Mezzed)
+        end
+        mezzedSlotEmpty = true
+    end
+
+    local buff = self:FindMezBuffOnSpawn(spawnId, mezSpell)
+    if buff then
+        return true, self:GetMezBuffDurationMs(buff)
+    end
+
+    if mezzedSlotEmpty then
+        return false, nil
+    end
+
+    return nil, nil
+end
+
+--- Hybrid mezzed detection: live TLO first; tracker fallback only when live is inconclusive.
+---@param spawnId number
+---@param xtSpawn MQSpawn?
+---@param mezSpell any?
+---@return boolean isMezzed
+---@return number? durationMs
+function Module:GetMobMezzedState(spawnId, xtSpawn, mezSpell)
+    if self:IsCharmedSpawnId(spawnId) then
+        self.TempSettings.MezTracker[spawnId] = nil
+        return false, nil
+    end
+
+    local castWindow = self:GetMezCastWindow(mezSpell)
+    local liveMezzed, liveDuration = self:ProbeLiveMezzedState(spawnId, xtSpawn, mezSpell)
+
+    if liveMezzed == true then
+        if liveDuration and liveDuration > 0 then
+            if self.TempSettings.MezTracker[spawnId] then
+                self:RefreshTrackerDuration(spawnId, liveDuration, castWindow)
+            end
+        end
+        return true, liveDuration or self:GetTrackerRemainingMs(spawnId)
+    end
+
+    if liveMezzed == false then
+        if self.TempSettings.MezTracker[spawnId] then
+            Logger.log_debug("\ayMezGate:\ax Spawn %d live mez clear — dropping tracker entry.", spawnId)
+            self.TempSettings.MezTracker[spawnId] = nil
+        end
+        return false, nil
+    end
+
+    local trackerRemaining = self:GetTrackerRemainingMs(spawnId)
+    if trackerRemaining then
+        return true, trackerRemaining
+    end
+
+    return false, nil
+end
+
+--- Rows for the CC target UI table (slim MezTracker list).
+---@return table[]
+function Module:GetTrackerDisplayRows()
+    local rows = {}
+    for id, data in pairs(self.TempSettings.MezTracker) do
+        table.insert(rows, {
+            id = id,
+            name = data.name or "?",
+            duration = data.remainingMs or 0,
+            mez_spell = data.mez_spell or "Unknown",
+        })
+    end
+    table.sort(rows, function(a, b) return a.id < b.id end)
+    return rows
+end
+
+--- Phase 1: tracked mobs (Spawn-based; survives HateClear / off-XT). PruneMezTracker runs before this.
+---@param assistId number
+---@param castWindow number
+---@param haterCount number
+---@return boolean needsWork
+---@return number? mobId
+---@return boolean needsRefresh
+function Module:ScanTrackerMezNeeds(assistId, castWindow, haterCount, mezSpell)
+    for id, data in pairs(self.TempSettings.MezTracker) do
+        if id > 0 and id ~= assistId then
+            if self:IsCharmedSpawnId(id) then
+                self.TempSettings.MezTracker[id] = nil
+            else
+                local isMezzed, durationMs = self:GetMobMezzedState(id, nil, mezSpell)
+                if isMezzed then
+                    local timing = self:ClassifyMezDuration(durationMs, castWindow)
+                    if timing == "refresh" then
+                        Logger.log_debug("\ayMezGate:\ax Tracker %d (%s) mez expiring (%s).", id, data.name or "?",
+                            durationMs and Strings.FormatTime(durationMs / 1000) or "?")
+                        return true, id, true
+                    end
+                else
+                    local spawn = mq.TLO.Spawn(id)
+                    if haterCount >= Config:GetSetting('MezStartCount') and spawn() and self:IsValidMezTarget(id) and spawn.Aggressive() then
+                        Logger.log_debug("\ayMezGate:\ax Tracker %d (%s) mez broken — needs mez.", id, data.name or "?")
+                        self.TempSettings.MezTracker[id] = nil
+                        return true, id, false
+                    end
+                    self.TempSettings.MezTracker[id] = nil
+                end
+            end
+        end
+    end
+
+    return false, nil, false
+end
+
+--- Phase 2: XT haters for first-time mezzes (and sync newly mezzed mobs into tracker).
+---@param assistId number
+---@param castWindow number
+---@param haterCount number
+---@param mezSpell any
+---@return boolean needsWork
+---@return number? mobId
+---@return boolean needsRefresh
+function Module:ScanXtMezNeeds(assistId, castWindow, haterCount, mezSpell)
+    if haterCount < Config:GetSetting('MezStartCount') then
+        return false, nil, false
+    end
+    if haterCount > Config:GetSetting('MaxMezCount') then
+        return false, nil, false
+    end
+
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    for i = 1, xtCount do
+        local xt = mq.TLO.Me.XTarget(i)
+        if xt() and not xt.Dead() and (xt.Type() or ""):lower() ~= "corpse" then
+            local id = xt.ID() or 0
+            if id > 0 and id ~= assistId and not self:IsTrackerStable(id, castWindow, mezSpell, xt) then
+                local isMezzed, durationMs = self:GetMobMezzedState(id, xt, mezSpell)
+                if isMezzed then
+                    local timing = self:ClassifyMezDuration(durationMs, castWindow)
+                    if timing == "stable" then
+                        if not self.TempSettings.MezTracker[id] and durationMs then
+                            local spellLabel = self:GetMezzedSpellName(xt.Mezzed)
+                                or (mezSpell and mezSpell() and mezSpell.RankName())
+                                or "Unknown"
+                            self:SetTrackerEntry(id, durationMs, spellLabel, xt.CleanName(), castWindow)
+                        end
+                    elseif timing == "refresh" then
+                        if self:IsCharmedSpawnId(id) then
+                            self.TempSettings.MezTracker[id] = nil
+                        else
+                            Logger.log_debug("\ayMezGate:\ax XT %d (%s) mez expiring (%s).", id, xt.CleanName() or "?",
+                                durationMs and Strings.FormatTime(durationMs / 1000) or "?")
+                            return true, id, true
+                        end
+                    end
+                elseif not self:IsValidMezTarget(id) then
+                    -- skip invalid targets silently
+                elseif not xt.Aggressive() then
+                    -- non-aggressive = CC stable
+                else
+                    Logger.log_debug("\ayMezGate:\ax XT %d (%s) needs mez", id, xt.CleanName() or "?")
+                    return true, id, false
+                end
+            end
+        end
+    end
+
+    return false, nil, false
+end
+
+--- Hybrid scan: tracker keep (off-XT) then XT for new mezzes.
+---@param mezSpell any
+---@param castWindow number
+---@param haterCount number
+---@return boolean needsWork
+---@return number? mobId
+---@return boolean needsRefresh true when mez is still active but within cast window (re-mez before break)
+function Module:ScanMezNeeds(mezSpell, castWindow, haterCount)
+    if not mezSpell or not mezSpell() then return false, nil, false end
+
+    local assistId = Globals.AutoTargetID
+
+    local needsWork, mobId, needsRefresh = self:ScanTrackerMezNeeds(assistId, castWindow, haterCount, mezSpell)
+    if needsWork then return needsWork, mobId, needsRefresh end
+
+    return self:ScanXtMezNeeds(assistId, castWindow, haterCount, mezSpell)
 end
 
 function Module:IsValidMezTarget(mobId)
     local spawn = mq.TLO.Spawn(mobId)
 
+    if Combat.TargetIsCharmedSpawn(spawn) then return false end
+
+    local pet = mq.TLO.Me.Pet
+    if pet() and pet.ID() > 0 and (spawn.ID() or 0) == pet.ID() then return false end
+
     if Targeting.IsTempPet(spawn) then
-        Logger.log_debug("\ayUpdateMezList: Skipping Mob ID: %d Name: %s Level: %d as it is a temp PC pet.",
+        Logger.log_debug("\ayMezGate:\ax Skipping Mob ID: %d Name: %s Level: %d as it is a temp PC pet.",
             spawn.ID(), spawn.CleanName(), spawn.Level() or 0)
         return false
     end
 
     -- Is the mob ID in our mez immune list? If so, skip.
     if self:IsMezImmune(mobId) then
-        Logger.log_debug("\ayUpdateMezList: Skipping Mob ID: %d Name: %s Level: %d as it is in our immune list.",
+        Logger.log_debug("\ayMezGate:\ax Skipping Mob ID: %d Name: %s Level: %d as it is in our immune list.",
             spawn.ID(), spawn.CleanName(), spawn.Level() or 0)
         return false
     end
@@ -558,7 +1057,7 @@ function Module:IsValidMezTarget(mobId)
     -- undead it gets added to the mez immune list.
     if Targeting.TargetBodyIs(spawn, "giant") then
         Logger.log_debug(
-            "\ayUpdateMezList: Adding ID: %d Name: %s Level: %d to our immune list as it is a giant.", spawn.ID(),
+            "\ayMezGate:\ax Adding ID: %d Name: %s Level: %d to our immune list as it is a giant.", spawn.ID(),
             spawn.CleanName(),
             spawn.Level())
         self:AddImmuneTarget(spawn.ID(), { id = spawn.ID(), name = spawn.CleanName(), })
@@ -566,19 +1065,19 @@ function Module:IsValidMezTarget(mobId)
     end
 
     if spawn and not spawn.LineOfSight() then
-        Logger.log_debug("\ayUpdateMezList: Skipping Mob ID: %d Name: %s Level: %d - No LOS.", spawn.ID(),
+        Logger.log_debug("\ayMezGate:\ax Skipping Mob ID: %d Name: %s Level: %d - No LOS.", spawn.ID(),
             spawn.CleanName(), spawn.Level() or 0)
         return false
     end
 
     if (spawn.PctHPs() or 0) < Config:GetSetting('MezStopHPs') then
-        Logger.log_debug("\ayUpdateMezList: Skipping Mob ID: %d Name: %s Level: %d - HPs too low.", spawn.ID(),
+        Logger.log_debug("\ayMezGate:\ax Skipping Mob ID: %d Name: %s Level: %d - HPs too low.", spawn.ID(),
             spawn.CleanName(), spawn.Level() or 0)
         return false
     end
 
     if (spawn.Distance() or 999) > Config:GetSetting('MezRadius') then
-        Logger.log_debug("\ayUpdateMezList: Skipping Mob ID: %d Name: %s Level: %d - Out of Mez Radius",
+        Logger.log_debug("\ayMezGate:\ax Skipping Mob ID: %d Name: %s Level: %d - Out of Mez Radius",
             spawn.ID(), spawn.CleanName(), spawn.Level() or 0)
         return false
     end
@@ -586,187 +1085,64 @@ function Module:IsValidMezTarget(mobId)
     return true
 end
 
-function Module:UpdateMezList()
-    local searchTypes = { "npc", "npcpet", }
-
-    local mezSpell = self:GetMezSpell()
-
-    if not mezSpell or not mezSpell() then
-        Logger.log_verbose("\ayayUpdateMezList: No mez spell - bailing!")
-        return
+function Module:RestoreAssistTarget()
+    if Globals.AutoTargetID > 0 and Core.ValidCombatTarget(Globals.AutoTargetID) and mq.TLO.Target.ID() ~= Globals.AutoTargetID then
+        Targeting.SetTarget(Globals.AutoTargetID, true)
     end
-
-    for _, t in ipairs(searchTypes) do
-        local minLevel = Config:GetSetting('MezMinLevel')
-        local maxLevel = Config:GetSetting('MezMaxLevel')
-
-        if Config:GetSetting('AutoLevelRange') and mezSpell and mezSpell() then
-            minLevel = 0
-            maxLevel = mezSpell.MaxLevel()
-        end
-        local searchString = string.format("%s radius %d zradius %d range %d %d targetable playerstate 4", t,
-            Config:GetSetting('MezRadius') * 2, Config:GetSetting('MezZRadius') * 2, minLevel, maxLevel)
-
-        local mobCount = mq.TLO.SpawnCount(searchString)()
-        Logger.log_debug("\ayUpdateMezList: Search String: '\at%s\ay' -- Count :: \am%d", searchString, mobCount)
-        for i = 1, mobCount do
-            local spawn = mq.TLO.NearestSpawn(i, searchString)
-
-            if spawn and spawn() and spawn.ID() > 0 then
-                Logger.log_debug(
-                    "\ayUpdateMezList: Processing MobCount %d -- ID: %d Name: %s Level: %d BodyType: %s", i, spawn.ID(),
-                    spawn.CleanName(), spawn.Level(),
-                    spawn.Body.Name())
-
-                if self:IsValidMezTarget(spawn.ID()) then
-                    Logger.log_debug("\agAdding to CC List: %d -- ID: %d Name: %s Level: %d BodyType: %s", i,
-                        spawn.ID(), spawn.CleanName(), spawn.Level(), spawn.Body.Name())
-                    self:AddCCTarget(spawn.ID())
-                end
-            end
-        end
-    end
-
-    mq.doevents()
 end
 
-function Module:ProcessMezList()
-    -- Assume by default we never need to block for mez. We'll set this if-and-only-if
-    -- we need to mez but our ability is on cooldown.
-    Core.DoCmd("/attack off")
-    Logger.log_debug("\ayProcessMezList() :: Loop")
-    local mezSpell = self:GetMezSpell()
-
-    if not mezSpell or not mezSpell() then return end
-
-    if Tables.GetTableSize(self.TempSettings.MezTracker) <= 0 then
-        Logger.log_debug("\ayProcessMezList() :: Mez tracker is empty.")
-        return
-    end
-
-    if not Config:GetSetting('DoSTMez') and Targeting.GetXTHaterCount() < Config:GetSetting('MezAECount') then
-        Logger.log_debug("\ayProcessMezList(%d) :: Single Target Mezzing is off and under the needed AE count threshold, returning.")
-        return
-    end
-
-    local removeList = {}
-    for id, data in pairs(self.TempSettings.MezTracker) do
-        local spawn = mq.TLO.Spawn(id)
-        Logger.log_debug("\ayProcessMezList(%d) :: Checking...", id)
-
-        if not spawn or not spawn() or spawn.Dead() or Targeting.TargetIsType("corpse", spawn) or (spawn.ID() or 0) == Globals.AutoTargetID then
-            table.insert(removeList, id)
-            Logger.log_debug("\ayProcessMezList(%d) :: Can't find mob removing...", id)
-        else
-            if self:IsMezImmune(id) then
-                -- somehow added an immune mod to our tracker...
-                Logger.log_debug("\ayProcessMezList(%d) :: Mob id is in immune list - removing...", id)
-                table.insert(removeList, id)
-            else
-                -- Recast when the mob is not mezzed, or when the tracked timer is about to expire.
-                -- MyCastTime is in ms, Mezzed.Duration is in deciseconds.
-                local spell = mezSpell
-                local castWindow = spell.MyCastTime() / 100
-                local mezzedId = spawn.Mezzed and spawn.Mezzed.ID and spawn.Mezzed.ID()
-                local isMezzed = mezzedId and mezzedId > 0
-                local outOfRange = spawn.Distance() > Config:GetSetting('MezRadius') or not spawn.LineOfSight()
-                if outOfRange or (isMezzed and data.duration > castWindow) then
-                    Logger.log_debug("\ayProcessMezList(%d) :: Mezzed(%s) Timer(%s > %s) Distance(%d) LOS(%s)", id,
-                        Strings.BoolToColorString(isMezzed),
-                        Strings.FormatTime(data.duration / 1000),
-                        Strings.FormatTime(castWindow), spawn.Distance() or 0,
-                        Strings.BoolToColorString(spawn.LineOfSight()))
-                else
-                    if id == Globals.AutoTargetID then
-                        Logger.log_debug("\ayProcessMezList(%d) :: Mob is MA's target skipping", id)
-                        table.insert(removeList, id)
-                    else
-                        Logger.log_debug("\ayProcessMezList(%d) :: Mob needs mezed.", id)
-
-                        self:StopAttack()
-
-                        self:StopCast()
-
-                        -- Algar note 4/5/2025: This entire thing could likely be refactored. It works much better than before, where we would have ae mez checked once and then we would use 6 single target mezzes instead.
-                        -- The choice of using the autotarget for an AEMez really sucks on targets that die quickly; but I suppose the mez isn't as important if they do.
-                        -- There are also instances where we recast the AEMez because the autotarget hasn't updated in time, meaning, only the autotarget isn't mezzed, but better too often than not enough for the sake of the user.
-                        -- Overall, AE and ST Mez seem to play much better together with the addition of the check below.
-                        -- Additionally, the AE Mez checks will now still use the mez list instead of being fire and forget.
-
-                        --mez the thing, if it isn't (an AE mez or someone else's mez may have hit it before we got to it). If it is, we will update timer below.
-                        Targeting.SetTarget(id)
-                        if Config:GetSetting('DoAEMez') and not mq.TLO.Target.Mezzed() and mq.TLO.Me.GroupAssistTarget.ID() ~= id then
-                            --lets make sure we didn't have more mobs dogpile on, making an AE mez more appropriate
-                            local aeMezSpell = self:GetAEMezSpell()
-                            if aeMezSpell and aeMezSpell() and Targeting.GetXTHaterCount() >= Config:GetSetting('MezAECount') and ((mq.TLO.Me.GemTimer(aeMezSpell.RankName())() or -1) == 0 or (Config:GetSetting('DoAAMez') and mq.TLO.Me.AltAbilityReady("Beam of Slumber"))) then
-                                Logger.log_debug("High number of targets, let's check if AE Mez is needed again before we start singles.")
-                                self:AEMezCheck()
-                            end
-                        end
-
-                        --lets check to see if it is mezzed now/again and use a single target mez if necessary:
-                        Targeting.SetTarget(id)
-                        if id ~= Globals.AutoTargetID and Config:GetSetting('DoSTMez') and not mq.TLO.Target.Mezzed() then
-                            Logger.log_debug("Single target mez is (still) needed.")
-                            self:MezNow(id, false, true)
-                        end
-
-                        if mq.TLO.Target.Mezzed.ID() then
-                            -- update the timer.
-                            self:AddCCTarget(id)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    for _, id in ipairs(removeList) do
-        self:RemoveCCTarget(id)
-    end
-
-    mq.doevents()
-end
-
+--- Hybrid gate: tracker + XT. CC stable → pass through; otherwise mez one mob and block this frame.
 function Module:DoMez()
     local mezSpell = self:GetMezSpell()
-    local aeMezSpell = self:GetAEMezSpell()
-    if aeMezSpell and aeMezSpell() and Targeting.GetXTHaterCount() >= Config:GetSetting('MezAECount') and ((mq.TLO.Me.GemTimer(aeMezSpell.RankName())() or -1) == 0 or (Config:GetSetting('DoAAMez') and mq.TLO.Me.AltAbilityReady("Beam of Slumber"))) then
-        self:AEMezCheck()
-    end
-
-    self:UpdateTimings()
-
-    if Targeting.GetXTHaterCount() >= Config:GetSetting('MezStartCount') then
-        self:UpdateMezList()
-    end
-
-    if Targeting.GetXTHaterCount() < Config:GetSetting('MezStartCount') then
-        if Tables.GetTableSize(self.TempSettings.MezTracker) > 0 then
-            Logger.log_debug("\ayDoMez() :: Hater count below MezStartCount (%d), clearing mez tracker.", Config:GetSetting('MezStartCount'))
-            self.TempSettings.MezTracker = {}
-        end
+    if not mezSpell or not mezSpell() then
+        self:RestoreAssistTarget()
         return
     end
 
-    local tableSize = Tables.GetTableSize(self.TempSettings.MezTracker)
-    if mezSpell and mezSpell() and tableSize >= 1 then
-        self:ProcessMezList()
-    else
-        Logger.log_verbose("DoMez() : Skipping Mez list processing: Spell(%s) Ready(%s) TableSize(%d)", mezSpell and mezSpell() or "None",
-            mezSpell and mezSpell() and Strings.BoolToColorString(mq.TLO.Me.SpellReady(mezSpell.RankName.Name())()) or "NoSpell",
-            tableSize)
+    local aeMezSpell = self:GetAEMezSpell()
+    local castWindow = self:GetMezCastWindow(mezSpell)
+    local haterCount = Targeting.GetXTHaterCount()
+
+    self:UpdateMezTimings()
+    self:PruneMezTracker()
+
+    -- メズが終わったのに MA 監視フラグだけ残っている場合の掃除（詠唱中は WaitCastFinish が中断を担当）。
+    if Globals.MezInterruptOnMATarget and not mq.TLO.Me.Casting() then
+        Casting.ClearMezMAWatch()
     end
-end
 
-function Module:UpdateTimings()
-    for _, data in pairs(self.TempSettings.MezTracker) do
-        local timeDelta = (Globals.GetTimeMS()) - data.last_check
-
-        data.duration = data.duration - timeDelta
-
-        data.last_check = Globals.GetTimeMS()
+    local needsWork, mobId, needsRefresh = self:ScanMezNeeds(mezSpell, castWindow, haterCount)
+    if not needsWork then
+        self:RestoreAssistTarget()
+        return
     end
+
+    if not Config:GetSetting('DoSTMez') then
+        Logger.log_debug("\ayMezGate:\ax ST mez disabled; mob %d still needs attention.", mobId or 0)
+        return
+    end
+
+    self:StopAttack()
+    self:StopCast()
+
+    if Config:GetSetting('DoAEMez') and haterCount >= Config:GetSetting('MezAECount') then
+        local aeReady = aeMezSpell and aeMezSpell() and ((mq.TLO.Me.GemTimer(aeMezSpell.RankName())() or -1) == 0 or (Config:GetSetting('DoAAMez') and mq.TLO.Me.AltAbilityReady("Beam of Slumber")))
+        if aeReady then
+            self:AEMezCheck()
+            self:RestoreAssistTarget()
+            mq.doevents()
+            return
+        end
+    end
+
+    if mobId and mobId > 0 then
+        Logger.log_debug("\ayMezGate:\ax MezNow on %d (%s)%s.", mobId, mq.TLO.Spawn(mobId).CleanName() or "?",
+            needsRefresh and " — refresh" or "")
+        self:MezNow(mobId, false, true, true)
+    end
+
+    self:RestoreAssistTarget()
+    mq.doevents()
 end
 
 function Module:GiveTime()

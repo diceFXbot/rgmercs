@@ -1864,6 +1864,7 @@ function Casting.UseSpell(spellName, targetId, bAllowMem, bAllowDead, retryCount
         Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
         Casting.SetActiveCastMonitor(targetId, bAllowDead or false, Casting.GetSpellRange(spell), castTime)
         Core.DoCmd(cmd)
+        Casting.NoteAsyncCastFire()
         Globals.LastUsedSpell = spellName
         Casting.RestoreTargetAfterAsyncUse(oldTargetId)
         Logger.log_verbose("\ayUseSpell(async): fired %s", spellName)
@@ -2134,6 +2135,7 @@ function Casting.UseDisc(discSpell, targetId, bAsync)
         Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
         Casting.SetActiveCastMonitor(targetId, true, Casting.GetSpellRange(discSpell), castTime)
         Core.DoCmd(cmd)
+        Casting.NoteAsyncCastFire()
         Casting.RestoreTargetAfterAsyncUse(oldTargetId)
         Logger.log_verbose("\ayUseDisc(async): fired %s", discName)
         return true, Casting.IsGroupSpell(discSpell.TargetType())
@@ -2166,6 +2168,50 @@ end
 ---@return boolean
 function Casting.IsCastBusy()
     return Casting.IsCasting() or Casting.ActiveCastContext ~= nil
+end
+
+--- Records async /cast (etc.) issue time for combat AutoMed debounce.
+function Casting.NoteAsyncCastFire()
+    Globals.LastAsyncCastFireMs = Globals.GetTimeMS()
+end
+
+--- Records when an async cast monitor cycle completes.
+function Casting.NoteAsyncCastEnd()
+    Globals.LastAsyncCastEndMs = Globals.GetTimeMS()
+end
+
+--- True when DoMed=3 combat sit should wait for rotation cast gaps.
+---@return boolean
+function Casting.ShouldDeferCombatMedSit()
+    if Config:GetSetting('DoMed') ~= 3 then return false end
+    if Targeting.GetXTHaterCount() == 0 then return false end
+    if Casting.IsCastBusy() or mq.TLO.Window("CastingWindow").Open() then return true end
+    -- Brief same-tick guard only; long post-cast windows blocked all combat med for active casters.
+    if (Globals.GetTimeMS() - (Globals.LastAsyncCastFireMs or 0)) < 400 then return true end
+    return false
+end
+
+--- True when AutoMed may sit during DoMed=3 combat.
+--- Healers (e.g. DRU with IsHealing always true) may sit when mana is below med thresholds
+--- even if the group has injuries; otherwise defer to OkayToNotHeal.
+---@return boolean
+function Casting.ShouldAllowCombatMedSit()
+    if Config:GetSetting('DoMed') ~= 3 then return true end
+    if Targeting.GetXTHaterCount() == 0 then return true end
+
+    local me = mq.TLO.Me
+    local manaLow = me.PctMana() < Config:GetSetting('ManaMedPct')
+    local hpLow = me.PctHPs() < Config:GetSetting('HPMedPct')
+    local endLow = me.PctEndurance() < Config:GetSetting('EndMedPct')
+
+    if manaLow or hpLow or endLow then
+        if Core.IsCuring() and Modules:ExecModule("Class", "CureIsQueued") then
+            return false
+        end
+        return true
+    end
+
+    return Core.OkayToNotHeal()
 end
 
 --- Clears async cast monitor state and stops the in-game cast when one is active.
@@ -2212,6 +2258,33 @@ function Casting.IsDetrimentalCast(currentCast)
     return ok and spellType == "Detrimental"
 end
 
+--- True when the given spawn is (or became) the MA assist target — ST mez must not land here.
+---@param mezTargetId number
+---@return boolean
+function Casting.MezTargetIsMA(mezTargetId)
+    local assistId = Globals.AutoTargetID or 0
+    return assistId > 0 and mezTargetId > 0 and mezTargetId == assistId
+end
+
+--- Clears ST mez MA-watch state (Mez module calls when a mez attempt ends).
+function Casting.ClearMezMAWatch()
+    Globals.MezInterruptOnMATarget = false
+    Globals.MezCastTargetId = 0
+end
+
+--- Arms ST mez MA-watch until ClearMezMAWatch; returns false if mez must not start.
+---@param mezTargetId number
+---@return boolean True if watch was armed (caller may proceed).
+function Casting.BeginMezMAWatch(mezTargetId)
+    if Casting.MezTargetIsMA(mezTargetId) then
+        Logger.log_debug("\ayMezGate:\ax Refusing ST mez — mob %d is MA AutoTarget.", mezTargetId)
+        return false
+    end
+    Globals.MezCastTargetId = mezTargetId
+    Globals.MezInterruptOnMATarget = true
+    return true
+end
+
 --- Applies WaitCastFinish interrupt rules. Returns true if the cast was stopped.
 --- Conditions: Globals.StopCast; target dead/missing/corpse; out of spell range (110%);
 --- cast timeout (StuckGem); detrimental-only: LoS loss, target mezzed/charmed, PC-owned pet.
@@ -2224,6 +2297,16 @@ function Casting.InterruptCastIfNeeded(ctx, currentCast, logPrefix)
     if Globals.StopCast then
         Casting.StopCast()
         return true
+    end
+
+    if Globals.MezInterruptOnMATarget and Globals.AutoTargetID > 0 then
+        local mezTargetId = (ctx and ctx.targetId and ctx.targetId > 0) and ctx.targetId or (Globals.MezCastTargetId or 0)
+        if mezTargetId > 0 and mezTargetId == Globals.AutoTargetID then
+            Casting.StopCast()
+            Logger.log_debug("%s(): Canceled mez cast — mez target %d is MA AutoTarget (cursor=%d).", logPrefix, mezTargetId,
+                Targeting.GetTargetID())
+            return true
+        end
     end
 
     if not ctx then return false end
@@ -2316,6 +2399,7 @@ function Casting.TickActiveCastMonitor()
         if not ctx then return false end
         if ctx.sawCastBar then
             Casting.ActiveCastContext = nil
+            Casting.NoteAsyncCastEnd()
             return false
         end
         ctx.pendingTicks = (ctx.pendingTicks or 0) + 1
@@ -2331,6 +2415,7 @@ function Casting.TickActiveCastMonitor()
             Casting.StopCast()
         end
         Casting.ActiveCastContext = nil
+        Casting.NoteAsyncCastEnd()
         return false
     end
 
@@ -2342,6 +2427,7 @@ function Casting.TickActiveCastMonitor()
 
     if Casting.InterruptCastIfNeeded(ctx, currentCast, "TickActiveCastMonitor") then
         Casting.ActiveCastContext = nil
+        Casting.NoteAsyncCastEnd()
         return true
     end
 
@@ -2536,6 +2622,7 @@ function Casting.UseAA(aaName, targetId, bAllowDead, retryCount, bAsync)
         Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
         Casting.SetActiveCastMonitor(targetId, bAllowDead or false, Casting.GetSpellRange(aaSpell), castTime)
         Core.DoCmd(cmd)
+        Casting.NoteAsyncCastFire()
         Casting.RestoreTargetAfterAsyncUse(oldTargetId)
         Logger.log_verbose("\ayUseAA(async): fired %s", aaName)
         return true, Casting.IsGroupSpell(aaSpell.TargetType())
@@ -2661,6 +2748,7 @@ function Casting.UseItem(itemName, targetId, bAllowDead, retryCount, bAsync)
         Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_RESULT_NONE)
         Casting.SetActiveCastMonitor(targetId, bAllowDead ~= false, Casting.GetSpellRange(itemSpell), castTime)
         Core.DoCmd(cmd)
+        Casting.NoteAsyncCastFire()
         local softSec = ITEM_SOFT_COOLDOWN_SEC[itemName]
         if softSec then
             Casting.ItemSoftCooldownUntil[itemName] = Globals.GetTimeSeconds() + softSec
@@ -2703,8 +2791,7 @@ function Casting.ActionPrep()
     if not mq.TLO.Me.Standing() then
         mq.TLO.Me.Stand()
         mq.delay(10, function() return mq.TLO.Me.Standing() end)
-
-        --Globals.InMedState = false -- allow us to sit back down after the action, automed has been adjusted
+        Globals.InMedState = false
     end
 
     if mq.TLO.Window("SpellBookWnd").Open() then
@@ -2906,9 +2993,11 @@ function Casting.AutoMed()
     if not me.Sitting() and not Casting.IsCastBusy() and not Casting.Memorizing and (Globals.InMedState or forcesit) then
         if Config:GetSetting('MedAggroCheck') and Targeting.ShouldBlockMedSit() then
             Logger.log_verbose("Skipping sit - Med Aggro Check blocked.")
-        elseif Targeting.GetXTHaterCount() > 0 and Config:GetSetting('DoMed') == 3 and not Core.OkayToNotHeal() then
+        elseif Casting.ShouldDeferCombatMedSit() then
+            Logger.log_verbose("Skipping combat sit - recent async cast activity.")
+        elseif not Casting.ShouldAllowCombatMedSit() then
             Globals.InMedState = false
-            Logger.log_verbose("Skipping combat sit - heals/cures still needed (OkayToNotHeal).")
+            Logger.log_verbose("Skipping combat sit - heals/cures still needed (group injured, mana above med threshold).")
         else
             Globals.InMedState = true
             Logger.log_debug("Forcing sit - all conditions met.")
@@ -3008,6 +3097,9 @@ end
 ---@return boolean True if the target is immune to snare effects.
 function Casting.SnareImmuneTarget(target)
     if not target then target = mq.TLO.Target end
+    if not target or not target() then return false end
+    if Targeting.TargetBodyIs(target, "Skeleton") then return true end
+    if (target.CleanName() or ""):lower():find("skeleton", 1, true) then return true end
     local targetId = target.ID() or 0
     return Modules:ExecModule("Class", "TargetIsImmune", "Snare", targetId)
 end

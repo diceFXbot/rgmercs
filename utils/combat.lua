@@ -815,14 +815,14 @@ function Combat.OkToEngagePreValidateId(targetId)
             return true
         else -- can't check HP yet, as we haven't targeted
             local distanceCheck = Targeting.GetTargetDistance(target) < Config:GetSetting('AssistRange')
-            local hostileCheck = Config:GetSetting('TargetNonAggressives') or target.Aggressive()
+            local hostileCheck = Targeting.IsHostileOrAssistTarget(target, targetId)
             local forcedTarget = Globals.ForceTargetID > 0 and target.ID() == Globals.ForceTargetID
             local forcedCombat = Globals.ForceCombatID > 0 and targetId == Globals.ForceCombatID
 
             Logger.log_verbose("OkToEngagePrevalidate check for %s(ID: %d) - DistanceCheck(%s), HostileCheck(%s), ForcedTarget(%s), ForcedCombat(%s)", targetName, targetId,
                 Strings.BoolToColorString(distanceCheck), Strings.BoolToColorString(hostileCheck), Strings.BoolToColorString(forcedTarget), Strings.BoolToColorString(forcedCombat))
 
-            -- in range, and the mob is aggressive, the forced target, or the MA's force target
+            -- in range, and the mob is aggressive, the MA's target, the forced target, or the MA's force target
             return distanceCheck and (hostileCheck or forcedTarget or forcedCombat)
         end
     end
@@ -898,7 +898,7 @@ function Combat.OkToEngage(autoTargetId)
         else
             local distanceCheck = Targeting.GetTargetDistance() < Config:GetSetting('AssistRange')
             local assistHPCheck = Targeting.GetTargetPctHPs() <= Config:GetSetting('AutoAssistAt')
-            local hostileCheck = Config:GetSetting('TargetNonAggressives') or target.Aggressive()
+            local hostileCheck = Targeting.IsHostileOrAssistTarget(target, targetId)
             local forcedTarget = Globals.ForceTargetID > 0 and targetId == Globals.ForceTargetID
             local forcedCombat = Globals.ForceCombatID > 0 and targetId == Globals.ForceCombatID
 

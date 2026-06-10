@@ -564,6 +564,7 @@ local _ClassConfig = {
             "Starfire",               -- Level 48
             "Firestrike",             -- Level 38
             "Combust",                -- Level 28
+            "Careless Lightning",     -- Level 24
             "Ignite",                 -- Level 8
             "Burst of Fire",          -- Level 3
             "Burst of Flame",         -- Level 1

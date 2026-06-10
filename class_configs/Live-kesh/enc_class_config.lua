@@ -1355,7 +1355,7 @@ local _ClassConfig    = {
                 type = "Spell",
                 cond = function(self, spell, target)
                     if not Config:GetSetting('DoMindDot') then return false end
-                    return Casting.DotSpellCheck(spell) and (Globals.AutoTargetIsNamed or not Casting.IHaveBuff(spell and spell.Trigger()))
+                    return Casting.DotSpellCheck(spell, target) and (Globals.AutoTargetIsNamed or not Casting.IHaveBuff(spell and spell.Trigger()))
                 end,
             },
             {
@@ -1363,7 +1363,7 @@ local _ClassConfig    = {
                 type = "Spell",
                 cond = function(self, spell, target)
                     if not Config:GetSetting('DoStrangleDot') then return false end
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    return Casting.DotSpellCheck(spell, target) and Casting.HaveManaToDot()
                 end,
             },
             {
@@ -1395,7 +1395,8 @@ local _ClassConfig    = {
                 name = "MindDot",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                    if not Config:GetSetting('DoMindDot') then return false end
+                    return Casting.DotSpellCheck(spell, target) and Casting.HaveManaToDot()
                 end,
             },
             {
@@ -1409,14 +1410,14 @@ local _ClassConfig    = {
                 name = "StrangleDot",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.OkayToNuke()
+                    return Casting.DotSpellCheck(spell, target) and Casting.OkayToNuke()
                 end,
             },
             { --this is not an error, we want the spell twice in a row as part of the rotation.
                 name = "StrangleDot",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.OkayToNuke()
+                    return Casting.DotSpellCheck(spell, target) and Casting.OkayToNuke()
                 end,
             },
             {
@@ -1487,16 +1488,16 @@ local _ClassConfig    = {
             {
                 name = "Bite of Tashani",
                 type = "AA",
-                cond = function(self, aaName)
+                cond = function(self, aaName, target)
                     if Targeting.GetXTHaterCount() < Config:GetSetting('AECount') then return false end
-                    return Casting.DetAACheck(aaName)
+                    return Casting.DetAACheck(aaName, target)
                 end,
             },
             {
                 name = "TashSpell",
                 type = "Spell",
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and (not Casting.TargetHasBuff("Bite of Tashani") or Globals.AutoTargetIsNamed)
+                    return Casting.DetSpellCheck(spell, target) and (not Casting.TargetHasBuff("Bite of Tashani", target, true) or Globals.AutoTargetIsNamed)
                 end,
             },
         },

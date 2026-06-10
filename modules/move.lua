@@ -666,10 +666,6 @@ function Module:DoAutoCampCheck(bCalledFromInsideEvent)
     Combat.AutoCampCheck(self.TempSettings, bCalledFromInsideEvent)
 end
 
-function Module:DoCombatCampCheck()
-    Combat.CombatCampCheck(self.TempSettings)
-end
-
 function Module:GiveTime()
     if mq.TLO.Me.Hovering() and Config:GetSetting('ChaseOn') then
         if Config:GetSetting('BreakOnDeath') then
@@ -715,10 +711,6 @@ function Module:GiveTime()
 
     if Combat.ShouldDoCamp() then
         self:DoAutoCampCheck()
-    end
-
-    if (Core.IsTanking() and Config:GetSetting('MovebackWhenBehind')) and Targeting.IHaveAggro(100) then
-        self:DoCombatCampCheck()
     end
 
     if Config:GetSetting('MaintainCampfire') > 1 and Casting.OkayToBuff() then

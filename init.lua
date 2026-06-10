@@ -438,6 +438,15 @@ local function Main()
         return
     end
 
+    Combat.SetMainAssist()
+
+    if not Globals.BackOffFlag then
+        Combat.FindBestAutoTarget(Combat.OkToEngagePreValidateId)
+        if Core.IsTanking() and Config:GetSetting('TankAggroScan') then
+            Combat.TankAggroScan()
+        end
+    end
+
     if Targeting.GetXTHaterCount(false) > 0 then
         if Globals.CurrentState == "Downtime" and mq.TLO.Me.Sitting() then
             -- if switching into combat state stand up.
@@ -486,17 +495,7 @@ local function Main()
 
     if mq.TLO.Me.Hovering() then Events.HandleDeath() end
 
-    Combat.SetMainAssist()
     Ui.GetAssistWarningString()
-
-    if not Globals.BackOffFlag then
-        -- This will find a valid target and set it to : Globals.AutoTargetID
-        Combat.FindBestAutoTarget(Combat.OkToEngagePreValidateId)
-        -- finds the AggroTarget for a tank mode character
-        if Core.IsTanking() and Config:GetSetting('TankAggroScan') then
-            Combat.TankAggroScan()
-        end
-    end
 
     if Combat.OkToEngage(Globals.AutoTargetID) then
         Combat.EngageTarget(Globals.AutoTargetID)
@@ -508,8 +507,19 @@ local function Main()
             local assistHater = Core.IAmMA() and Targeting.IsSpawnXTHater(targetId)             -- don't clear a targeted hater as MA unless it is ignored
 
             if ignored or (not pullTarget and not assistHater) then
-                Logger.log_debug("\ayClearing Target because we are not OkToEngage() and we are in combat!")
-                Targeting.ClearTarget()
+                if targetId == 0 then
+                    Logger.log_super_verbose("\ayOkToEngage failed in combat with no cursor target — skip clear.")
+                elseif Globals.AutoTargetID > 0 then
+                    if targetId ~= Globals.AutoTargetID then
+                        Logger.log_debug("\ayOkToEngage failed; keeping AutoTargetID %d (clearing cursor only).", Globals.AutoTargetID)
+                        Targeting.ClearCursorTarget()
+                    else
+                        Logger.log_super_verbose("\ayOkToEngage failed for AutoTargetID %d — skip clear.", Globals.AutoTargetID)
+                    end
+                else
+                    Logger.log_debug("\ayClearing Target because we are not OkToEngage() and we are in combat!")
+                    Targeting.ClearTarget()
+                end
             end
         elseif mq.TLO.Me.Combat() and (Config:GetSetting('AutoAttackSafetyCheck') or not mq.TLO.Target()) then
             Logger.log_debug("\ayTurning off attack because we don't have a target or we are not OkToEngage the current target!")
@@ -523,7 +533,7 @@ local function Main()
 
         if ((Globals.GetTimeSeconds() - Globals.LastPetCmd) > 2) then
             Globals.LastPetCmd = Globals.GetTimeSeconds()
-            if Config:GetSetting('DoPetCommands') and mq.TLO.Pet.ID() > 0 and Targeting.GetTargetPctHPs(Targeting.GetAutoTarget()) <= Config:GetSetting('PetEngagePct') then
+            if Config:GetSetting('DoPetCommands') and mq.TLO.Pet.ID() > 0 and Globals.AutoTargetID > 0 and Targeting.GetSpawnPctHPs(Globals.AutoTargetID) <= Config:GetSetting('PetEngagePct') then
                 Combat.PetAttack(Globals.AutoTargetID, true)
             end
         end

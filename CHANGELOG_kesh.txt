@@ -16,6 +16,8 @@
   - `ITEM_SOFT_COOLDOWN_SEC` / `GetItemSoftCooldownRemaining` / `ItemReady` 連携
   - `WaitCastFinish` の監視コンテキスト寄り実装
   - `BurnMinCon` を使う `Targeting.GetXTHaterCount(false, burnMinCon)` 判定
+  - `Globals.MezInterruptOnMATarget` 中の `InterruptCastIfNeeded` MA 一致メズ中断
+  - `ShouldAllowCombatMedSit` / `ShouldDeferCombatMedSit` 戦闘中 AutoMed 判定
 
 - マージ後の確認項目（必須）:
   - 未解消競合が 0 件であること（`git diff --name-only --diff-filter=U` が空）
@@ -23,7 +25,210 @@
   - `UseExactSpellNames` の参照が 0 件であること
   - 上記「kesh 独自仕様」が `utils/casting.lua` に残っていること
 
+2026-06-09
+
+- PAL: Tanking > Hate Tools に Flash of Light トグル（DoFlashofLight）を追加。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: ON 時 SpellList + HateTools(AutoTarget) で FlashofLight を使用。デフォルト ON。
+
+- PAL: Flash of Light 使用条件を拡張（HateTools AutoTarget）。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: アグロ喪失、または自分 100+ かつ SecondaryPctAggro >= 65。いずれも距離 30 未満必須（palAutoTargetFlashAggroOk）。
+
+- PAL: TouchHeal に Greater Healing（Lv36）を Healing の上位に追加。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+
+- PAL: AwestruckStun を HateTools(AggroTarget) から削除（AutoTarget のみ）。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+
+- PAL: Awestruck スタンライン（Holy Might〜Awestruck XVII）を HateTools(AutoTarget) に追加。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: AbilitySets.AwestruckStun、DoAwestruckStun 設定（デフォルト ON）。
+
+- PAL: HateTools(AutoTarget) の StunTimer5 / AwestruckStun 使用条件を拡張。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: 自分アグロ 100 未満、または 100 以上でも SecondaryPctAggro >= 65 のとき使用（palAutoTargetStunAggroOk）。
+
+- PAL: Combat ローテから Stun 系をすべて削除（HateTools 専用に集約）。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: HealStun / CrushTimer5・6 / StunTimer4・5・6 を Combat から除去。SpellList・HateTools は維持。
+
+- Mez: GetMobMezzedState を live 優先ハイブリッドに変更（起こし検知 + Shadowed Man 連発防止）。
+  - file: modules/mez.lua
+  - symptom: tracker 残り優先で殴られて起きても再メズが遅れる。live 単純優先だと Magical で TLO 未読＝未メズとなり連発再発。
+  - fix: ProbeLiveMezzedState（mezzed / clear / inconclusive）。live 肯定→同期、live 否定→tracker 削除、inconclusive→tracker フォールバック。ScanTrackerMezNeeds / IsTrackerStable も GetMobMezzedState 一本化。
+
+- Mez: 手動チャーム後に MezTracker 残りでリフレッシュ再メズし得る問題を修正（Spawn ID の TLO ポーリング、カーソル不要）。
+  - file: modules/mez.lua
+  - symptom: 手動チャームでメズが切れても tracker 残りが refresh 帯だと IsValidMezTarget を通らず MezNow まで届く。GetMobMezzedState が tracker 優先で「まだメズ中」扱い。
+  - fix: PruneMezTracker で TargetIsCharmedSpawn 時に tracker 削除。GetMobMezzedState / refresh 分岐 / MezNow 先頭でも除外。IsCharmedSpawnId 追加。
+
+- Charm/Mez/Class: チャーム1回失敗でメズへ。チャーム待ち defer 廃止。XT に未メズ hater が残る間 Class ローテ（DPS）を停止。
+  - file: modules/charm.lua, modules/mez.lua, modules/class.lua
+  - symptom: Beguile 抵抗後も CharmTracker 残存 → Mez が defer で 5903 をスキップ → ScanMezNeeds=false と誤判定 → MA へ Suffocate/Anarchy。
+  - fix: CharmNow 失敗時 RemoveCCTarget のみ（defer 廃止と合わせて Mez が拾える）。HasPendingXtCcWork で Combat 中 Class 回転をゲート。
+
+- PAL HateTools(AutoTarget): StunTimer5 を Taunt と Flash of Light の間に追加（AutoTarget への自分アグロ 100 未満）。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+
+- Mez: GCD 等で CharmSpellReady=false の tick でも CharmTracker 候補をメズしないよう defer 条件を修正。
+  - file: modules/mez.lua
+  - symptom: Adding to Charm List 直後、DoCharm Ready(false)（GCD 直後の Chaos Flux 等）で ProcessCharmList スキップ → 同 tick で MezNow。
+  - cause: ShouldDeferMezForCharm が ShouldProcessCharmList==true のときだけ defer。Ready(false) ＝ ゲム未装備ではなく GCD/タイマー中でもメズが先走り得る。
+  - fix: ShouldDeferMezForCharm を CharmOn + IsCharmPending(mobId) のみに変更（ProcessCharmList 成否と非連動）。
+
+- Mez: ST メズの MA 重複ガードを mezId 基準に一本化（カーソル比較の取りこぼし修正）。
+  - file: modules/mez.lua, utils/casting.lua, utils/globals.lua
+  - symptom: 詠唱前ガードが複数あるのに MA へメズが通る。カーソルが MA に戻っても AutoTarget がメズ対象のままなら中断されない。
+  - cause: InterruptCastIfNeeded が Target.ID==AutoTargetID のみ判定。ENC では RestoreAssistTarget 等で詠唱中にカーソルだけ MA に戻り、メズ対象 spawn は add のまま — カーソル一致では検知できない。
+  - fix: MezCastTargetId + MezTargetIsMA(mezId) / BeginMezMAWatch / ClearMezMAWatch。詠唱中は ctx.targetId または MezCastTargetId と AutoTargetID を比較。重複したカーソル系ガード（IsTargetMATarget 等）を削除。
+
+- ENC Tash: メズ等でカーソルが AutoTarget と違うとき Tash 条件が常に false になり DPS だけ進む不具合を修正。
+  - file: class_configs/Live-kesh/enc_class_config.lua
+  - symptom: RotationOrder 上 Tash が DPS より先だが、メズターゲットを見ている間は Tash が試行されず MagicNuke 等だけ連発。
+  - cause: TashSpell の DetSpellCheck(spell) / TargetHasBuff が引数 target を使わず、TargetBuffCheck がカーソル不一致で即 false。DPS は OkayToNuke() のみで条件通過し UseSpell が AutoTarget へリターゲットして詠唱。
+  - fix: Bite of Tashani / TashSpell の cond で rotation の target を DetAACheck / DetSpellCheck / TargetHasBuff に渡す。
+
+- Charm/Mez: チャーム候補がメズに先取りされ一度も Charm 試行しない不具合を修正。
+  - file: modules/charm.lua, modules/mez.lua
+  - symptom: UpdateCharmList で Adding to Charm List は出るが ProcessCharmList / CharmNow が一度も無い。直後に Mez が同 add をメズ。
+  - cause: DoCharm が CharmSpellReady かつ DireCharm==true の厳密比較のみ ProcessCharmList 呼び出し（設定 1/0 や gem 未 ready でスキップ、ログは verbose のみ）。同一 tick で Mez が候補を奪い CharmExcludeMezzed で永久スキップ。
+  - fix: IsConfigOn / ShouldProcessCharmList でゲート統一（DireCharm の 1/0 対応）。スキップ理由を debug 出力。Mez は ShouldProcessCharmList が true の tick のみ CharmTracker ID を新規メズから除外（gem 待ちで永久ブロックしない）。
+
+- Mez: メズ後の MA 向けローテ（Choke 等）が毎 tick StopCast される不具合を修正。
+  - file: modules/mez.lua
+  - symptom: 全 add メズ後、MA ターゲットへ Choke を詠唱するたびに MezGate: ST mez on MA target — stopping cast が連発し CAST_INTERRUPTED がループ。
+  - cause: DoMez 先頭が Me.Casting() かつ Target==AutoTargetID を無条件 StopCast していた（メズ詠唱以外も対象）。CC 安定（needsWork=false）後も Class ローテを毎 tick 切断。
+  - fix: MA 一致時の DoMez StopCast を削除。MezInterruptOnMATarget のスタック解除（非詠唱時のみ）に限定。詠唱中のメズ中断は WaitCastFinish（Globals.MezInterruptOnMATarget）のみ。
+
+- init: FindBestAutoTarget をメインループ前段へ移動（Mez/Charm より先に AutoTargetID 確定）。
+  - file: init.lua
+  - detail: SetMainAssist + FindBestAutoTarget を PauseMain 直後・Combat 状態判定より前に実行。Modules:ExecAll(GiveTime) の Charm/Mez が参照する AutoTargetID を同一 tick で先に揃え、MA 除外・MezInterruptOnMATarget の前提を安定化。
+
+- Mez: ST 詠唱中に MA ターゲットと一致したら中断（WaitCastFinish 連携）。
+  - file: modules/mez.lua, utils/casting.lua, utils/globals.lua
+  - detail: 同期メズ中も WaitCastFinish が 20ms ごとにポーリングしている。Globals.MezInterruptOnMATarget 中は Target.ID==AutoTargetID で StopCast。MezNow 入口・待機ループ・DoMez でも同様ガード。中断後はスキャンが MA 除外の別 add を選ぶ（無ければゲート開放で Class ローテへ）。AE メズは MA 中心のため対象外。
+
+- Mez: XT に Mezzed TLO が無い場合のクラッシュを修正。
+  - file: modules/mez.lua
+  - symptom: ScanXtMezNeeds で attempt to call field 'Mezzed' (a nil value)（CAST_SUCCESS 直後など）。
+  - cause: トラッカー同期時に xt.Mezzed() を無防備に呼んでいた。Magical 等で XT.Mezzed 子 TLO 自体が nil のことがある。
+  - fix: GetMezzedSpellName を追加し nil ガード。ResolveMezDurationMs の Target.Mezzed 参照も同様に安全化。
+
+- Mez: デッドコード削除・キャッシュ拡張・未使用設定除去。
+  - file: modules/mez.lua, modules/charm.lua
+  - detail: GetXtMezzedState の allowRetarget（Target 再照会）経路を削除。DoMez で mezSpell / castWindow / haterCount を1 tick キャッシュしスキャンへ伝播。DoMez 経由の MezNow は StopAttack 済みのため skipInitialAttackOff。未参照の MezZRadius 設定を DefaultConfig から削除。
+
+- Mez: ハイブリッド CC リファクタ（冗長削減・ログ抑制）。
+  - file: modules/mez.lua
+  - detail: GetLiveMezzedState 廃止、ClassifyMezDuration / ComputeTrackerRemainingMs で Phase1/2 の duration 分岐を共通化。castWindow・mezSpell を DoMez で1回キャッシュ。スキャン結果を信頼し DoMez の二重 GetMobMezzedState を削除。毎 tick の CC stable verbose を廃止（refresh / needs mez のみ debug）。GetTrackerDisplayRows にリネーム。
+
+- Mez: ハイブリッド CC（XT 初回検出 + 細い MezTracker キープ）。
+  - file: modules/mez.lua
+  - detail: 初回未メズは XT ハター走査（MezStartCount ゲート）。メズ成功後は MezTracker（ID + countdown）で HateClear 後も Spawn 監視。切れ寸前のみ MezNow。CC 安定時は StopCast / attack off しない（現行ゲート維持）。MezRecent を廃止し UI CC 表はトラッカー表示。敵数 < MezStartCount では新規メズのみ停止（トラッカー refresh は継続）。
+
+- Mez: XT/Spawn Mezzed TLO 検証スクリプト（ターゲットなし読取テスト）。
+  - file: extras/mez_xt_verify.lua
+  - detail: メズ後にカーソルを外し、XT.Mezzed / Spawn.Mezzed / FindBuff(31) / Animation と Target 比較を 2 秒ごとに出力。/mezxt once | /mezxt stop。
+
+- Charm: 候補選定を NearestSpawn 範囲走査から XTarget ハター走査へ変更。
+  - file: modules/charm.lua
+  - detail: CharmStartCount ゲート後は GetXTHaterIDs で列挙し、IsValidCharmTarget で CharmRadius / CharmZRadius / LOS 等をフィルタ。トラッカーから非ハター・メズ済みを除去。Mez（kesh）と同様に入口と候補を XT に統一。
+
+- DRU: WinterFireDD に Careless Lightning を追加（Ignite 上位、L24）。
+  - file: class_configs/Live-kesh/dru_class_config.lua
+  - detail: 低レベル単体 Nuke の候補に Careless Lightning を Combust と Ignite の間に追加。
+
+- Charm: メズ済み除外を設定で切替（CharmExcludeMezzed、デフォルト ON）。
+  - file: modules/charm.lua
+  - detail: Charm Targets > Exclude Mezzed Mobs。ON で現行どおりメズ済みをチャーム対象外（Mez モジュール連携）。OFF でメズ済みもチャーム可能。
+
+- Mez: 切れ間近（mez expiring）時は already mezzed よりリフレッシュを優先。
+  - file: modules/mez.lua
+  - detail: ScanXtMezNeeds が cast window 内の残り時間を検出しても DoMez が GetMobMezzedState のみで MezNow をスキップしていた。needsRefresh フラグを渡し、切れ間近はメズ済みでも MezNow する。
+
+- AutoTarget: Combat 中の ClearTarget 連発を抑制。
+  - file: init.lua
+  - detail: OkToEngage 失敗時、カーソルなし（targetId==0）ではクリアしない。AutoTargetID ありでカーソルが一致済みなら毎 tick クリアしない。不一致時のみ ClearCursorTarget で ID 保持。
+
+- Charm: ペット取得後の走査停止・メズ済み除外・トラッカー再ターゲット抑制。
+  - file: modules/charm.lua
+  - detail: ペットあり時は DoCharm / UpdateCharmList をスキップ（毎 tick 走査と SetTarget 乱切り防止）。IsValidCharmTarget / ProcessCharmList で Mez モジュール連携のメズ済み判定。AddCCTarget は既存トラッカー ID の再 SetTarget をしない。
+
 2026-06-08
+
+- Mez: メズ済み・残り十分な対象への連続 Mez を修正（XTarget ゲート）。
+  - file: modules/mez.lua, utils/globals.lua
+  - detail: Magical 等で Mezzed.ID が無くても Mezzed() 名・Duration でメズ済み判定（MezzedBuffActive）。走査は IsValidMezTarget より先にメズ済み判定。DoMez 先頭の無条件 AEMezCheck を削除。FindMezBuffOnSpawn の Spawn.FindBuff を MQ 正規構文（id / name / detspa 31）に修正（裸の Enthrall 等で Parse error が出ていた）。
+
+- Charm: 手動メモしたランクを GetBestSpell 解決より優先して使用。
+  - file: modules/charm.lua
+  - detail: DoCharm の SpellReady が ResolvedActionMap の最高ランク名のみ参照し、Gem に別ランクをメモしていると ProcessCharmList まで到達しない。Gem 走査で CharmSpell/CharmSong セットに一致するメモ済みスペルを採用。
+
+- Charm: MA ターゲット（AutoTargetID）もチャーム対象に含める。
+  - file: modules/charm.lua
+  - detail: ProcessCharmList / CharmNow が MA ターゲットを除外していたため、初手や 1 体戦でチャームしないことがあった。
+
+- Charm: MA ターゲット除外を設定で切替（CharmExcludeMATarget、デフォルト OFF）。
+  - file: modules/charm.lua
+  - detail: Charm Targets > Exclude MA Target。ON で AutoTargetID をチャーム対象から除外（旧挙動）。OFF で MA ターゲットもチャーム可能（現行デフォルト）。
+
+- Mez/Charm: CC 後に MA ターゲットへカーソルを戻す（ターゲット乱切り防止）。
+  - file: modules/mez.lua, modules/charm.lua
+  - detail: Mez ゲート走査が毎フレーム XT 全件を SetTarget し、CC 安定時も RestoreAssistTarget せずカーソルが最後の XT に残っていた。走査は XT TLO のみ（非 Aggressive は CC 安定扱い）。Charm 処理後も AutoTarget へ復帰。
+
+- Mez: XTarget ゲート（Mez 状態・残り時間を XT 走査、CC 安定時は Class/Pet へ通過）。
+  - file: modules/mez.lua
+  - detail: 未 Mez または切れ間近の add のみ MezNow。安定時は StopCast / attack off しない。処理後は AutoTarget へカーソル復帰。
+
+- AutoTarget: MA 追従と Mez 後の ID 保持（IsFollowableAutoTarget）。
+  - file: utils/targeting.lua, utils/combat.lua, init.lua
+  - detail: IsMainAssistTargetId で MA ターゲットを ENC 非 Aggressive でも追従。OkToEngage 失敗時は ClearCursorTarget のみで AutoTargetID を保持し Pet/DPS が継続。CheckForAutoTargetID も同一判定。
+
+- Mez: キャスト失敗時の retry を Cast Retry Count 設定に連動。
+  - file: modules/mez.lua
+  - detail: MezNow の UseSpell / UseSong / Mez AA が固定 2 回だったのを CastRetryCountBeta に変更。
+
+- ENC / 共通: Low HP 判定の HP% 取得を Target → XTarget → Spawn の順に改善。
+  - file: utils/targeting.lua, class_configs/Live-kesh/enc_class_config.lua
+  - detail: Spawn.PctHPs() だけだと古い値(満タン表示)のまま MobHasLowHP が効かず DoT し続けることがあった。GetSpawnPctHPs を追加。ModernEra の MindDot/StrangleDot を DotSpellCheck(spell, target) に統一。
+
+
+- ModuleOrder: Charm / Mez を Class より先に実行。
+  - file: utils/modules.lua
+  - detail: CC（Charm → Mez）を DPS/回転（Class）より優先し、ENC 等で Mez 後に DoT が StopCast で切られるごちゃつきを防ぐ。Charm/Mez 無効クラスは IsCharming/IsMezzing で即 return のため挙動は実質同じ。
+
+- Live-kesh ENC StrangleDot: Default で Low HP 時にも DoT しようとする問題を修正。
+  - file: class_configs/Live-kesh/enc_class_config.lua, utils/targeting.lua
+  - detail: DPS(Default) の StrangleDot / MindDot が DotSpellCheck(spell) と target 未渡しで HP 判定がずれることがあった。DotSpellCheck(spell, target) に変更。GetTargetPctHPs() は対象をターゲット中なら mq.TLO.Target.PctHPs() を優先。ModernEra の StrangleDot には MobNotLowHP(target) を維持。
+
+- Live-kesh ENC DPS(ModernEra): StrangleDot を Mob Low HP 未満では使わない。
+  - file: class_configs/Live-kesh/enc_class_config.lua
+  - detail: ModernEra の StrangleDot は OkayToNuke() のみで LowHP ガードが無かった。Targeting.MobNotLowHP(target) を追加。
+
+- Live-kesh PAL HateTools(AutoTarget): Flash of Light を Taunt 直下に追加。
+  - file: class_configs/Live-kesh/pal_class_config.lua
+  - detail: FlashofLight スペルセット追加。使用条件は Taunt と同じ（LostAutoTargetAggro かつ 距離 < 30）。
+
+- Movement: MovebackWhenBehind を戦闘中キャンプ復帰のトリガーにしない。
+  - file: modules/move.lua
+  - detail: GiveTime() から MovebackWhenBehind + IHaveAggro(100) 経由の DoCombatCampCheck() 呼び出しを削除。MovebackWhenBehind は class.lua の後方モブ stick moveback のみに使う。ダウンタイムのキャンプ復帰は ShouldDoCamp() -> AutoCampCheck() のまま。
+
+- Live-kesh DRU（共通 Snare）: Skeleton 系には Snare しない。
+  - file: utils/casting.lua
+  - detail: Casting.SnareImmuneTarget() で Body.Name()==Skeleton、または CleanName に "skeleton" を含む Mob を除外。Entrap / SnareSpell 等 SnareImmuneTarget 経由の全クラスに適用。
+
+- RGMercs: DoMed=3 戦闘中の 詠唱→Sit→Stand→詠唱失敗 ループを修正。
+  - file: utils/casting.lua, utils/globals.lua
+  - symptom: 戦闘中、async ローテの合間に AutoMed が毎 tick Sit し、ActionPrep の Stand と交互に動いて詠唱が失敗する。
+  - cause: 詠唱完了直後 IsCastBusy=false の隙間で即 Sit。InMedState が残り次 tick も再 Sit。ActionPrep が Stand しても同 tick / 次 tick で再 Sit。
+  - fix: async 発火時刻で同一 tick のみ Sit を抑制（400ms）。ActionPrep で InMedState をクリア。
+
+- RGMercs: DRU 等ヒーラーが戦闘中に Med しない不具合を修正。
+  - file: utils/casting.lua
+  - symptom: DoMed=3 でも戦闘中に一度も Sit しない（DRU で顕著）。
+  - cause: (1) OkayToNotHeal が IsHealing 常時 true の DRU でグループ負傷時に常に Sit 拒否。(2) 戦闘中 Sit デバウンス 2.5s が常時キャスト中と重なり永久ブロック。
+  - fix: ShouldAllowCombatMedSit — mana/HP/end が med 閾値未満なら負傷中でも Sit 可（キュア待ちのみ拒否）。デバウンスは 400ms のみに短縮。
 
 - RGMercs: origin/main (#1220–#1223) を kesh-custom にマージ。
   - file: class_configs/*, extras/version.lua, init.lua, modules/class.lua, utils/casting.lua, utils/combat.lua, utils/event_handlers.lua, utils/item_manager.lua

@@ -1799,6 +1799,16 @@ function Module:GiveTime()
 
     -- Downtime rotation will just run a full rotation to completion
     if not Casting.IsCastBusy() then
+        local skipRotationsForCc = false
+        if combat_state == "Combat" and self:IsMezzing() then
+            local mezMod = Modules:GetModule("Mez")
+            if mezMod and mezMod.HasPendingXtCcWork and mezMod:HasPendingXtCcWork() then
+                skipRotationsForCc = true
+                Logger.log_verbose("\ayClass:\ax Skipping rotations — unmezzed XT haters still need CC.")
+            end
+        end
+
+        if not skipRotationsForCc then
         for idx, r in ipairs(self.TempSettings.RotationStates) do
         if Globals.PauseMain or Globals.StopCast then
             break
@@ -1846,6 +1856,7 @@ function Module:GiveTime()
                     Strings.FormatTime((r.timer or 1) - (Globals.GetTimeSeconds() - self.TempSettings.RotationTimers[r.name])))
                 if r.timer then r.lastCondCheck = false end --update rotation UI when rotation doesn't fire due to timer check
             end
+        end
         end
         end
     else

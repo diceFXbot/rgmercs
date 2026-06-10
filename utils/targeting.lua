@@ -45,6 +45,17 @@ function Targeting.GetAggroTarget()
     return mq.TLO.Spawn(string.format("id %d", Globals.AggroTargetID))
 end
 
+--- Stops stick/attack and clears the in-game target cursor without resetting AutoTargetID.
+--- No-op when DoAutoTarget is disabled.
+function Targeting.ClearCursorTarget()
+    if Config:GetSetting('DoAutoTarget') then
+        Logger.log_debug("Clearing cursor target (keeping AutoTargetID %d)", Globals.AutoTargetID)
+        if mq.TLO.Stick.Status():lower() == "on" then Movement:DoStickCmd("off") end
+        if mq.TLO.Me.Combat() then Core.DoCmd("/attack off") end
+        Core.DoCmd("/squelch /target clear")
+    end
+end
+
 --- Resets AutoTargetID, AggroTargetID, ForceCombatID, stops stick, and
 --- clears the in-game target. No-op when DoAutoTarget is disabled.
 function Targeting.ClearTarget()
@@ -57,9 +68,7 @@ function Targeting.ClearTarget()
         Globals.AggroTargetID = 0
         if Globals.ForceTargetID > 0 and not Targeting.IsSpawnXTHater(Globals.ForceTargetID) then Globals.SetForcedTargetId(0) end
         Globals.ForceCombatID = 0
-        if mq.TLO.Stick.Status():lower() == "on" then Movement:DoStickCmd("off") end
-        if mq.TLO.Me.Combat() then Core.DoCmd("/attack off") end
-        Core.DoCmd("/squelch /target clear")
+        Targeting.ClearCursorTarget()
         if mq.TLO.Me.XTarget(1).TargetType() ~= "Auto Hater" then Targeting.ResetXTSlot(1) end
     end
 end
@@ -134,6 +143,30 @@ function Targeting.GetTargetMaxRangeTo(target)
     return (target and target.MaxRangeTo() or (mq.TLO.Target.MaxRangeTo() or 15))
 end
 
+--- Best-effort HP% for a spawn id: Target TLO, then XTarget slot, then Spawn TLO.
+---@param spawnId number
+---@return number HP percentage 0–100, or 0 if no valid spawn.
+function Targeting.GetSpawnPctHPs(spawnId)
+    if not spawnId or spawnId <= 0 then return 0 end
+
+    if mq.TLO.Target() and mq.TLO.Target.ID() == spawnId then
+        return mq.TLO.Target.PctHPs() or 0
+    end
+
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    for i = 1, xtCount do
+        local xtSpawn = mq.TLO.Me.XTarget(i)
+        if xtSpawn() and (xtSpawn.ID() or 0) == spawnId then
+            return xtSpawn.PctHPs() or 0
+        end
+    end
+
+    local spawn = mq.TLO.Spawn(spawnId)
+    if spawn() then return spawn.PctHPs() or 0 end
+
+    return 0
+end
+
 --- Returns the HP percentage of target, or the current in-game target if nil.
 ---@param target MQTarget|MQSpawn? Target to query; defaults to current target.
 ---@return number HP percentage 0–100, or 0 if no valid target.
@@ -142,7 +175,7 @@ function Targeting.GetTargetPctHPs(target)
     if not useTarget then useTarget = mq.TLO.Target end
     if not useTarget or not useTarget() then return 0 end
 
-    return useTarget.PctHPs() or 0
+    return Targeting.GetSpawnPctHPs(useTarget.ID() or 0)
 end
 
 --- Returns the model height of target, or the current in-game target if nil.
@@ -155,9 +188,7 @@ end
 --- Returns the HP percentage of the current auto target, or 0 if no auto target.
 ---@return number HP percentage 0–100, or 0 if no auto target.
 function Targeting.GetAutoTargetPctHPs()
-    local autoTarget = Targeting.GetAutoTarget()
-    if not autoTarget or not autoTarget() then return 0 end
-    return autoTarget.PctHPs() or 0
+    return Targeting.GetSpawnPctHPs(Globals.AutoTargetID)
 end
 
 --- Returns the level of the current auto target, or 0 if no auto target.
@@ -789,11 +820,90 @@ function Targeting.BigGroupHealsNeeded()
     return (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) >= Config:GetSetting('GroupInjureCnt')
 end
 
---- Returns {AutoTargetID} if AutoTargetID matches the in-game target, else {}.
---- Used by rotation conditions that require being on the right target.
+--- True when spawnId is the configured MA's current assist target (non-MA toons only).
+--- MA targets are often not Aggressive() to back-line assist PCs; still follow for pet/DPS.
+---@param spawnId number
+---@return boolean
+function Targeting.IsMainAssistTargetId(spawnId)
+    if spawnId == 0 or Core.IAmMA() then return false end
+    if Globals.ForceCombatID > 0 and spawnId == Globals.ForceCombatID then return true end
+    if Globals.ForceTargetID > 0 and spawnId == Globals.ForceTargetID then return true end
+
+    if Globals.MainAssist and Globals.MainAssist:len() > 0 then
+        local heartbeat = Comms.GetPeerHeartbeatByName(Globals.MainAssist)
+        if heartbeat and heartbeat.Data then
+            local forceTargId = tonumber(heartbeat.Data.ForceTargetID) or 0
+            if forceTargId > 0 and forceTargId == spawnId then return true end
+            local paused = heartbeat.Data.State == "Paused"
+            local rawTarget = paused and heartbeat.Data.TargetID or heartbeat.Data.AutoTargetID
+            local targetID = tonumber(rawTarget) or 0
+            if targetID > 0 and targetID == spawnId then return true end
+        end
+    end
+
+    if not Config:GetSetting('UseAssistList') then
+        local assistTargId = Core.GetGroupOrRaidAssistTargetId()
+        if assistTargId > 0 and assistTargId == spawnId then return true end
+    end
+
+    local assistSpawn = Core.GetMainAssistSpawn()
+    if assistSpawn and assistSpawn() then
+        local maTarget = assistSpawn.Target
+        if maTarget and maTarget() and maTarget.ID() == spawnId then return true end
+    end
+
+    return false
+end
+
+--- True when spawn qualifies as hostile for assist, or is the MA's current target.
+---@param target MQSpawn
+---@param spawnId number
+---@return boolean
+function Targeting.IsHostileOrAssistTarget(target, spawnId)
+    return Config:GetSetting('TargetNonAggressives') or target.Aggressive() or Targeting.IsMainAssistTargetId(spawnId)
+end
+
+--- True when AutoTargetID is worth tracking (assist / pet / DPS / soft clear on engage failure).
+---@param autoTargetId number
+---@return boolean
+function Targeting.IsFollowableAutoTarget(autoTargetId)
+    if not Config:GetSetting('DoAutoEngage') then return false end
+    if autoTargetId == 0 or Globals.BackOffFlag then return false end
+    if not Core.ValidCombatTarget(autoTargetId) then return false end
+
+    local target = mq.TLO.Spawn(autoTargetId)
+    if not target() or target.Dead() then return false end
+    if Globals.IgnoredTargetIDs:contains(autoTargetId) then return false end
+
+    local pcCheck = Targeting.TargetIsType("pc", target) or (Targeting.TargetIsType("pet", target) and Targeting.TargetIsType("pc", target.Master))
+    local mercCheck = Targeting.TargetIsType("mercenary", target)
+    if pcCheck or mercCheck then return false end
+
+    if Config:GetSetting('SafeTargeting') and Targeting.IsSpawnFightingStranger(target, 100) then return false end
+
+    local charmedId = target.Charmed and target.Charmed.ID and target.Charmed.ID()
+    if (charmedId and charmedId > 0) or (target.Master() and (target.Master.Type() or ""):lower() == "pc") then return false end
+
+    if mq.TLO.Target() and mq.TLO.Target.ID() == autoTargetId then
+        local cursorTarget = mq.TLO.Target
+        if cursorTarget.Mezzed() and cursorTarget.Mezzed.ID() and not Config:GetSetting('AllowMezBreak') then return false end
+    end
+
+    local distanceCheck = Targeting.GetTargetDistance(target) < Config:GetSetting('AssistRange')
+    local hostileCheck = Targeting.IsHostileOrAssistTarget(target, autoTargetId)
+    local forcedTarget = Globals.ForceTargetID > 0 and autoTargetId == Globals.ForceTargetID
+    local forcedCombat = Globals.ForceCombatID > 0 and autoTargetId == Globals.ForceCombatID
+
+    return distanceCheck and (forcedTarget or forcedCombat or hostileCheck)
+end
+
+--- Returns {AutoTargetID} when followable; UseSpell/UseAA retarget before cast.
 ---@return number[] Single-element array or empty array.
 function Targeting.CheckForAutoTargetID()
-    return mq.TLO.Target.ID() == Globals.AutoTargetID and { Globals.AutoTargetID, } or {}
+    if Targeting.IsFollowableAutoTarget(Globals.AutoTargetID) then
+        return { Globals.AutoTargetID, }
+    end
+    return {}
 end
 
 --- Returns {AggroTargetID} if AggroTargetID is non-zero, else {}.

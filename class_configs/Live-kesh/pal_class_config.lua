@@ -10,6 +10,18 @@ local Logger       = require("utils.logger")
 local Targeting    = require("utils.targeting")
 local Ui           = require("utils.ui")
 
+--- HateTools(AutoTarget) stun gate: aggro < 100, or MA at 100+ with secondary hate >= 65%.
+local function palAutoTargetStunAggroOk()
+    if Targeting.GetAutoTargetAggroPct() < 100 then return true end
+    return (mq.TLO.Target.SecondaryPctAggro() or 0) >= 65
+end
+
+--- Flash of Light: aggro lost, or MA at 100+ with secondary hate >= 65% (caller adds range check).
+local function palAutoTargetFlashAggroOk()
+    if Targeting.LostAutoTargetAggro() then return true end
+    return Targeting.GetAutoTargetAggroPct() >= 100 and (mq.TLO.Target.SecondaryPctAggro() or 0) >= 65
+end
+
 local _ClassConfig = {
     _version              = "2.0 - Live",
     _author               = "Algar",
@@ -313,6 +325,49 @@ local _ClassConfig = {
             "Force of Ardency",        -- Level 104
             "Force of Reverence",      -- Level 99
         },
+        ['AwestruckStun'] = {          -- Shared CLR/PAL Awestruck line (no recourse timer)
+            "Awestruck XVII Rk. III",  -- Level 130
+            "Awestruck XVII Rk. II",
+            "Awestruck XVII",
+            "Awebolt Rk. III",         -- Level 125
+            "Awebolt Rk. II",
+            "Awebolt",
+            "Aweblast Rk. III",        -- Level 120
+            "Aweblast Rk. II",
+            "Aweblast",
+            "Aweflash Rk. III",        -- Level 115
+            "Aweflash Rk. II",
+            "Aweflash",
+            "Awestrike Rk. III",       -- Level 110
+            "Awestrike Rk. II",
+            "Awestrike",
+            "Awecrush Rk. III",        -- Level 105
+            "Awecrush Rk. II",
+            "Awecrush",
+            "Aweclash Rk. III",        -- Level 100
+            "Aweclash Rk. II",
+            "Aweclash",
+            "Aweburst Rk. III",        -- Level 95
+            "Aweburst Rk. II",
+            "Aweburst",
+            "Awecrash Rk. III",        -- Level 90
+            "Awecrash Rk. II",
+            "Awecrash",
+            "Aweshake Rk. III",        -- Level 85
+            "Aweshake Rk. II",
+            "Aweshake",
+            "Aweshock Rk. III",        -- Level 80
+            "Aweshock Rk. II",
+            "Aweshock",
+            "Awestruck Rk. III",       -- Level 75
+            "Awestruck Rk. II",
+            "Awestruck",
+            "Shock of Wonder",         -- Level 70
+            "Tarnation",               -- Level 61
+            "Sound of Force",          -- Level 55
+            "Force",                   -- Level 31
+            "Holy Might",              -- Level 16
+        },
         ['HealWard'] = {               -- Heal ToT, Ward on Self
             "Protective Confession X", -- Level 130
             "Protective Acceptance",   -- Level 125
@@ -386,6 +441,9 @@ local _ClassConfig = {
             "Valiant Diversion",         -- Level 110
             "Valiant Defense",           -- Level 105
             "Valiant Deflection",        -- Level 98
+        },
+        ['FlashofLight'] = {
+            "Flash of Light", -- Level 9
         },
         ['Affirmation'] = {              --- Improved Super Taunt - Gets you Aggro for X seconds and reduces other Haters generation.
             "Unquestioned Affirmation",  -- Level 129
@@ -592,6 +650,7 @@ local _ClassConfig = {
             "Touch of Piety",   -- Level 66
             "Touch of Nife",    -- Level 61
             "Superior Healing", -- Level 48
+            "Greater Healing",  -- Level 36
             "Healing",          -- Level 27
             "Light Healing",    -- Level 12
             "Minor Healing",    -- Level 6
@@ -1413,6 +1472,32 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "StunTimer5",
+                type = "Spell",
+                load_cond = function(self)
+                    return Config:GetSetting('Timer5Choice') == 2 or ((Config:GetSetting('Timer5Choice') == 1)) and not Core.GetResolvedActionMapItem('CrushTimer5')
+                end,
+                cond = function(self, spell, target)
+                    return palAutoTargetStunAggroOk()
+                end,
+            },
+            {
+                name = "AwestruckStun",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoAwestruckStun') end,
+                cond = function(self, spell, target)
+                    return palAutoTargetStunAggroOk()
+                end,
+            },
+            {
+                name = "FlashofLight",
+                type = "Spell",
+                load_cond = function(self) return Config:GetSetting('DoFlashofLight') end,
+                cond = function(self, spell, target)
+                    return palAutoTargetFlashAggroOk() and Targeting.GetTargetDistance(target) < 30
+                end,
+            },
+            {
                 name = "Audacity",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -1673,14 +1758,6 @@ local _ClassConfig = {
                 end,
             },
             {
-                name = "HealStun",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    return Targeting.MainHealsNeeded(mq.TLO.Me) or
-                        (Core.IsTanking() and spell.RankName.Stacks() and (mq.TLO.Me.Song(spell.Trigger(1).Name).Duration.TotalSeconds() or 0) < 12)
-                end,
-            },
-            {
                 name = "HealWard",
                 type = "Spell",
                 load_cond = function(self) return Core.IsTanking() end,
@@ -1714,33 +1791,6 @@ local _ClassConfig = {
                 cond = function(self, aaName, target)
                     return Casting.HaveManaToNuke()
                 end,
-            },
-            {
-                name = "CrushTimer5",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('Timer5Choice') == 1 end,
-            },
-            {
-                name = "CrushTimer6",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('Timer6Choice') == 1 end,
-            },
-            {
-                name = "StunTimer5",
-                type = "Spell",
-                load_cond = function(self)
-                    return Config:GetSetting('Timer5Choice') == 2 or ((Config:GetSetting('Timer5Choice') == 1)) and not Core.GetResolvedActionMapItem('CrushTimer5')
-                end,
-            },
-            {
-                name = "StunTimer4",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('Timer4Choice') end,
-            },
-            {
-                name = "StunTimer6",
-                type = "Spell",
-                load_cond = function(self) return Config:GetSetting('Timer6Choice') == 2 end,
             },
             {
                 name = "Disruption",
@@ -1788,6 +1838,7 @@ local _ClassConfig = {
                 { name = "SplashHeal",  cond = function(self) return Config:GetSetting('KeepSplashMemmed') end, },
                 { name = "WaveHeal",    cond = function(self) return Config:GetSetting('DoWaveHeal') end, },
                 { name = "HealTaunt",   cond = function(self) return Core.IsTanking() end, },
+                { name = "FlashofLight", cond = function(self) return Core.IsTanking() and Config:GetSetting('DoFlashofLight') end, },
                 { name = "Audacity",    cond = function(self) return Core.IsTanking() end, },
                 { name = "ForHonor",    cond = function(self) return Core.IsTanking() end, },
                 { name = "StunTimer4",  cond = function(self) return Core.IsTanking() and Config:GetSetting('Timer4Choice') end, },
@@ -1801,6 +1852,7 @@ local _ClassConfig = {
                 },
                 { name = "CrushTimer6",  cond = function(self) return Core.IsTanking() and Config:GetSetting('Timer6Choice') == 1 end, },
                 { name = "StunTimer6",   cond = function(self) return Core.IsTanking() and Config:GetSetting('Timer6Choice') == 2 end, },
+                { name = "AwestruckStun", cond = function(self) return Core.IsTanking() and Config:GetSetting('DoAwestruckStun') end, },
                 { name = "Preservation", cond = function(self) return Core.IsTanking() end, },
                 { name = "TempHP",       cond = function(self) return Config:GetSetting('DoTempHP') end, },
                 { name = "SteelProc",    cond = function(self) return Config:GetSetting('DoSteelProc') end, },
@@ -1995,6 +2047,17 @@ local _ClassConfig = {
             Max = 3,
             ConfigType = "Advanced",
         },
+        ['DoAwestruckStun']   = {
+            DisplayName = "Use Awestruck Stun",
+            Group = "Abilities",
+            Header = "Tanking",
+            Category = "Hate Tools",
+            Index = 103,
+            Tooltip = "Mem and use the shared Awestruck stun line (Holy Might / Force / Awestruck / Aweflash, etc.) in HateTools rotations.",
+            RequiresLoadoutChange = true,
+            Default = true,
+            ConfigType = "Advanced",
+        },
         ['DoDicho']           = {
             DisplayName = "Cast Dicho",
             Group = "Abilities",
@@ -2004,6 +2067,17 @@ local _ClassConfig = {
             Tooltip = "Use your Dichotomic Hate/Stun/GroupHeal spell.",
             RequiresLoadoutChange = true,
             Default = true,
+        },
+        ['DoFlashofLight']    = {
+            DisplayName = "Use Flash of Light",
+            Group = "Abilities",
+            Header = "Tanking",
+            Category = "Hate Tools",
+            Index = 105,
+            Tooltip = "Mem and use Flash of Light in HateTools(AutoTarget) when aggro is lost, or at 100+ aggro with secondary hate >= 65% (within 30 range).",
+            RequiresLoadoutChange = true,
+            Default = true,
+            ConfigType = "Advanced",
         },
         ['AETauntAA']         = {
             DisplayName = "Use AE Taunt AA",
