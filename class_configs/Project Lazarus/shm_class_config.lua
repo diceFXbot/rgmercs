@@ -13,15 +13,18 @@ local _ClassConfig = {
     ['ModeChecks']        = {
         IsHealing = function() return true end,
         IsCuring = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
-        IsRezing = function() return Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0 end,
+        IsRezing = function()
+            return (Core.GetResolvedActionMapItem('RezSpell') and Targeting.GetXTHaterCount() == 0) or
+                ((Casting.CanUseAA("Call of the Wild") or mq.TLO.FindItem("=Staff of Forbidden Rites")()) and Config:GetSetting('DoBattleRez'))
+        end,
     },
     ['Modes']             = {
         'Heal',
         'Hybrid',
     },
     ['PetPosition']       = {
-        SummonAA   = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
-        RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
+        SummonAA = function() return Casting.CanUseAA("Summon Companion") and "Summon Companion" end,
+        --  RelocateAA = function() return Casting.CanUseAA("Companion's Relocation") and "Companion's Relocation" end,
     },
     ['Cures']             = {
         GetCureSpells = function(self)
@@ -141,6 +144,7 @@ local _ClassConfig = {
             "Talisman of Wunshi",   -- Level 70, - Group
             "Focus of the Seventh", -- Level 65, - Group
             "Khura's Focusing",     -- Level 60, - Group
+            "Infusion of Spirit",   -- Level 49, Str/Dex/Sta, can use HP buff. Not sure if this is the final home for this one or not.
         },
         ['RunSpeedBuff'] = {
             -- Run Speed Buff - 9 - 74
@@ -192,7 +196,9 @@ local _ClassConfig = {
             "Talisman of Might",     -- Level 70, Group
             "Spirit of Might",       -- Level 67, Single Target
             "Talisman of the Diaku", -- Level 64
-            "Infusion of Spirit",    -- Level 49, Str/Dex/Sta, can use HP buff
+            "Talisman of the Rhino", -- Level 58
+            "Maniacal Strength",     -- Level 57
+            "Strength",              -- Level 46
             "Tumultuous Strength",   -- Level 35
             "Raging Strength",       -- Level 28
             "Spirit Strength",       -- Level 18, Can't see this as being very worth but keeping for now.
@@ -266,6 +272,10 @@ local _ClassConfig = {
             "Lingering Sloth", -- Level 68
         },
         ['RezSpell'] = {
+            'Incarnate Anew', -- Level 59
+            'Resuscitate',    -- Level 49 Laz Custom
+            'Revive',         -- Level 39 Laz Custom
+            'Reanimation',    -- Level 29 Laz Custom
         },
         ['HealSpell'] = {
             "Ancient: Wilslik's Mending", -- Level 70
@@ -445,7 +455,7 @@ local _ClassConfig = {
                 if Casting.AAReady("Rejuvenation of Spirit") then
                     rezAction = okayToRez and Casting.UseAA("Rejuvenation of Spirit", corpseId, true, 1)
                 elseif not Casting.CanUseAA("Rejuvenation of Spirit") and Casting.SpellReady(rezSpell, true) then
-                    rezAction = okayToRez and Casting.UseSpell(rezSpell, corpseId, true, true)
+                    rezAction = okayToRez and Casting.UseSpell(rezSpell.RankName(), corpseId, true, true)
                 end
             end
 

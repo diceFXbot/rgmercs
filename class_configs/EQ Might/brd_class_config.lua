@@ -289,7 +289,7 @@ local _ClassConfig = {
     },
     ['Helpers']       = {
         DoRez = function(self, corpseId)
-            local rezStaff = self.ResolvedActionMap['RezStaff']
+            local rezStaff = Core.GetResolvedActionMapItem('RezStaff')
 
             if mq.TLO.Me.ItemReady(rezStaff)() then
                 if Casting.OkayToRez(corpseId) then
@@ -413,6 +413,15 @@ local _ClassConfig = {
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
                 return combat_state == "Downtime" and not mq.TLO.Me.Invis()
+            end,
+        },
+        {
+            name = 'GroupBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Casting.GetBuffableIDs() end,
+            cond = function(self, combat_state)
+                return combat_state == "Downtime" and Casting.OkayToBuff()
             end,
         },
         {
@@ -861,6 +870,9 @@ local _ClassConfig = {
                     return Casting.NoDiscActive()
                 end,
             },
+        },
+        ['GroupBuff'] = { -- Added to anchor clickies to
+
         },
     },
     ['SpellList']     = { -- New style spell list, gemless, priority-based. Will use the first set whose conditions are met.

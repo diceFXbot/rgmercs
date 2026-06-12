@@ -24,7 +24,7 @@ local _ClassConfig = {
     },
     ['ModeChecks']      = {
         -- necro can AA Rez
-        IsRezing   = function() return Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0 end,
+        IsRezing   = function() return Casting.CanUseAA("Convergence") and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
         CanCharm   = function() return true end,
         IsCharming = function() return (Config:GetSetting('CharmOn') and mq.TLO.Pet.ID() == 0) end,
     },
@@ -999,15 +999,6 @@ local _ClassConfig = {
             },
         },
         ['DPS(MobHighHP)']  = {
-            {
-                name = "Summon Companion",
-                type = "AA",
-                cond = function(self, aaName, target)
-                    if mq.TLO.Me.Pet.ID() == 0 then return false end
-                    local pet = mq.TLO.Me.Pet
-                    return not pet.Combat() and (pet.Distance3D() or 0) > 200
-                end,
-            },
             {
                 name = "DurationTap",
                 type = "Spell",

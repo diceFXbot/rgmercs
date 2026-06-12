@@ -1,5 +1,14 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+## 2026-06-13 — upstream main 取り込み (2775 → 2780)
+
+- upstream `origin/main` (`aa391ac`) までを `lua/rgmercs` へ展開し、`lua/rgmercs-kesh` に手動反映。
+- `modules/class.lua`: upstream の `PositionPet` 更新を反映（遠距離ペットの `SummonAA` 対応）。`Globals.ConfigDirName` を使う kesh 保存先は維持。
+- `modules/mez.lua`: `TwincastMez` fallback 設定と mez level 取得診断コメントを反映。
+- `class_configs/Live` / `Live-kesh`: BST/NEC の pet summon rotation 整理、CLR/DRU/NEC/PAL/SHM の rez 更新、PAL CombatWeave 登録を反映。
+- `class_configs/EQ Might` / `Project Lazarus` / `Alpha (Live)`: upstream class config 更新を反映。
+- `class_configs/Live-kesh/mag_class_config.lua` と `rng_class_config.lua` の kesh 独自変更は保持。
+
 ## 2026-06-11 — MAG PetTank: ローテ action 直前に pet 送り
 
 - `utils/rotation.lua`: `RunPreActivate` から class Helper `PetAttackBeforeAction` を呼ぶ。

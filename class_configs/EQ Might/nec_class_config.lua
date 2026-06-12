@@ -392,6 +392,15 @@ local _ClassConfig = {
             end,
         },
         {
+            name = 'GroupBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Casting.GetBuffableIDs() end,
+            cond = function(self, combat_state)
+                return combat_state == "Downtime" and Casting.OkayToBuff()
+            end,
+        },
+        {
             name = 'Emergency',
             state = 1,
             steps = 1,
@@ -552,15 +561,6 @@ local _ClassConfig = {
             },
         },
         ['CombatBuff']      = {
-            {
-                name = "Summon Companion",
-                type = "AA",
-                cond = function(self, aaName, target)
-                    if mq.TLO.Me.Pet.ID() == 0 then return false end
-                    local pet = mq.TLO.Me.Pet
-                    return not pet.Combat() and (pet.Distance3D() or 0) > 200
-                end,
-            },
             {
                 name = "Epic",
                 type = "Item",
@@ -907,10 +907,13 @@ local _ClassConfig = {
                 end,
             },
         },
+        ['GroupBuff']       = { -- Added to anchor clickies to
+
+        },
     },
     ['Helpers']         = {
         DoRez = function(self, corpseId)
-            local rezStaff = self.ResolvedActionMap['RezStaff']
+            local rezStaff = Core.GetResolvedActionMapItem('RezStaff')
 
             if mq.TLO.Me.ItemReady(rezStaff)() then
                 if Casting.OkayToRez(corpseId) then

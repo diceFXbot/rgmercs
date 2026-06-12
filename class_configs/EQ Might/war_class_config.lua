@@ -170,7 +170,7 @@ local _ClassConfig = {
     },
     ['Helpers']       = {
         DoRez = function(self, corpseId)
-            local rezStaff = self.ResolvedActionMap['RezStaff']
+            local rezStaff = Core.GetResolvedActionMapItem('RezStaff')
 
             if mq.TLO.Me.ItemReady(rezStaff)() then
                 if Casting.OkayToRez(corpseId) then
@@ -230,6 +230,15 @@ local _ClassConfig = {
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
                 return combat_state == "Downtime" and Casting.OkayToBuff() and Casting.AmIBuffable()
+            end,
+        },
+        {
+            name = 'GroupBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Casting.GetBuffableIDs() end,
+            cond = function(self, combat_state)
+                return combat_state == "Downtime" and Casting.OkayToBuff()
             end,
         },
         { --Actions to lock down xtarg haters
@@ -351,6 +360,9 @@ local _ClassConfig = {
                     return not mq.TLO.Me.Aura(1).ID()
                 end,
             },
+        },
+        ['GroupBuff'] = { -- Added to anchor clickies to
+
         },
         ['HateTools(AggroTarget)'] = {
             {

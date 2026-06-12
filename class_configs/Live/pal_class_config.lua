@@ -16,8 +16,11 @@ local _ClassConfig = {
     ['ModeChecks']        = {
         IsTanking = function() return Core.IsModeActive("Tank") end,
         IsHealing = function() return true end,
-        IsCuring = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
-        IsRezing = function() return Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0 end,
+        IsCuring  = function() return Config:GetSetting('DoCureAA') or Config:GetSetting('DoCureSpells') end,
+        IsRezing  = function()
+            return (Core.GetResolvedActionMapItem('RezSpell') and Targeting.GetXTHaterCount() == 0) or
+                (Casting.CanUseAA("Gift of Resurrection") and Config:GetSetting('DoBattleRez'))
+        end,
     },
     ['Modes']             = {
         'Tank',
@@ -767,6 +770,13 @@ local _ClassConfig = {
             "Reflexive Righteousness", -- Level 100
         },
         ['RezSpell'] = {
+            "Resurrection",   -- Level 59
+            "Restoration",    -- Level 55
+            "Renewal",        -- Level 49
+            "Revive",         -- Level 39
+            "Reparation",     -- Level 31
+            "Reconstitution", -- Level 30
+            "Reanimation",    -- Level 22
         },
     },
     ['AASets']            = {
@@ -784,7 +794,7 @@ local _ClassConfig = {
             if (Config:GetSetting('DoBattleRez') or mq.TLO.Me.CombatState():lower() ~= "combat") and Casting.AAReady("Gift of Resurrection") then
                 rezAction = okayToRez and Casting.UseAA("Gift of Resurrection", corpseId, true, 1)
             elseif not Casting.CanUseAA("Gift of Resurrection") and mq.TLO.Me.CombatState():lower() ~= "combat" and Casting.SpellReady(rezSpell, true) then
-                rezAction = okayToRez and Casting.UseSpell(rezSpell, corpseId, true, true)
+                rezAction = okayToRez and Casting.UseSpell(rezSpell.RankName(), corpseId, true, true)
             end
 
             return rezAction
@@ -1039,6 +1049,16 @@ local _ClassConfig = {
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
                 return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotHeal()
+            end,
+        },
+        { --Non-spell actions that can be used during/between casts
+            name = 'CombatWeave',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Targeting.CheckForAutoTargetID() end,
+            cond = function(self, combat_state)
+                if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
+                return combat_state == "Combat" and Core.OkayToNotHeal()
             end,
         },
         { --DPS Spells, includes recourse/gift maintenance
