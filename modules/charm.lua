@@ -145,6 +145,16 @@ Module.DefaultConfig                 = {
 		Tooltip     = "If Auto Level Range is disabled, the maximum level of a potential charm target for Dire Charm.",
 		ConfigType  = "Advanced",
 	},
+	['CharmSkipMATarget']                      = {
+		DisplayName = "Skip MA Target",
+		Group       = "Abilities",
+		Header      = "Charm",
+		Category    = "Charm Targets",
+		Index       = 6,
+		Default     = true,
+		Tooltip     = "When enabled, the group Auto Target (MA target) will not be added to the charm list or charmed.",
+		ConfigType  = "Advanced",
+	},
 	[string.format("%s_Popped", Module._name)] = {
 		DisplayName = Module._name .. " Popped",
 		Type = "Custom",
@@ -354,7 +364,7 @@ function Module:CharmNow(charmId, useAA)
 	-- First thing we target the mob if we haven't already targeted them.
 	Core.DoCmd("/attack off")
 	local currentTargetID = mq.TLO.Target.ID()
-	if charmId == Globals.AutoTargetID then return end
+	if charmId == Globals.AutoTargetID and Config:GetSetting('CharmSkipMATarget') then return end
 	Targeting.SetTarget(charmId)
 
 	local charmSpell = self:GetCharmSpell()
@@ -460,6 +470,12 @@ function Module:IsValidCharmTarget(mobId)
 		return false
 	end
 
+	if Config:GetSetting('CharmSkipMATarget') and mobId == Globals.AutoTargetID then
+		Logger.log_debug("\ayUpdateCharmList: Skipping Mob ID: %d Name: %s Level: %d - MA Auto Target.", spawn.ID() or 0,
+			spawn.CleanName() or "Unknown", spawn.Level() or 0)
+		return false
+	end
+
 	if (spawn.Distance() or 999) > Config:GetSetting('CharmRadius') then
 		Logger.log_debug("\ayUpdateCharmList: Skipping Mob ID: %d Name: %s Level: %d - Out of Charm Radius",
 			spawn.ID() or 0, spawn.CleanName() or "Unknown", spawn.Level() or 0)
@@ -554,7 +570,7 @@ function Module:ProcessCharmList()
 					Logger.log_debug("\ayProcessCharmList(%d) :: Distance(%d) LOS(%s)", id,
 						spawn.Distance(), Strings.BoolToColorString(spawn.LineOfSight()))
 				else
-					if id == Globals.AutoTargetID then
+					if Config:GetSetting('CharmSkipMATarget') and id == Globals.AutoTargetID then
 						Logger.log_debug("\ayProcessCharmList(%d) :: Mob is MA's target skipping", id)
 						table.insert(removeList, id)
 					else

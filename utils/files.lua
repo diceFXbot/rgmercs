@@ -57,7 +57,11 @@ function Files.make_p(path)
             Logger.log_debug("Creating directory: %s", current)
             local ok, err = lfs.mkdir(current)
             if not ok then
-                return nil, err
+                -- Windows: existing dirs can report "File exists" when attributes missed them (Config/config case).
+                attr = lfs.attributes(current)
+                if not (attr and attr.mode == "directory") then
+                    return nil, err
+                end
             end
         elseif attr.mode ~= "directory" then
             return nil, current .. " exists but is not a directory"

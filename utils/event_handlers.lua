@@ -140,8 +140,9 @@ end)
 
 -- [ TOO FAR HANDLERS ] --
 
-local function tooFarHandler()
-    Logger.log_debug("TooFar: Event Detected")
+---@param cantHitFromHere boolean? True for "You can't hit them from here." (reposition regardless of distance).
+local function tooFarHandler(cantHitFromHere)
+    Logger.log_debug("TooFar: Event Detected (cantHitFromHere=%s)", Strings.BoolToColorString(cantHitFromHere == true))
     if Globals.BackOffFlag then return end
     if Globals.PauseMain then return end
 
@@ -170,8 +171,8 @@ local function tooFarHandler()
             local helpers = Core.GetHelpers()
             local haterCount = Targeting.GetXTHaterCount()
             if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
-                if helpers and helpers.combatNav then
-                    Core.SafeCallFunc("Custom Nav", helpers.combatNav)
+                if helpers and helpers.combatNav and not Config:GetSetting('DoMelee') then
+                    Core.SafeCallFunc("Custom Nav", helpers.combatNav, false, cantHitFromHere == true)
                 elseif Config:GetSetting('DoMelee') then
                     Logger.log_debug("TooFar: \ayWe are in COMBAT and too far from our target!")
                     if Config:GetSetting('DoAutoEngage') and Combat.OkToEngage(target.ID() or 0) then
@@ -210,7 +211,7 @@ mq.event("TooFar1", "#*#Your target is too far away, get closer!", function()
     mq.flushevents("TooFar1")
 end)
 mq.event("TooFar2", "#*#You can't hit them from here.", function()
-    tooFarHandler()
+    tooFarHandler(true)
     mq.flushevents("TooFar2")
 end)
 mq.event("TooFar3", "#*#You are too far away#*#", function()

@@ -707,6 +707,7 @@ end
 ---@param resolvedActionMap table Map of entry name → resolved action.
 ---@param entry table Rotation entry that may define pre_activate.
 function Rotation.RunPreActivate(caller, resolvedActionMap, entry)
+    Core.SafeCallClassHelper("PetAttackBeforeAction", "PetAttackBeforeAction", caller)
     if entry.pre_activate then
         Logger.log_verbose("Running pre-activate for %s.", entry.name)
         entry.pre_activate(caller, Rotation.GetEntryConditionArg(resolvedActionMap, entry))

@@ -1629,17 +1629,29 @@ local _ClassConfig = {
         },
     },
     ['Helpers']           = {
-        combatNav = function(forceMove)
+        combatNav = function(forceMove, cantHitFromHere)
             if not Config:GetSetting('DoMelee') then
                 if not mq.TLO.Me.AutoFire() then
                     Core.DoCmd('/squelch face fast')
                     Core.DoCmd('/autofire on')
                 end
 
+                if cantHitFromHere then
+                    Logger.log_debug("Custom Ranger combatNav: Can't hit from here — nav regardless of distance.")
+                    if Config:GetSetting('NavCircle') then
+                        Movement:NavAroundCircle(mq.TLO.Target, Config:GetSetting('BowNavDistance'))
+                    else
+                        Movement:DoNav(true, "id %d", Globals.AutoTargetID)
+                        Core.DoCmd('/squelch /face fast')
+                    end
+                    return
+                end
+
                 local targetDistance = Targeting.GetTargetDistance()
                 local chaseDistance = Config:GetSetting('ChaseDistance')
+                local bowNavDistance = Config:GetSetting('BowNavDistance')
                 local useChaseDistance = chaseDistance > 75 and chaseDistance < 200
-                local tooClose = targetDistance < 30
+                local tooClose = targetDistance < bowNavDistance
                 --- the distance of 200 could be further refined by checking actual distances based off range + ammo distance if desired.
                 local tooFar = useChaseDistance and targetDistance > chaseDistance or targetDistance > 75
 
@@ -1661,7 +1673,7 @@ local _ClassConfig = {
                             chaseDistance)
                     end
                     Core.DoCmd('/squelch face fast')
-                    Movement:DoStickCmd("10 moveback")
+                    Movement:DoStickCmd("moveback %d", Config:GetSetting('BowNavDistance'))
                 elseif tooFar or forceMove then
                     Movement:DoNav(true, "id %d distance=%d lineofsight=on", Globals.AutoTargetID, Config:GetSetting('BowNavDistance'))
                     Core.DoCmd('/squelch /face fast')

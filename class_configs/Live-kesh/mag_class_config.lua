@@ -1,5 +1,6 @@
 local mq          = require('mq')
 local Casting     = require("utils.casting")
+local Combat      = require("utils.combat")
 local Comms       = require("utils.comms")
 local Config      = require('utils.config')
 local Core        = require("utils.core")
@@ -1054,6 +1055,14 @@ _ClassConfig    = {
     },
     -- Really the meat of this class.
     ['Helpers']           = {
+        PetAttackBeforeAction = function(self)
+            if not Core.IsModeActive("PetTank") then return end
+            if Globals.CurrentState ~= "Combat" then return end
+            if not Config:GetSetting('DoPetCommands') then return end
+            if mq.TLO.Me.Pet.ID() == 0 then return end
+            if Globals.AutoTargetID == 0 then return end
+            Combat.PetAttack(Globals.AutoTargetID, true)
+        end,
         user_tu_spell = function(self, aaName)
             local shroudSpell = self.ResolvedActionMap['ShroudSpell']
             local aaSpell = Casting.GetAASpell(aaName)

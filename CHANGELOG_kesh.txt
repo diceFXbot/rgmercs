@@ -1,5 +1,33 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+## 2026-06-11 — MAG PetTank: ローテ action 直前に pet 送り
+
+- `utils/rotation.lua`: `RunPreActivate` から class Helper `PetAttackBeforeAction` を呼ぶ。
+- `class_configs/Live-kesh/mag_class_config.lua`: PetTank + Combat 時、各ローテ action の直前に `Combat.PetAttack`（Pet Assist Percent 非参照）。
+
+## 2026-06-11 — RNG DoMelee ON: combatNav ではなく WAR 同様の共通近接 nav
+
+- `utils/event_handlers.lua`: RNG カスタム `combatNav` は DoMelee OFF 時のみ。DoMelee ON 時は CantSee / TooFar 等とも WAR と同じ `NavInCombat` / moveback 分岐。
+
+## 2026-06-11 — RNG: "You can't hit them from here." で距離無関係 nav
+
+- `utils/event_handlers.lua`: TooFar2 のみ `tooFarHandler(true)` — cantHitFromHere フラグを combatNav へ渡す。
+- `class_configs/Live-kesh/rng_class_config.lua`: `cantHitFromHere` 時は距離判定をスキップ。Nav Circle OFF では距離指定なしで target へ nav。
+
+## 2026-06-11 — RNG combatNav: tooClose 閾値・moveback
+
+- 同上: `tooClose` 判定も **Bow Nav Distance** 設定値に統一（moveback / nav 距離と同じ）。
+
+## 2026-06-11 — Charm: Skip MA Target 設定
+
+- `modules/charm.lua`: `CharmSkipMATarget` を追加（デフォルト ON = 従来どおり MA ターゲットを除外）。
+  - OFF にすると Auto Target（MA ターゲット）もチャーム候補になる。
+
+## 2026-06-11 — DB 起動失敗 fix (Windows File exists)
+
+- `utils/files.lua`: `make_p` が既存ディレクトリで `File exists` を返す場合、ディレクトリなら成功扱いにする。
+  - 症状: `/lua run rgmercs-kesh` 起動時 `config_db.lua` が DB ディレクトリ作成に失敗し `Config.Db` が nil で落ちる。
+
 ## 2026-06-11 — 運用方針（upstream 取り込み）
 
 - upstream main は **`lua/rgmercs` に展開**する（[DerpleDude/rgmercs](https://github.com/DerpleDude/rgmercs) main）。
