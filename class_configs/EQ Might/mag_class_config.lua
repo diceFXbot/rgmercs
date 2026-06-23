@@ -78,6 +78,11 @@ _ClassConfig      = {
             "Glyphwielder's Tunic of the Summoner",
             "Runemaster's Robe",
         },
+        ['Asterion'] = {
+            "Artifact of Greater Asterion",
+            "Artifact of Asterion",
+            "Lesser Artifact of Asterion",
+        },
     },
     ['AbilitySets']   = {
         --- Nukes
@@ -331,6 +336,26 @@ _ClassConfig      = {
             "Small Modulation Shard",
         },
     },
+    ['Charm']         = {
+        ['Assist'] = {
+            {
+                name = "Malosinete",
+                type = "AA",
+                load_cond = function() return Config:GetSetting('DoMaloAA') and Casting.CanUseAA("Malosinete") end,
+                cond = function(self, aaName, target)
+                    return Casting.DetAACheck(aaName, target)
+                end,
+            },
+            {
+                name = "MaloDebuff",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoMalo') and not Casting.CanUseAA("Malosinete") end,
+                cond = function(self, spell, target)
+                    return Casting.DetSpellCheck(spell, target)
+                end,
+            },
+        },
+    },
     ['RotationOrder'] = { -- TODO: Add emergency rotation, shared health, etc
         {
             name = 'PetSummon',
@@ -495,7 +520,7 @@ _ClassConfig      = {
                             return true
                         end
                     else
-                        Logger.Log_warning("Warning: We seem to have something else on the cursor! Do you have another item named 'Orb of Mastery'? Aborting delete.")
+                        Logger.log_warning("Warning: We seem to have something else on the cursor! Do you have another item named 'Orb of Mastery'? Aborting delete.")
                     end
                 end
             end
@@ -529,9 +554,9 @@ _ClassConfig      = {
     ['Rotations']     = {
         ['PetSummon'] = {
             {
-                name = "Artifact of Asterion",
+                name = "Asterion",
                 type = "Item",
-                load_cond = function(self) return Config:GetSetting("UseDonorPet") and mq.TLO.FindItem("=Artifact of Asterion")() end,
+                load_cond = function(self) return Config:GetSetting("UseDonorPet") and Core.GetResolvedActionMapItem('Asterion') end,
                 active_cond = function(self, _) return mq.TLO.Me.Pet.ID() > 0 end,
                 post_activate = function(self, spell, success)
                     if success and mq.TLO.Me.Pet.ID() > 0 then
@@ -576,7 +601,7 @@ _ClassConfig      = {
                 active_cond = function(self) return mq.TLO.Me.Pet.ID() > 0 end,
                 load_cond = function(self)
                     return (not Config:GetSetting("UseEpicPet") or not mq.TLO.Me.Book("Summon Orb")()) and
-                        (not Config:GetSetting("UseDonorPet") or not mq.TLO.FindItem("=Artifact of Asterion")())
+                        (not Config:GetSetting("UseDonorPet") or not Core.GetResolvedActionMapItem('Asterion'))
                 end,
                 cond = function(self, spell)
                     return Casting.ReagentCheck(spell)
@@ -584,7 +609,6 @@ _ClassConfig      = {
                 post_activate = function(self, spell, success)
                     local pet = mq.TLO.Me.Pet
                     if success and pet.ID() > 0 then
-                        Comms.PrintGroupMessage("Summoned a new %d %s pet named %s using '%s'!", pet.Level(), pet.Class.Name(), pet.CleanName(), spell.RankName())
                         mq.delay(50) -- slight delay to prevent chat bug with command issue
                         self:SetPetHold()
                     end
@@ -992,7 +1016,7 @@ _ClassConfig      = {
             Header = "Pet",
             Category = "Pet Summoning",
             Index = 101,
-            Tooltip = "1 = Fire, 2 = Water, 3 = Earth, 4 = Air",
+            Tooltip = "Choose the elemental to summon when not using the epic pet.",
             Type = "Combo",
             ComboOptions = { 'Fire', 'Water', 'Earth', 'Air', },
             Default = 2,

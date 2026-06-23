@@ -596,12 +596,21 @@ return {
             },
         },
     },
+    ['Charm']             = {
+        ['Assist'] = {
+            { name = "Taunt",            type = "Ability", },
+            { name = "StunTimer5",       type = "Spell", },
+            { name = "StunTimer4",       type = "Spell", },
+            { name = "Xeno's Faceguard", type = "Item",    load_cond = function(self) return mq.TLO.FindItem("=Xeno's Faceguard")() end, },
+            { name = "Disruption",       type = "AA", },
+        },
+    },
     ['RotationOrder']     = {
         { --Self Buffs
             name = 'Downtime',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal() and Casting.AmIBuffable()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck() and Casting.AmIBuffable()
             end,
         },
         {
@@ -610,7 +619,7 @@ return {
             steps = 1,
             targetId = function(self) return Casting.GetBuffableIDs() end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck()
             end,
         },
         { --Actions to lock down xtarg haters
@@ -707,7 +716,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         { --Stun or damage enemies per your settings
@@ -722,7 +731,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if not Config:GetSetting('DoAEDamage') or (Core.IsTanking() and mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical')) then return false end
-                return combat_state == "Combat" and Combat.AETargetCheck(true)
+                return combat_state == "Combat" and Combat.AETargetCheck(true) and Core.CombatActionsCheck()
             end,
         },
         { --DPS Spells, includes recourse/gift maintenance
@@ -732,7 +741,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
     },
@@ -967,9 +976,6 @@ return {
                 type = "Spell",
                 allowDead = true,
                 load_cond = function(self) return Config:GetSetting('AEStunUse') == 3 and Core.GetResolvedActionMapItem('PBAEStun') end,
-                cond = function(self, spell, target)
-                    return mq.TLO.Me.PctEndurance() >= Config:GetSetting("ManaToNuke") -- save mana for emergency healing
-                end,
             },
             {
                 name = "BladeDisc",
@@ -1217,13 +1223,13 @@ return {
         ['AEStunUse']         = {
             DisplayName = "AEStun Spell Use:",
             Group = "Abilities",
-            Header = "Debuff",
+            Header = "Debuffs",
             Category = "Stun",
-            Index = 103,
-            Tooltip = "When to use your AE Stun Spell Line (DPS mode will not attempt to regain hate).",
+            Index = 102,
+            Tooltip = "When to use your AE Stun Spell Line.",
             RequiresLoadoutChange = true,
             Type = "Combo",
-            ComboOptions = { 'Disabled', 'Only To Regain Hate', 'Whenever Possible', },
+            ComboOptions = { 'Disabled', 'To Regain Hate If In Tank Mode', 'Whenever Possible', },
             Default = 2,
             Min = 1,
             Max = 3,
@@ -1234,10 +1240,10 @@ return {
             Header = "Damage",
             Category = "AE",
             Index = 102,
-            Tooltip = "When to use your AE Blade Disc Line (DPS mode will not attempt to regain hate).",
+            Tooltip = "When to use your AE Blade Disc Line.",
             RequiresLoadoutChange = true,
             Type = "Combo",
-            ComboOptions = { 'Disabled', 'Only To Regain Hate', 'Whenever Possible', },
+            ComboOptions = { 'Disabled', 'To Regain Hate If In Tank Mode', 'Whenever Possible', },
             Default = 2,
             Min = 1,
             Max = 3,
@@ -1534,6 +1540,7 @@ return {
             Default = 1,
             Min = 1,
             Max = 4,
+            RequiresLoadoutChange = true,
         },
         ['DoACBuff']          = {
             DisplayName = "Use AC Buff",
@@ -1592,6 +1599,20 @@ return {
             FAQ = "Why am I using and Undead proc, I'm not fighting any undead?",
             Answer = "If you have elected to use the Standard DD proc (default) and it is not yet available, we will use the Undead proc still.\n" ..
                 "Your desired proc can be adjusted with the Proc Buff Choice setting in Self Buff category.",
+        },
+        ['HealPriority']      = {
+            DisplayName = "Healing Priority",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 101,
+            Type = "Combo",
+            ComboOptions = { 'Ignore', 'Big Heal Point', },
+            Default = 2,
+            Min = 1,
+            Max = 2,
+            Tooltip = "When to yield offensive rotations for healing:\n1 - Ignore (never)\n2 - Big Heal Point",
+            ConfigType = "Advanced",
         },
     },
     ['ClassFAQ']          = {

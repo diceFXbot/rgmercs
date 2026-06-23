@@ -108,7 +108,7 @@ end
 --- @param data table? The data payload for the event.
 function Comms.SendMessage(peer, module, event, data)
     local char, server = Comms.GetNameAndServerFromPeer(peer)
-    Comms.Actors.send({ mailbox = 'RGMercs', script = Globals.LuaPackageName, server = server, character = char, }, {
+    Comms.Actors.send({ mailbox = 'RGMercs', script = 'rgmercs', server = server, character = char, }, {
         From = Comms.GetPeerName(),
         Script = Comms.ScriptName,
         Module = module,
@@ -202,6 +202,8 @@ function Comms.SendHeartbeat(forceSend)
         TargetID      = mq.TLO.Target.ID() or 0,
         AutoTargetID  = autoTargetID,
         ForceTargetID = RGMercs and RGMercs.Globals("ForceTargetID")() or 0,
+        CharmedPetID  = RGMercs and RGMercs.Globals("MyCharmedPetID")() or 0,
+        LooseCharmID  = RGMercs and RGMercs.Globals("MyLooseCharmID")() or 0,
         TargetIsNamed = RGMercs and RGMercs.Globals("AutoTargetIsNamed")() or nil,
         Casting       = mq.TLO.Me.Casting.ID() ~= 0 and mq.TLO.Me.Casting.RankName() or "None",
         Burning       = RGMercs and RGMercs.Globals("LastBurnCheck")() or false,

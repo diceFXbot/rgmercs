@@ -1,5 +1,15 @@
 # kesh CHANGELOG — 追記ルール: 新しい日付ブロックを上に追加。同一日付内も新しい項目を上に追加。
 
+## 2026-06-23 — upstream main 取り込み (2780 → 2806)
+
+- upstream `origin/main` (`a8c1485`) / `lua/rgmercs` version `2806` を、`lua/rgmercs-kesh` へ手動反映。
+- core / utils / modules / ui / namedlist / class config の 2806 更新を反映し、`extras/version.lua` を `2806` に更新。
+- `modules/charm.lua`: upstream Charm v2.0 をベースにし、`CharmSkipMATarget` を新しい候補選定と実キャスト直前チェックへ移植。
+- `modules/named.lua` / `namedlist/*`: upstream の namedlist base/overlay 構造を採用。
+- `utils/event_handlers.lua` + `class_configs/Live-kesh/rng_class_config.lua`: upstream の `rangedNav(reason)` 構造に合わせつつ、TooFar2 (`You can't hit them from here.`) は `canthit` として渡す。DoMelee OFF では haterCount がなくても処理し、距離指定なしの単純 target nav を行う。
+- `utils/rotation.lua` + `class_configs/Live-kesh/mag_class_config.lua`: MAG PetTank の `PetAttackBeforeAction` を保持。
+- `utils/globals.lua` ほか: `LuaPackageName` / `ConfigDirName` は `rgmercs-kesh` のまま維持。`utils/files.lua` の Windows `File exists` DB 起動 fix も保持。
+
 ## 2026-06-13 — upstream main 取り込み (2775 → 2780)
 
 - upstream `origin/main` (`aa391ac`) までを `lua/rgmercs` へ展開し、`lua/rgmercs-kesh` に手動反映。

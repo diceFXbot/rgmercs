@@ -9,7 +9,7 @@ local Logger       = require("utils.logger")
 local Targeting    = require("utils.targeting")
 
 local _ClassConfig = {
-    _version              = "3.1 - EQ Might",
+    _version              = "3.2 - EQ Might",
     _author               = "Algar, Derple",
     ['ModeChecks']        = {
         IsHealing = function() return true end,
@@ -162,6 +162,7 @@ local _ClassConfig = {
             "Talisman of Wunshi",          -- Level 70 - Group
             "Focus of the Seventh",        -- Level 65 - Group
             "Khura's Focusing",            -- Level 60 - Group
+            "Infusion of Spirit",          -- Level 49, Str/Dex/Sta, can use HP buff. Not sure if this is the final home for this one or not.
         },
         ['RunSpeedBuff'] = {
             -- Run Speed Buff
@@ -174,6 +175,7 @@ local _ClassConfig = {
             "Talisman of Celerity", -- Level 64
             "Swift Like the Wind",  -- Level 63
             "Celerity",             -- Level 56
+            "Alacrity",             -- Level 42
             "Quickness",            -- Level 26
         },
         ['LowLvlStaBuff'] = {
@@ -192,11 +194,13 @@ local _ClassConfig = {
         },
         ['LowLvlAtkBuff'] = {
             -- Low Level Attack Buff --- user under level 86. Including Harnessing of Spirit as they will have similar usecases and targets.
-            "Champion",              -- Level 70
-            "Ferine Avatar",         -- Level 65
-            "Ancient: Feral Avatar", -- Level 60
-            "Primal Avatar",         -- Level 60
-            "Harnessing of Spirit",  -- Level 46
+            "Champion",                  -- Level 70
+            "Talisman of Savage Avatar", -- Level 66 EQM Custom
+            "Ferine Avatar",             -- Level 65
+            "Talisman of Feral Avatar",  -- Level 61
+            "Primal Avatar",             -- Level 60
+            "Avatar",                    -- Level 59
+            "Harnessing of Spirit",      -- Level 46
         },
         ['LowLvlHPBuff'] = {
             "Talisman of Kragg",  -- Level 55 - Single
@@ -207,7 +211,9 @@ local _ClassConfig = {
         ['LowLvlStrBuff'] = {
             -- Low Level Strength Buff -- Below 68 these are only worthwhile on non-live, defiant stat caps too easily. Even then arguable.
             "Talisman of the Diaku", -- Level 64
-            "Infusion of Spirit",    -- Level 49, Str/Dex/Sta, can use HP buff
+            "Talisman of the Rhino", -- Level 58
+            "Maniacal Strength",     -- Level 57
+            "Strength",              -- Level 46
             "Tumultuous Strength",   -- Level 35
             "Raging Strength",       -- Level 28
             "Spirit Strength",       -- Level 18, Can't see this as being very worth but keeping for now.
@@ -618,13 +624,33 @@ local _ClassConfig = {
             },
         },
     },
+    ['Charm']             = {
+        ['Assist'] = {
+            {
+                name = "Malosinete",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    if not Config:GetSetting('DoSTMalo') then return false end
+                    return Casting.DetAACheck(aaName, target)
+                end,
+            },
+            {
+                name = "MaloSpell",
+                type = "Spell",
+                cond = function(self, spell, target)
+                    if not Config:GetSetting('DoSTMalo') or Casting.CanUseAA("Malosinete") then return false end
+                    return Casting.DetSpellCheck(spell, target)
+                end,
+            },
+        },
+    },
     ['RotationOrder']     = {
         -- Downtime doesn't have state because we run the whole rotation at once.
         {
             name = 'Downtime',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal()) and Casting.OkayToBuff() and
+                return combat_state == "Downtime" and Core.CombatActionsCheck() and Casting.OkayToBuff() and
                     Casting.AmIBuffable()
             end,
         },
@@ -632,7 +658,7 @@ local _ClassConfig = {
             name = 'PetSummon',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal()) and mq.TLO.Me.Pet.ID() == 0 and Casting.OkayToPetBuff() and
+                return combat_state == "Downtime" and Core.CombatActionsCheck() and mq.TLO.Me.Pet.ID() == 0 and Casting.OkayToPetBuff() and
                     Casting.AmIBuffable()
             end,
         },
@@ -641,7 +667,7 @@ local _ClassConfig = {
             timer = 10,
             targetId = function(self) return mq.TLO.Me.Pet.ID() > 0 and { mq.TLO.Me.Pet.ID(), } or {} end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal()) and mq.TLO.Me.Pet.ID() > 0 and Casting.OkayToPetBuff()
+                return combat_state == "Downtime" and Core.CombatActionsCheck() and mq.TLO.Me.Pet.ID() > 0 and Casting.OkayToPetBuff()
             end,
         },
         { --Spells that should be checked on group members
@@ -650,7 +676,7 @@ local _ClassConfig = {
             steps = 1,
             targetId = function(self) return Casting.GetBuffableIDs() end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal()) and Casting.OkayToBuff()
+                return combat_state == "Downtime" and Core.CombatActionsCheck() and Casting.OkayToBuff()
             end,
         },
         {
@@ -660,7 +686,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoSTMalo') or Config:GetSetting('DoAEMalo') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -670,7 +696,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoSTSlow') or Config:GetSetting('DoAESlow') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -680,7 +706,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoCripple') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -690,7 +716,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoPutrid') and Core.GetResolvedActionMapItem("PutridDecay") end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -699,7 +725,7 @@ local _ClassConfig = {
             steps = 3,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.BurnCheck() and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -708,7 +734,7 @@ local _ClassConfig = {
             steps = 1,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         {
@@ -719,7 +745,7 @@ local _ClassConfig = {
             cond = function(self, combat_state)
                 local downtime = combat_state == "Downtime" and Casting.OkayToBuff()
                 local combat = combat_state == "Combat"
-                return (downtime or combat) and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return (downtime or combat) and Core.CombatActionsCheck()
             end,
         },
         {
@@ -728,7 +754,7 @@ local _ClassConfig = {
             steps = 1,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and (not Core.IsModeActive('Heal') or Core.OkayToNotHeal())
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         {
@@ -740,13 +766,24 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if not Config:GetSetting('DoAEDamage') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal() and Targeting.AggroCheckOkay() and Combat.AETargetCheck(true)
+                return combat_state == "Combat" and Core.CombatActionsCheck() and Targeting.AggroCheckOkay() and Combat.AETargetCheck(true)
             end,
         },
-
+        {
+            name = 'InstantRunBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Combat.GetCachedCombatState() == "Combat" and Targeting.CheckForAutoTargetID() or Casting.GetBuffableIDs() end,
+            load_cond = function(self) return Config:GetSetting('DoRunSpeed') and Casting.CanUseAA("Communion of the Cheetah") end,
+            cond = function(self, combat_state)
+                local downtime = combat_state == "Downtime" and not mq.TLO.Me.Invis()
+                local combat = combat_state == "Combat" and Core.CombatActionsCheck()
+                return downtime or combat
+            end,
+        },
     },
     ['Rotations']         = {
-        ['ProcBuff']    = {
+        ['ProcBuff']       = {
             {
                 name = "Legendary Armband of the Panther",
                 type = "Item",
@@ -784,7 +821,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['CombatBuff']  = {
+        ['CombatBuff']     = {
             {
                 name = "Companion's Blessing",
                 type = "AA",
@@ -823,7 +860,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Burn']        = {
+        ['Burn']           = {
             {
                 name = "Ancestral Aid",
                 type = "AA",
@@ -863,7 +900,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Malo']        = {
+        ['Malo']           = {
             {
                 name = "AEMaloSpell",
                 type = "Spell",
@@ -889,7 +926,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Slow']        = {
+        ['Slow']           = {
             {
                 name = "Tigir's Insect Swarm",
                 type = "AA",
@@ -923,11 +960,11 @@ local _ClassConfig = {
                 type = "Spell",
                 waitReadyTime = function() return Config:GetSetting('DiseaseSlowWaitTime') end,
                 cond = function(self, spell, target)
-                    return Casting.DetSpellCheck(spell) and not Casting.SlowImmuneTarget(target)
+                    return Casting.DetSpellCheck(spell) and (spell and spell.RankName.SlowPct() or 0) > Targeting.GetTargetSlowedPct() and not Casting.SlowImmuneTarget(target)
                 end,
             },
         },
-        ['PutridDecay'] = {
+        ['PutridDecay']    = {
             {
                 name = "PutridDecay",
                 type = "Spell",
@@ -936,7 +973,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Cripple']     = {
+        ['Cripple']        = {
             {
                 name = "CrippleSpell",
                 type = "Spell",
@@ -945,7 +982,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['DPS']         = {
+        ['DPS']            = {
             {
                 name = "Epic",
                 type = "Item",
@@ -995,7 +1032,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['DPS(AE)']     = {
+        ['DPS(AE)']        = {
             {
                 name = "PBAEPoison",
                 type = "Spell",
@@ -1005,7 +1042,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['PetSummon']   = {
+        ['PetSummon']      = {
             {
                 name = "Artifact of Nature Spirit",
                 type = "Item",
@@ -1033,15 +1070,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['Downtime']    = {
-            {
-                name = "Communion of the Cheetah",
-                type = "AA",
-                load_cond = function() return Config:GetSetting('DoRunSpeed') end,
-                cond = function(self, aaName, target)
-                    return Casting.SelfBuffAACheck(aaName)
-                end,
-            },
+        ['Downtime']       = {
             {
                 name = "Cannibalization",
                 type = "AA",
@@ -1066,7 +1095,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['PetBuff']     = {
+        ['PetBuff']        = {
             {
                 name = "HasteBuff",
                 type = "Spell",
@@ -1092,15 +1121,7 @@ local _ClassConfig = {
                 end,
             },
         },
-        ['GroupBuff']   = {
-            {
-                name = "Communion of the Cheetah",
-                type = "AA",
-                load_cond = function() return Config:GetSetting('DoRunSpeed') and Casting.CanUseAA("Communion of the Cheetah") end,
-                cond = function(self, aaName, target)
-                    return Casting.GroupBuffAACheck(aaName, target)
-                end,
-            },
+        ['GroupBuff']      = {
             {
                 name = "SlowProcBuff",
                 type = "Spell",
@@ -1251,6 +1272,19 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoLLStrBuff') end,
                 cond = function(self, spell, target)
                     return Targeting.TargetIsAMelee(target) and Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+        },
+        ['InstantRunBuff'] = {
+            {
+                name = "Communion of the Cheetah",
+                type = "AA",
+                cond = function(self, aaName, target)
+                    local aaBuff = Casting.GetAASpell(aaName).Name() or ""
+                    local combatState = Combat.GetCachedCombatState()
+                    -- if in combat, check self, out of combat, also check others
+                    return (combatState == "Combat" and (mq.TLO.Me.Buff(aaBuff).Duration.TotalSeconds() or 0) < 15) or
+                        (combatState == "Downtime" and Casting.GroupBuffAACheck(aaName, target))
                 end,
             },
         },
@@ -1590,6 +1624,7 @@ local _ClassConfig = {
             Index = 101,
             Tooltip = "Do Run Speed Spells/AAs",
             Default = true,
+            RequiresLoadoutChange = true,
             FAQ = "Why are my buffers in a run speed buff war?",
             Answer = "Many run speed spells freely stack and overwrite each other, you will need to disable Run Speed Buffs on some of the buffers.",
         },
@@ -1822,6 +1857,20 @@ local _ClassConfig = {
             Tooltip = "Use your Artifact of Nature Spirit to summon the donor mammoth pet.",
             RequiresLoadoutChange = true, -- this is a load condition
             Default = true,
+        },
+        ['HealPriority']        = {
+            DisplayName = "Healing Priority",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 101,
+            Type = "Combo",
+            ComboOptions = { 'Ignore', 'Big Heal Point', 'Main Heal Point', },
+            Default = 3,
+            Min = 1,
+            Max = 3,
+            Tooltip = "When to yield offensive rotations for healing:\n1 - Ignore (never)\n2 - Big Heal Point\n3 - Main Heal Point",
+            ConfigType = "Advanced",
         },
     },
     ['ClassFAQ']          = {

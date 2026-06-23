@@ -823,29 +823,27 @@ local _ClassConfig = {
         end,
     },
     ['HealRotationOrder'] = {
-        ['HealRotationOrder'] = {
-            {
-                name = 'GroupHeal',
-                state = 1,
-                steps = 1,
-                cond = function(self, target) return Targeting.GroupHealsNeeded() end,
-            },
-            {
-                name = 'BigHeal',
-                state = 1,
-                steps = 1,
-                cond = function(self, target)
-                    return Targeting.BigHealsNeeded(target) and not Targeting.TargetIsType("pet", target)
-                end,
-            },
-            {
-                name = 'MainHeal',
-                state = 1,
-                steps = 1,
-                cond = function(self, target)
-                    return Targeting.MainHealsNeeded(target)
-                end,
-            },
+        {
+            name = 'GroupHeal',
+            state = 1,
+            steps = 1,
+            cond = function(self, target) return Targeting.GroupHealsNeeded() end,
+        },
+        {
+            name = 'BigHeal',
+            state = 1,
+            steps = 1,
+            cond = function(self, target)
+                return Targeting.BigHealsNeeded(target) and not Targeting.TargetIsType("pet", target)
+            end,
+        },
+        {
+            name = 'MainHeal',
+            state = 1,
+            steps = 1,
+            cond = function(self, target)
+                return Targeting.MainHealsNeeded(target)
+            end,
         },
     },
     ['HealRotations']     = {
@@ -933,12 +931,31 @@ local _ClassConfig = {
             },
         },
     },
+    ['Charm']             = {
+        ['Assist'] = {
+            { name = "HealTaunt",   type = "Spell", },
+            { name = "Audacity",    type = "Spell", cond = function(self, spell, target) return Casting.DetSpellCheck(spell, target) end, },
+            { name = "Disruption",  type = "AA", },
+            { name = "Taunt",       type = "Ability", },
+            { name = "CrushTimer5", type = "Spell", load_cond = function(self) return Config:GetSetting('Timer5Choice') == 1 end, },
+            { name = "CrushTimer6", type = "Spell", load_cond = function(self) return Config:GetSetting('Timer6Choice') == 1 end, },
+            {
+                name = "StunTimer5",
+                type = "Spell",
+                load_cond = function(self)
+                    return Config:GetSetting('Timer5Choice') == 2 or ((Config:GetSetting('Timer5Choice') == 1)) and not Core.GetResolvedActionMapItem('CrushTimer5')
+                end,
+            },
+            { name = "StunTimer4", type = "Spell", load_cond = function(self) return Config:GetSetting('Timer4Choice') end, },
+            { name = "StunTimer6", type = "Spell", load_cond = function(self) return Config:GetSetting('Timer6Choice') == 2 end, },
+        },
+    },
     ['RotationOrder']     = {
         { --Self Buffs
             name = 'Downtime',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal() and Casting.AmIBuffable()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck() and Casting.AmIBuffable()
             end,
         },
         {
@@ -947,7 +964,7 @@ local _ClassConfig = {
             steps = 1,
             targetId = function(self) return Casting.GetBuffableIDs() end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck()
             end,
         },
         { --Actions to lock down xtarg haters
@@ -1038,7 +1055,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         { --Offensive actions to temporarily boost damage dealt
@@ -1048,7 +1065,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         { --Non-spell actions that can be used during/between casts
@@ -1058,7 +1075,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         { --DPS Spells, includes recourse/gift maintenance
@@ -1068,7 +1085,7 @@ local _ClassConfig = {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
     },
@@ -2241,6 +2258,20 @@ local _ClassConfig = {
             Min = 1,
             Max = 3,
             RequiresLoadoutChange = true,
+        },
+        ['HealPriority']      = {
+            DisplayName = "Healing Priority",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 101,
+            Type = "Combo",
+            ComboOptions = { 'Ignore', 'Big Heal Point', },
+            Default = 2,
+            Min = 1,
+            Max = 2,
+            Tooltip = "When to yield offensive rotations for healing:\n1 - Ignore (never)\n2 - Big Heal Point",
+            ConfigType = "Advanced",
         },
     },
     ['ClassFAQ']          = {

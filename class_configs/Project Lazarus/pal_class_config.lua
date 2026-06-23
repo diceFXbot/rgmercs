@@ -145,11 +145,11 @@ return {
         },
         ['UndeadProc'] = {
             --- Undead Proc Strike : does not stack with Fury Proc, will be used until Fury is available even if setting not enabled.
-            "Silvered Fury",           -- Level 67, 750pt
-            "Ward of Nife",            -- Level 62, 500pt
-            "Instrument of Nife",      -- Level 26, 243pt
+            "Silvered Fury",      -- Level 67, 750pt
+            "Ward of Nife",       -- Level 62, 500pt
+            "Instrument of Nife", -- Level 26, 243pt
         },
-        ['StunTimer5'] = {             -- mq.TLO.Target.ID() == target and not mq.TLO.Spawn(target).Stunned()
+        ['StunTimer5'] = {
             "Ancient: Force of Jeron", -- Level 70
             "Ancient: Force of Chaos", -- Level 65
             "Force of Akera",          -- Level 53
@@ -344,8 +344,8 @@ return {
                 { name = "SereneStun",      cond = function(self) return Config:GetSetting('DoSereneStun') end, },
                 { name = "StunTimer4",      cond = function(self) return Core.IsTanking() end, },
                 { name = "StunTimer5",      cond = function(self) return Core.IsTanking() end, },
-                { name = "PBAEStun",        cond = function(self) return Config:GetSetting('DoPBAEStun') end, },
-                { name = "AEStun",          cond = function(self) return Config:GetSetting('DoAEStun') end, },
+                { name = "PBAEStun",        cond = function(self) return Config:GetSetting('PBAEStunUse') > 1 end, },
+                { name = "AEStun",          cond = function(self) return Config:GetSetting('AEStunUse') > 1 end, },
                 { name = "CureCurse",       cond = function(self) return Config:GetSetting('KeepCurseMemmed') end, },
                 { name = "PurityCure",      cond = function(self) return Config:GetSetting('KeepPurityMemmed') end, },
                 { name = "UndeadNuke",      cond = function(self) return Config:GetSetting('DoUndeadNuke') end, },
@@ -532,12 +532,20 @@ return {
             },
         },
     },
+    ['Charm']             = {
+        ['Assist'] = {
+            { name = "Taunt",               type = "Ability", },
+            { name = "StunTimer5",          type = "Spell", },
+            { name = "StunTimer4",          type = "Spell", },
+            { name = "Force of Disruption", type = "AA", },
+        },
+    },
     ['RotationOrder']     = {
         { --Self Buffs
             name = 'Downtime',
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal() and Casting.AmIBuffable()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck() and Casting.AmIBuffable()
             end,
         },
         {
@@ -546,7 +554,7 @@ return {
             steps = 1,
             targetId = function(self) return Casting.GetBuffableIDs() end,
             cond = function(self, combat_state)
-                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.OkayToNotHeal()
+                return combat_state == "Downtime" and Casting.OkayToBuff() and Core.CombatActionsCheck()
             end,
         },
         { --Actions to lock down xtarg haters
@@ -579,9 +587,10 @@ return {
             steps = 1,
             doFullRotation = true,
             load_cond = function()
-                local hateSpell = Config:GetSetting('DoAEStun') and (Core.GetResolvedActionMapItem('AEStun') or Core.GetResolvedActionMapItem('PBAEStun'))
+                local aeStun = Config:GetSetting('AEStunUse') > 1 and Core.GetResolvedActionMapItem('AEStun')
+                local pbaeStun = Config:GetSetting('PBAEStunUse') > 1 and Core.GetResolvedActionMapItem('PBAEStun')
                 local hateAA = Config:GetSetting('AETauntAA') and Casting.CanUseAA("Beacon of the Righteous")
-                return Core.IsTanking() and (hateSpell or hateAA)
+                return Core.IsTanking() and (aeStun or pbaeStun or hateAA)
             end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
@@ -641,7 +650,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         { --Stun and damage enemies per your settings
@@ -649,14 +658,14 @@ return {
             state = 1,
             steps = 1,
             load_cond = function()
-                local aeSpell = Config:GetSetting('DoAEStun') and Core.GetResolvedActionMapItem('AEStun')
-                local pbaeSpell = Config:GetSetting('DoPBAEStun') and Core.GetResolvedActionMapItem('PBAEStun')
-                return (Core.IsTanking() or Config:GetSetting('AEStunUse') > 1) and (aeSpell or pbaeSpell)
+                local aeSpell = Config:GetSetting('AEStunUse') == 3 and Core.GetResolvedActionMapItem('AEStun')
+                local pbaeSpell = Config:GetSetting('PBAEStunUse') == 3 and Core.GetResolvedActionMapItem('PBAEStun')
+                return Core.IsTanking() or aeSpell or pbaeSpell
             end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if not Config:GetSetting('DoAEDamage') or (Core.IsTanking() and mq.TLO.Me.PctHPs() <= Config:GetSetting('HPCritical')) then return false end
-                return combat_state == "Combat" and Combat.AETargetCheck(true)
+                return combat_state == "Combat" and Combat.AETargetCheck(true) and Core.CombatActionsCheck()
             end,
         },
         { --DPS Spells, includes recourse/gift maintenance
@@ -666,7 +675,7 @@ return {
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
                 if mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') then return false end
-                return combat_state == "Combat" and Core.OkayToNotHeal()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
     },
@@ -819,10 +828,6 @@ return {
         },
         ['HateTools(AggroTarget)'] = {
             {
-                name = "Taunt",
-                type = "Ability",
-            },
-            {
                 name = "Force of Disruption",
                 type = "AA",
             },
@@ -834,15 +839,12 @@ return {
                 name = "StunTimer4",
                 type = "Spell",
             },
-        },
-        ['HateTools(AutoTarget)'] = {
             {
                 name = "Taunt",
                 type = "Ability",
-                cond = function(self, abilityName, target)
-                    return Targeting.LostAutoTargetAggro()
-                end,
             },
+        },
+        ['HateTools(AutoTarget)'] = {
             { --8min reuse, save for we still can't get a mob back after trying to taunt
                 name = "Ageless Enmity",
                 type = "AA",
@@ -869,6 +871,13 @@ return {
                 name = "StunTimer4",
                 type = "Spell",
             },
+            {
+                name = "Taunt",
+                type = "Ability",
+                cond = function(self, abilityName, target)
+                    return Targeting.LostAutoTargetAggro()
+                end,
+            },
         },
         ['AEHateTools'] = {
             {
@@ -879,6 +888,7 @@ return {
                 name = "PBAEStun",
                 type = "Spell",
                 allowDead = true,
+                load_cond = function(self) return Config:GetSetting('PBAEStunUse') > 1 end,
                 cond = function(self, spell, target)
                     return Config:GetSetting('DoAEDamage')
                 end,
@@ -886,8 +896,9 @@ return {
             {
                 name = "AEStun",
                 type = "Spell",
+                load_cond = function(self) return Config:GetSetting('AEStunUse') > 1 end,
                 cond = function(self, spell, target)
-                    return Config:GetSetting('DoAEDamage') or spell.Name() ~= "The Sacred Word" -- Sacred Word does damage
+                    return Config:GetSetting('DoAEDamage') or spell.Name() ~= "Sacred Word" -- Sacred Word does damage
                 end,
             },
         },
@@ -895,18 +906,13 @@ return {
             {
                 name = "AEStun",
                 type = "Spell",
-                cond = function(self, spell, target)
-                    return Core.IsTanking() or Config:GetSetting('AEStunUse') == 3 or Core.GetMainAssistPctHPs() < Config:GetSetting('EmergencyStart')
-                end,
-
+                load_cond = function(self) return Config:GetSetting('AEStunUse') == 3 and Core.GetResolvedActionMapItem('AEStun') end,
             },
             {
                 name = "PBAEStun",
                 type = "Spell",
                 allowDead = true,
-                cond = function(self, spell, target)
-                    return Core.IsTanking() or Config:GetSetting('AEStunUse') == 3 or Core.GetMainAssistPctHPs() < Config:GetSetting('EmergencyStart')
-                end,
+                load_cond = function(self) return Config:GetSetting('PBAEStunUse') == 3 and Core.GetResolvedActionMapItem('PBAEStun') end,
             },
             {
                 name = "Forsaken Fayguard Bladecatcher",
@@ -1011,11 +1017,12 @@ return {
                 end,
             },
             {
+                name = "StunTimer5",
+                type = "Spell",
+            },
+            {
                 name = "StunTimer4",
                 type = "Spell",
-                cond = function(self, spell, target)
-                    return Targeting.TargetNotStunned() and (Core.IsTanking() or not Casting.StunImmuneTarget(target))
-                end,
             },
             {
                 name = "TwinHealNuke",
@@ -1027,13 +1034,6 @@ return {
                 type = "AA",
                 cond = function(self, aaName, target)
                     return Casting.SelfBuffAACheck(aaName)
-                end,
-            },
-            {
-                name = "StunTimer5",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    return Targeting.TargetNotStunned() and (Core.IsTanking() or not Casting.StunImmuneTarget(target))
                 end,
             },
             {
@@ -1158,37 +1158,31 @@ return {
         },
 
         --AE(All Modes)
-        ['DoAEStun']          = {
-            DisplayName = "Do AE Stun",
+        ['AEStunUse']         = {
+            DisplayName = "AE Stun Use:",
             Group = "Abilities",
-            Header = "Debuff",
+            Header = "Debuffs",
             Category = "Stun",
             Index = 101,
-            Tooltip = "Use your Targeted AE Stun (Stun Command or Sacred Word) as needed to maintain AE aggro (tank mode) or help with control (dps mode).",
-            Default = true,
-            RequiresLoadoutChange = true,
-        },
-        ['DoPBAEStun']        = {
-            DisplayName = "Do PBAE Stun",
-            Group = "Abilities",
-            Header = "Debuff",
-            Category = "Stun",
-            Index = 102,
-            Tooltip = "Use your PBAE Stun (The Silent Command) as needed to maintain AE aggro (tank mode) or help with control (dps mode).",
-            Default = true,
-            RequiresLoadoutChange = true,
-        },
-        ['AEStunUse']         = {
-            DisplayName = "AEStun Use(DPS Mode):",
-            Group = "Abilities",
-            Header = "Debuff",
-            Category = "Stun",
-            Index = 103,
-            Tooltip = "When to use your AE Stun Lines in DPS Mode.",
+            Tooltip = "When to use your Targeted AE Stun (Stun Command / Sacred Word).",
             RequiresLoadoutChange = true,
             Type = "Combo",
-            ComboOptions = { 'Never', 'At low MA health', 'Whenever Possible', },
-            Default = 1,
+            ComboOptions = { 'Disabled', 'To Regain Hate If In Tank Mode', 'Whenever Possible', },
+            Default = 2,
+            Min = 1,
+            Max = 3,
+        },
+        ['PBAEStunUse']       = {
+            DisplayName = "PBAE Stun Use:",
+            Group = "Abilities",
+            Header = "Debuffs",
+            Category = "Stun",
+            Index = 102,
+            Tooltip = "When to use your PBAE Stun (The Silent Command).",
+            RequiresLoadoutChange = true,
+            Type = "Combo",
+            ComboOptions = { 'Disabled', 'To Regain Hate If In Tank Mode', 'Whenever Possible', },
+            Default = 2,
             Min = 1,
             Max = 3,
         },
@@ -1441,7 +1435,7 @@ return {
             Group = "Abilities",
             Header = "Debuffs",
             Category = "Stun",
-            Index = 101,
+            Index = 103,
             Tooltip = "Use the Quellious/Serene stun line (long duration stun with DD component).",
             RequiresLoadoutChange = true,
             Default = false,
@@ -1565,6 +1559,20 @@ return {
             FAQ = "Why am I using and Undead proc, I'm not fighting any undead?",
             Answer = "If you have elected to use the Standard DD proc (default) and it is not yet available, we will use the Undead proc still.\n" ..
                 "Your desired proc can be adjusted with the Proc Buff Choice setting in Self Buff category.",
+        },
+        ['HealPriority']      = {
+            DisplayName = "Healing Priority",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 101,
+            Type = "Combo",
+            ComboOptions = { 'Ignore', 'Big Heal Point', },
+            Default = 2,
+            Min = 1,
+            Max = 2,
+            Tooltip = "When to yield offensive rotations for healing:\n1 - Ignore (never)\n2 - Big Heal Point",
+            ConfigType = "Advanced",
         },
     },
     ['ClassFAQ']          = {

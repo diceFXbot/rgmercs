@@ -18,6 +18,7 @@ Globals.ConfigDirName                 = "rgmercs-kesh"
 Globals.AutoTargetID                  = 0
 Globals.AggroTargetID                 = 0
 Globals.ForceTargetID                 = 0
+Globals.ForceCharmID                  = 0
 Globals.AutoTargetIsNamed                  = false
 Globals.AutoTargetElementalImmunities      = {}
 Globals.AutoTargetStatusImmunities         = {}
@@ -25,7 +26,13 @@ Globals.ForceCombatID                 = 0
 Globals.CombatNavTargetId             = 0
 Globals.LastPulledID                  = 0
 Globals.CurrentState                  = "None"
+Globals.LastCombatTime                = 0
 Globals.IgnoredTargetIDs              = Set.new({})
+Globals.CharmedPetIDs                 = Set.new({})
+Globals.LooseCharms                   = {}
+-- our own single charm ids: staged for the heartbeat, which reads them cross-process via the RGMercs.Globals() scalar bridge
+Globals.MyCharmedPetID                = 0
+Globals.MyLooseCharmID                = 0
 Globals.SubmodulesLoaded              = false
 Globals.PauseMain                     = false
 Globals.StopCast                      = false
@@ -263,7 +270,6 @@ for i, v in ipairs(Globals.Constants.ConColors) do Globals.Constants.ConColorsNa
 
 Globals.Constants.SpireChoices      = { "First", "Second", "Third", "Disabled", }
 
-Globals.Constants.LastGemRemem      = { "Do Nothing", "Mem Previous Spell", "Mem Loadout Spell", }
 Globals.Constants.DebuffChoice      = { "Never", "Based on Con Color", "Always", }
 
 Globals.Constants.ScanNamedPriority = { "Named", "No Preference", "Non-Named", }

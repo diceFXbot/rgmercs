@@ -8,7 +8,7 @@ local Logger    = require("utils.logger")
 local Targeting = require("utils.targeting")
 
 return {
-    _version              = "1.6 - EQ Might",
+    _version              = "1.8 - EQ Might",
     _author               = "Derple, Algar",
     ['Modes']             = {
         'DPS',
@@ -55,6 +55,10 @@ return {
         ['OoW_Chest'] = {
             "Beast Tamer's Jerkin",
             "Savagesoul Jerkin of the Wilds",
+        },
+        ['Razorclaw'] = {
+            "Artifact of Greater Razorclaw",
+            "Artifact of Razorclaw",
         },
     },
     ['AbilitySets']       = { --TODO/Under Consideration: Add AoE Roar line, add rotation entry (tie it to Do AoE setting), swap in instead of lance 2, especially since the last lance2 is level 112
@@ -155,6 +159,7 @@ return {
         },
         ['PetGrowl'] = {
             "Growl of the Panther", -- Level 69
+            "Growl of the Leopard", -- Level 61
         },
         ['PetDamageProc'] = {
             "Spirit of Oroshar",      -- Level 70
@@ -210,7 +215,7 @@ return {
         },
         ['AtkBuff'] = {
             -- - Single Ferocity
-            "Ferocity of Irionu", -- Level 70
+            "Ferocity of Irionu", -- Level 69
             "Ferocity",           -- Level 65
             "Savagery",           -- Level 60
         },
@@ -324,7 +329,7 @@ return {
             cond = function(self, combat_state)
                 local downtime = combat_state == "Downtime" and Config:GetSetting('DowntimeFP') and Casting.OkayToBuff()
                 local combat = combat_state == "Combat"
-                return (downtime or combat) and not Casting.IHaveBuff(mq.TLO.Me.AltAbility('Paragon of Spirit').Spell)
+                return (downtime or combat) and not Casting.IHaveBuff(mq.TLO.Me.AltAbility('Paragon of Spirit').Spell) and Core.CombatActionsCheck()
             end,
         },
         {
@@ -343,14 +348,15 @@ return {
             steps = 4,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.BurnCheck()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         {
             name = 'Growl',
             targetId = function(self) return mq.TLO.Me.Pet.ID() > 0 and { mq.TLO.Me.Pet.ID(), } or {} end,
+            load_cond = function() return Core.GetResolvedActionMapItem("PetGrowl") end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and not mq.TLO.Me.Song("Growl")()
+                return combat_state == "Combat" and not mq.TLO.Me.Song("Growl")() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -359,7 +365,7 @@ return {
             steps = 1,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat"
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         {
@@ -368,7 +374,7 @@ return {
             steps = 1,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Targeting.AggroCheckOkay()
+                return combat_state == "Combat" and Targeting.AggroCheckOkay() and Core.CombatActionsCheck()
             end,
         },
     },
@@ -388,6 +394,12 @@ return {
             local disc = self.ResolvedActionMap['DmgModDisc']
             return Casting.IHaveBuff("Bestial Alignment") or (disc and disc() and Casting.IHaveBuff(disc.Name()))
                 or Casting.IHaveBuff("Ferociousness")
+        end,
+        -- Irionu artifact is only Rk. 1
+        PreferAtkBuffSpell = function(self)
+            if mq.TLO.Me.Level() < 67 or not mq.TLO.FindItem("=Artifact of Irionu")() then return true end
+            local atkBuff = self.ResolvedActionMap['AtkBuff']
+            return atkBuff and atkBuff() and atkBuff.Name() == "Ferocity of Irionu" and (atkBuff.RankName.Rank() or 0) >= 2
         end,
         --function to make sure we don't have non-hostiles in range before we use AE damage or non-taunt AE hate abilities
 
@@ -520,7 +532,7 @@ return {
                 type = "AA",
             },
         },
-        {
+        ['Growl']          = {
             {
                 name = "PetGrowl",
                 type = "Spell",
@@ -529,7 +541,7 @@ return {
                 end,
             },
         },
-        ['DPS']       = {
+        ['DPS']            = {
             {
                 name = "PetSpell",
                 type = "Spell",
@@ -567,13 +579,6 @@ return {
                 end,
             },
             {
-                name = "PoiBite",
-                type = "Spell",
-                cond = function(self, spell, target)
-                    return Casting.OkayToNuke()
-                end,
-            },
-            {
                 name = "Icelance1",
                 type = "Spell",
                 cond = function(self, spell, target)
@@ -595,9 +600,9 @@ return {
                 end,
             },
             {
-                name = "Artifact of Razorclaw",
+                name = "Razorclaw",
                 type = "Item",
-                load_cond = function(self) return Config:GetSetting("UseDonorPet") and mq.TLO.FindItem("=Artifact of Razorclaw")() end,
+                load_cond = function(self) return Config:GetSetting("UseDonorPet") and Core.GetResolvedActionMapItem('Razorclaw') end,
                 cond = function(self, _) return mq.TLO.Me.Pet.ID() == 0 end,
                 post_activate = function(self, spell, success)
                     if success and mq.TLO.Me.Pet.ID() > 0 then
@@ -607,7 +612,7 @@ return {
                 end,
             },
         },
-        ['Weaves']    = {
+        ['Weaves']         = {
             {
                 name = "Roar of Thunder",
                 type = "AA",
@@ -645,7 +650,7 @@ return {
                 type = "AA",
             },
         },
-        ['GroupBuff'] = {
+        ['GroupBuff']      = {
             {
                 name = "RunSpeedBuff",
                 type = "Spell",
@@ -657,7 +662,7 @@ return {
             {
                 name = "Artifact of Irionu",
                 type = "Item",
-                load_cond = function() return mq.TLO.Me.Level() >= 67 and mq.TLO.FindItem("=Artifact of Irionu")() end,
+                load_cond = function(self) return not self.Helpers.PreferAtkBuffSpell(self) end,
                 cond = function(self, itemName, target)
                     return Casting.GroupBuffItemCheck(itemName, target)
                 end,
@@ -665,7 +670,7 @@ return {
             {
                 name = "AtkBuff",
                 type = "Spell",
-                load_cond = function() return mq.TLO.Me.Level() < 67 or not mq.TLO.FindItem("=Artifact of Irionu")() end,
+                load_cond = function(self) return self.Helpers.PreferAtkBuffSpell(self) end,
                 cond = function(self, spell, target)
                     -- Make sure this is gemmed due to long refresh, and only use the single target versions on classes that need it.
                     if not Targeting.TargetIsAMelee(target) or not Casting.CastReady(spell) then return false end
@@ -716,11 +721,11 @@ return {
                 end,
             },
         },
-        ['PetSummon'] = {
+        ['PetSummon']      = {
             {
-                name = "Artifact of Razorclaw",
+                name = "Razorclaw",
                 type = "Item",
-                load_cond = function(self) return Config:GetSetting("UseDonorPet") and mq.TLO.FindItem("=Artifact of Razorclaw")() end,
+                load_cond = function(self) return Config:GetSetting("UseDonorPet") and Core.GetResolvedActionMapItem('Razorclaw') end,
                 active_cond = function(self, _) return mq.TLO.Me.Pet.ID() > 0 end,
                 post_activate = function(self, spell, success)
                     if success and mq.TLO.Me.Pet.ID() > 0 then
@@ -732,7 +737,7 @@ return {
             {
                 name = "PetSpell",
                 type = "Spell",
-                load_cond = function(self) return not Config:GetSetting("UseDonorPet") or not mq.TLO.FindItem("=Artifact of Razorclaw")() end,
+                load_cond = function(self) return not Config:GetSetting("UseDonorPet") or not Core.GetResolvedActionMapItem('Razorclaw') end,
                 cond = function(self, spell)
                     return mq.TLO.Me.Pet.ID() == 0
                 end,
@@ -744,7 +749,7 @@ return {
                 end,
             },
         },
-        ['Downtime']  = {
+        ['Downtime']       = {
             {
                 name = "Gelid Rending",
                 type = "AA",
@@ -757,7 +762,7 @@ return {
                 end,
             },
         },
-        ['PetBuff']   = {
+        ['PetBuff']        = {
             {
                 name = "Epic",
                 type = "Item",
@@ -826,13 +831,13 @@ return {
                     return Casting.PetBuffAACheck(aaName)
                 end,
             },
-        },
-        {
-            name = "Minionskin",
-            type = "Spell",
-            cond = function(self, spell)
-                return not mq.TLO.Me.Pet.Buff(spell.Name() or "None")()
-            end,
+            {
+                name = "Minionskin",
+                type = "Spell",
+                cond = function(self, spell)
+                    return not mq.TLO.Me.Pet.Buff(spell.Name() or "None")()
+                end,
+            },
         },
     },
     ['SpellList']         = { -- New style spell list, gemless, priority-based. Will use the first set whose conditions are met.
@@ -855,11 +860,17 @@ return {
                 { name = "BloodDot",   cond = function(self) return Config:GetSetting('DoDot') end, },
                 { name = "EndemicDot", cond = function(self) return Config:GetSetting('DoDot') end, },
                 { name = "SwarmPet", },
-                { name = "AtkBuff", cond = function(self) return mq.TLO.Me.Level() < 67 or not mq.TLO.FindItem("=Artifact of Irionu")() end,
+                { name = "AtkBuff", cond = function(self) return self.Helpers.PreferAtkBuffSpell(self) end,
                 },
                 { name = "PetGrowl", },
                 { name = "PetBlockSpell", },
-                { name = "PetSpell",      cond = function(self) return Config:GetSetting('KeepPetMemmed') and not mq.TLO.FindItem("=Artifact of Razorclaw")() end, },
+                {
+                    name = "PetSpell",
+                    cond = function(self)
+                        return Config:GetSetting('KeepPetMemmed') and
+                            (not Config:GetSetting('UseDonorPet') or not Core.GetResolvedActionMapItem('Razorclaw'))
+                    end,
+                },
                 --filler
                 { name = "PetHaste", },
                 { name = "PetDamageProc", },
@@ -1059,6 +1070,7 @@ return {
             Index = 101,
             Tooltip = "Use your Run/Move Speed buff spells or AA.",
             Default = false,
+            RequiresLoadoutChange = true,
         },
         ['DoAvatar']       = {
             DisplayName = "Do Avatar",
@@ -1091,6 +1103,20 @@ return {
             Default = 50,
             Min = 1,
             Max = 100,
+            ConfigType = "Advanced",
+        },
+        ['HealPriority']   = {
+            DisplayName = "Healing Priority",
+            Group = "Abilities",
+            Header = "Recovery",
+            Category = "Healing Thresholds",
+            Index = 101,
+            Type = "Combo",
+            ComboOptions = { 'Ignore', 'Big Heal Point', },
+            Default = 2,
+            Min = 1,
+            Max = 2,
+            Tooltip = "When to yield offensive rotations for healing:\n1 - Ignore (never)\n2 - Big Heal Point",
             ConfigType = "Advanced",
         },
     },

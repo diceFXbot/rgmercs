@@ -1,22 +1,29 @@
-local mq           = require('mq')
-local Casting      = require("utils.casting")
-local Comms        = require("utils.comms")
-local Config       = require('utils.config')
-local Core         = require("utils.core")
-local Globals      = require('utils.globals')
-local ItemManager  = require("utils.item_manager")
-local Logger       = require("utils.logger")
-local Targeting    = require("utils.targeting")
+local mq              = require('mq')
+local Casting         = require("utils.casting")
+local Comms           = require("utils.comms")
+local Config          = require('utils.config')
+local Core            = require("utils.core")
+local Globals         = require('utils.globals')
+local ItemManager     = require("utils.item_manager")
+local Logger          = require("utils.logger")
+local Targeting       = require("utils.targeting")
 
-local _ClassConfig = {
-    _version          = "1.5 - EQ Might",
+-- Provide a valid aura name to check as they are named differently then the spells
+-- -- Only use the first word(s) of the aura name, they are all unique (enough)
+local auraSpellToName = {
+    ["Beguiler's Aura"] = "Beguiler",
+    ["Illusionist's Aura"] = "Illusionist",
+    ["Entrancer's Aura"] = "Entrancer",
+}
+
+local _ClassConfig    = {
+    _version          = "1.6 - EQ Might",
     _author           = "Derple, Grimmier, Algar, Robban",
     ['ModeChecks']    = {
-        CanMez     = function() return true end,
-        CanCharm   = function() return true end,
-        IsCharming = function() return Config:GetSetting('CharmOn') end,
-        IsMezzing  = function() return Config:GetSetting('MezOn') end,
-        IsRezing   = function() return Core.GetResolvedActionMapItem('RezStaff') ~= nil and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
+        CanMez    = function() return true end,
+        CanCharm  = function() return true end,
+        IsMezzing = function() return Config:GetSetting('MezOn') end,
+        IsRezing  = function() return Core.GetResolvedActionMapItem('RezStaff') ~= nil and (Config:GetSetting('DoBattleRez') or Targeting.GetXTHaterCount() == 0) end,
     },
     ['Modes']         = {
         'Default',
@@ -59,6 +66,15 @@ local _ClassConfig = {
         ['OoW_Chest'] = {
             "Mindreaver's Vest of Coercion",
             "Charmweaver's Robe",
+        },
+        ['Asterion'] = {
+            "Artifact of Greater Asterion",
+            "Artifact of Asterion",
+            "Lesser Artifact of Asterion",
+        },
+        ['TashRod'] = {
+            "Legendary Rod of Tashan",
+            "Rod of Tashan",
         },
     },
     ['AbilitySets']   = {
@@ -242,6 +258,15 @@ local _ClassConfig = {
         ['MindDot'] = {
             "Mind Shatter", -- Level 70
         },
+        ['MindstingDot'] = {
+            "Mindsting Swarm", -- Level 66 EQM Custom
+        },
+        ['Avatar'] = {
+            "Phantasmal Might", -- Level 70 EQM Custom
+            "Phantasmal Power", -- Level 66 EQM Custom
+            "Phantasmal Surge", -- Level 62 EQM Custom
+            "Phantasmal Touch", -- Level 55 EQM Custom
+        },
         ['MagicNuke'] = {
             "Polychromatic Assault",    -- Level 71
             "Ancient: Neurosis",        -- Level 68
@@ -380,6 +405,54 @@ local _ClassConfig = {
         { type = "Spell", name = "MezSpell", },
         { type = "Spell", name = "MezAESpell", },
     },
+    ['Charm']         = {
+        ['Abilities'] = {
+            { name = "Dire Charm", type = "AA", },
+            { name = "CharmSpell", type = "Spell", },
+        },
+        ['PreCharm']  = {
+            {
+                name = "TashRod",
+                type = "Item",
+                load_cond = function(self) return self.Helpers.PreferTashItem(self) end,
+                cond = function(self, itemName, target)
+                    return not
+                        target.Tashed()
+                end,
+            },
+            {
+                name = "TashSpell",
+                type = "Spell",
+                load_cond = function(self) return not self.Helpers.PreferTashItem(self) end,
+                cond = function(self, spell, target)
+                    return not target
+                        .Tashed()
+                end,
+            },
+        },
+        ['Assist']    = {
+            { name = "SpinStunSpell", type = "Spell", cond = function(self, spell, target) return Targeting.TargetNotStunned() end, },
+            { name = "PBAEStunSpell", type = "Spell", cond = function(self, spell, target) return Targeting.TargetNotStunned() and Targeting.InSpellRange(spell, target) end, },
+            {
+                name = "TashRod",
+                type = "Item",
+                load_cond = function(self) return self.Helpers.PreferTashItem(self) end,
+                cond = function(
+                    self, itemName, target)
+                    return Casting.DetItemCheck(itemName, target)
+                end,
+            },
+            {
+                name = "TashSpell",
+                type = "Spell",
+                load_cond = function(self) return not self.Helpers.PreferTashItem(self) end,
+                cond = function(
+                    self, spell, target)
+                    return Casting.DetSpellCheck(spell, target)
+                end,
+            },
+        },
+    },
     ['RotationOrder'] = {
         {
             name = 'Downtime',
@@ -419,7 +492,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoTash') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.OkayToNotMez(3)
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         { --Slow and Tash separated so we use both before we start DPS
@@ -429,7 +502,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoSlow') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.OkayToNotMez(3)
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -439,7 +512,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoCripple') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.OkayToNotMez(3)
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -449,7 +522,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting('DoDispel') end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.OkayToNotMez(3)
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -479,7 +552,7 @@ local _ClassConfig = {
             steps = 3,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotMez()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -489,7 +562,7 @@ local _ClassConfig = {
             doFullRotation = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Core.OkayToNotMez()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         {
@@ -502,6 +575,12 @@ local _ClassConfig = {
         },
     },
     ['Helpers']       = { --used to autoinventory our crystals after summon. Crystal is a group-wide spell on Laz.
+        -- Rod clicks Echo of Tashan Rk. I; the spell casts faster
+        PreferTashItem = function(self)
+            if not Core.GetResolvedActionMapItem('TashRod') then return false end
+            local tashSpell = self.ResolvedActionMap['TashSpell']
+            return not (tashSpell and tashSpell() and tashSpell.Name() == "Echo of Tashan")
+        end,
         DoRez = function(self, corpseId)
             local rezStaff = Core.GetResolvedActionMapItem('RezStaff')
 
@@ -523,6 +602,43 @@ local _ClassConfig = {
 
             Logger.log_debug("Sending the %s to our bags.", mq.TLO.Cursor())
             ItemManager.QueueAutoInv(mq.TLO.Cursor.ID())
+        end,
+        AuraActive = function(name)
+            if not name then return false end
+            local stripName = string.gsub(name, "'", "")
+            for i = 1, 3 do
+                local slot = mq.TLO.Me.Aura(i)() or ""
+                if string.find(slot, name) or string.find(slot, stripName) then return true end
+            end
+            return false
+        end,
+        AuraCheck = function(self)
+            local twincast = self.ResolvedActionMap['TwincastAura']
+            local spellproc = self.ResolvedActionMap['SpellProcAura']
+            local currentTwincast = (twincast and twincast() and auraSpellToName[twincast.Name()]) or nil
+            local currentSpellProc = (spellproc and spellproc() and auraSpellToName[spellproc.Name()]) or nil
+            for i = 1, 3 do
+                local slot = mq.TLO.Me.Aura(i)() or ""
+                for _, searchKey in pairs(auraSpellToName) do
+                    if searchKey ~= currentTwincast and searchKey ~= currentSpellProc and string.find(slot, searchKey) then
+                        mq.TLO.Me.Aura(i).Remove()
+                        break
+                    end
+                end
+            end
+            local rank = Casting.AARank('Auroria Mastery')
+            if rank == 0 then
+                mq.TLO.Me.Aura(1).Remove()
+                return
+            end
+            if rank == 1 and currentTwincast and currentSpellProc then
+                for i = 1, 2 do
+                    local slot = mq.TLO.Me.Aura(i)() or ""
+                    if slot ~= "" and not (string.find(slot, currentTwincast) or string.find(slot, currentSpellProc)) then
+                        mq.TLO.Me.Aura(i).Remove()
+                    end
+                end
+            end
         end,
     },
     ['Rotations']     = {
@@ -562,38 +678,19 @@ local _ClassConfig = {
                 cond = function(self, aaName) return mq.TLO.Me.PctMana() < 30 end,
             },
             {
-                name = "SpellProcAura",
-                type = "Spell",
-                active_cond = function(self, spell)
-                    local aura = string.sub(spell.Name() or "", 1, 8)
-                    return Casting.AuraActiveByName(aura)
-                end,
-                pre_activate = function(self, spell)                  -- remove the old aura if we leveled up or changed options, otherwise we will be spammed because of no focus.
-                    local aura = string.sub(spell.Name() or "", 1, 8) -- we use a string sub because aura name doesn't have the apostrophe the spell name does
-                    if not Casting.AuraActiveByName(aura) then
-                        ---@diagnostic disable-next-line: undefined-field
-                        mq.TLO.Me.Aura(1).Remove()
-                    end
-                end,
-                cond = function(self, spell)
-                    local aura = string.sub(spell.Name() or "", 1, 8)
-                    return not Casting.AuraActiveByName(aura)
-                end,
-            },
-            {
                 name = "TwincastAura",
                 type = "Spell",
                 load_cond = function(self) return Casting.CanUseAA('Auroria Mastery') end,
-                active_cond = function(self, spell) return Casting.AuraActiveByName(spell.Name()) end,
-                pre_activate = function(self, spell) -- remove the old aura if we changed options, otherwise we will be spammed because of no focus.
-                    if not Casting.AuraActiveByName(spell.Name()) then
-                        ---@diagnostic disable-next-line: undefined-field
-                        mq.TLO.Me.Aura(1).Remove()
-                    end
-                end,
-                cond = function(self, spell)
-                    return not Casting.AuraActiveByName(spell.Name())
-                end,
+                active_cond = function(self, spell) return self.Helpers.AuraActive(auraSpellToName[spell.Name()]) end,
+                pre_activate = function(self) self.Helpers.AuraCheck(self) end,
+                cond = function(self, spell) return not self.Helpers.AuraActive(auraSpellToName[spell.Name()]) end,
+            },
+            {
+                name = "SpellProcAura",
+                type = "Spell",
+                active_cond = function(self, spell) return self.Helpers.AuraActive(auraSpellToName[spell.Name()]) end,
+                pre_activate = function(self) self.Helpers.AuraCheck(self) end,
+                cond = function(self, spell) return not self.Helpers.AuraActive(auraSpellToName[spell.Name()]) end,
             },
             {
                 name = "Azure Mind Crystal",
@@ -630,9 +727,9 @@ local _ClassConfig = {
         },
         ['PetSummon']     = {
             {
-                name = "Artifact of Asterion",
+                name = "Asterion",
                 type = "Item",
-                load_cond = function(self) return Config:GetSetting("UseDonorPet") and mq.TLO.FindItem("=Artifact of Asterion")() end,
+                load_cond = function(self) return Config:GetSetting("UseDonorPet") and Core.GetResolvedActionMapItem('Asterion') end,
                 active_cond = function(self, _) return mq.TLO.Me.Pet.ID() > 0 end,
                 post_activate = function(self, spell, success)
                     if success and mq.TLO.Me.Pet.ID() > 0 then
@@ -644,9 +741,7 @@ local _ClassConfig = {
             {
                 name = "PetSpell",
                 type = "Spell",
-                load_cond = function(self)
-                    return not Config:GetSetting("UseDonorPet") or not mq.TLO.FindItem("=Artifact of Asterion")()
-                end,
+                load_cond = function(self) return not Config:GetSetting("UseDonorPet") or not Core.GetResolvedActionMapItem('Asterion') end,
                 active_cond = function(self, _) return mq.TLO.Me.Pet.ID() > 0 end,
                 post_activate = function(self, spell, success)
                     if success and mq.TLO.Me.Pet.ID() > 0 then
@@ -720,6 +815,15 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "Avatar",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting('DoAvatar') end,
+                cond = function(self, spell, target)
+                    if not Casting.CastReady(spell) then return false end
+                    return Casting.GroupBuffCheck(spell, target)
+                end,
+            },
+            {
                 name = "HateBuff",
                 type = "Spell",
                 load_cond = function() return Config:GetSetting('DoHateBuff') end,
@@ -744,7 +848,8 @@ local _ClassConfig = {
                 active_cond = function(self, spell) return mq.TLO.Me.FindBuff("id " .. tostring(spell.ID()))() ~= nil end,
                 cond = function(self, spell, target)
                     if not Targeting.TargetIsATank(target) then return false end
-                    return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target)
+                    return Casting.CastReady(spell) and
+                        Casting.GroupBuffCheck(spell, target, false, true) -- skip trigger checks, we are not worried about spells with a seperate illusion trigger
                 end,
             },
             {
@@ -754,7 +859,8 @@ local _ClassConfig = {
                 active_cond = function(self, spell) return mq.TLO.Me.FindBuff("id " .. tostring(spell.ID()))() ~= nil end,
                 cond = function(self, spell, target)
                     if Config:GetSetting('DoTankIllusionBuff') and Targeting.TargetIsATank(target) and Core.GetResolvedActionMapItem('TankIllusionBuff') then return false end
-                    return Casting.CastReady(spell) and Casting.GroupBuffCheck(spell, target)
+                    return Casting.CastReady(spell) and
+                        Casting.GroupBuffCheck(spell, target, false, true) -- skip trigger checks, we are not worried about spells with a seperate illusion trigger
                 end,
             },
             {
@@ -883,6 +989,7 @@ local _ClassConfig = {
                 name = "Self Stasis",
                 type = "AA",
                 cond = function(self, aaName)
+                    if Config:GetSetting('CharmOn') and mq.TLO.Me.Pet.ID() > 0 then return false end
                     return mq.TLO.Me.TargetOfTarget.ID() == mq.TLO.Me.ID() and mq.TLO.Target.ID() == Globals.AutoTargetID
                 end,
                 post_activate = function(self, aaName, success)
@@ -990,6 +1097,15 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "MindstingDot",
+                type = "Spell",
+                load_cond = function() return Config:GetSetting("DoMindstingDot") end,
+                cond = function(self, spell, target)
+                    if Config:GetSetting('DotNamedOnly') and not Globals.AutoTargetIsNamed then return false end
+                    return Casting.DotSpellCheck(spell) and Casting.HaveManaToDot()
+                end,
+            },
+            {
                 name = "MindDot",
                 type = "Spell",
                 load_cond = function() return Config:GetSetting("DoMindDot") end,
@@ -1065,8 +1181,17 @@ local _ClassConfig = {
                 end,
             },
             {
+                name = "TashRod",
+                type = "Item",
+                load_cond = function(self) return self.Helpers.PreferTashItem(self) end,
+                cond = function(self, itemName, target)
+                    return Casting.DetItemCheck(itemName, target) and (not Casting.TargetHasBuff("Bite of Tashani") or Globals.AutoTargetIsNamed)
+                end,
+            },
+            {
                 name = "TashSpell",
                 type = "Spell",
+                load_cond = function(self) return not self.Helpers.PreferTashItem(self) end,
                 cond = function(self, spell, target)
                     return Casting.DetSpellCheck(spell) and (not Casting.TargetHasBuff("Bite of Tashani") or Globals.AutoTargetIsNamed)
                 end,
@@ -1116,8 +1241,8 @@ local _ClassConfig = {
             spells = {
                 { name = "MezSpell",         cond = function(self) return Config:GetSetting('DoSTMez') end, },
                 { name = "MezAESpell",       cond = function(self) return Config:GetSetting('DoAEMez') end, },
-                { name = "CharmSpell",       cond = function(self) return Config:GetSetting('CharmOn') end, },
-                { name = "TashSpell",        cond = function(self) return Config:GetSetting('DoTash') end, },
+                { name = "CharmSpell",       cond = function(self, spell) return Config:GetSetting('CharmOn') and Core.IsSelectedCharmSpell(spell) end, },
+                { name = "TashSpell",        cond = function(self) return Config:GetSetting('DoTash') and not self.Helpers.PreferTashItem(self) end, },
                 { name = "SlowSpell",        cond = function(self) return Config:GetSetting('DoSlow') and not Casting.CanUseAA("Dreary Deeds") end, },
                 { name = "CrippleSpell",     cond = function(self) return Config:GetSetting('DoCripple') end, },
                 { name = "SpinStunSpell",    cond = function(self) return Config:GetSetting('DoSpinStun') > 1 end, },
@@ -1126,9 +1251,11 @@ local _ClassConfig = {
                 { name = "TankIllusionBuff", cond = function(self) return Config:GetSetting('DoTankIllusionBuff') end, },
                 { name = "SpellProcBuff",    cond = function(self) return Config:GetSetting('DoProcBuff') end, },
                 { name = "Dispel",           cond = function(self) return Config:GetSetting('DoDispel') end, },
+                { name = "Avatar",           cond = function(self) return Config:GetSetting('DoAvatar') end, },
                 { name = "MagicNuke",        cond = function(self) return Config:GetSetting('DoNuke') end, },
                 { name = "ColdDot",          cond = function(self) return Config:GetSetting('DoColdDot') end, },
                 { name = "StrangleDot",      cond = function(self) return Config:GetSetting('DoStrangleDot') end, },
+                { name = "MindstingDot",     cond = function(self) return Config:GetSetting('DoMindstingDot') end, },
                 { name = "MindDot",          cond = function(self) return Config:GetSetting('DoMindDot') end, },
                 { name = "PetHealSpell",     cond = function(self) return Config:GetSetting('DoPetHealSpell') end, },
                 { name = "HateBuff",         cond = function(self) return Config:GetSetting('DoHateBuff') end, },
@@ -1242,6 +1369,16 @@ local _ClassConfig = {
             Category = "Group",
             Index = 107,
             Tooltip = "Use your hatred visage buff on your tank.",
+            RequiresLoadoutChange = true,
+            Default = false,
+        },
+        ['DoAvatar']           = {
+            DisplayName = "Do Avatar",
+            Group = "Abilities",
+            Header = "Buffs",
+            Category = "Group",
+            Index = 108,
+            Tooltip = "Cast your Phantasmal Avatar buff.",
             RequiresLoadoutChange = true,
             Default = false,
         },
@@ -1408,12 +1545,22 @@ local _ClassConfig = {
             RequiresLoadoutChange = true,
             Default = false,
         },
+        ['DoMindstingDot']     = {
+            DisplayName = "Mindsting Dot",
+            Group = "Abilities",
+            Header = "Damage",
+            Category = "Over Time",
+            Index = 102,
+            Tooltip = "Use your Mindsting magic damage Dot.",
+            RequiresLoadoutChange = true,
+            Default = true,
+        },
         ['DoMindDot']          = {
             DisplayName = "Mind Dot",
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 102,
+            Index = 103,
             Tooltip = "Use your mana drain/magic damage (Mind Line) Dot.",
             RequiresLoadoutChange = true,
             Default = true,
@@ -1423,7 +1570,7 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 103,
+            Index = 104,
             Tooltip = "Use your grave (cold) line of dots.",
             RequiresLoadoutChange = true,
             Default = true,
@@ -1433,7 +1580,7 @@ local _ClassConfig = {
             Group = "Abilities",
             Header = "Damage",
             Category = "Over Time",
-            Index = 104,
+            Index = 105,
             Tooltip = "Any selected dot above will only be used on a named mob.",
             Default = true,
         },

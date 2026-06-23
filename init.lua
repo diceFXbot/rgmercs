@@ -395,12 +395,15 @@ local function Main()
             Config.TempSettings.NoLevZone = false
             Globals.ForceCombatID = 0
             Globals.IgnoredTargetIDs = Set.new({})
+            Globals.CharmedPetIDs = Set.new({})
+            Globals.LooseCharms = {}
             Globals.LastCachedBuffUpdate = {}
             Globals.AutoTargetID = 0
             Globals.AutoTargetIsNamed = false
             Globals.AggroTargetID = 0
             Globals.CombatNavTargetId = 0
             Globals.SetForcedTargetId(0)
+            Globals.ForceCharmID = 0
         end
         mq.delay(100)
         Globals.CurZoneId = mq.TLO.Zone.ID()
@@ -441,6 +444,7 @@ local function Main()
         end
 
         Globals.CurrentState = "Combat"
+        Globals.LastCombatTime = Globals.GetTimeMS()
         if Config:GetSetting('FaceTarget') and not Targeting.FacingTarget() and mq.TLO.Target.ID() ~= mq.TLO.Me.ID() and not mq.TLO.Me.Moving() then
             Core.DoCmd("/squelch /face fast")
         end
@@ -464,6 +468,8 @@ local function Main()
         end
 
         Globals.CurrentState = "Downtime"
+
+        Targeting.ClearStuckXTargets()
 
         if Config:GetSetting('DoMed') ~= 1 then
             Casting.AutoMed()

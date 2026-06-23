@@ -71,11 +71,10 @@ local _ClassConfig = {
     end,
 
     ['ModeChecks']    = {
-        CanMez     = function() return true end,
-        CanCharm   = function() return true end,
-        IsMezzing  = function() return Config:GetSetting('MezOn') end,
-        IsCuring   = function() return Config:GetSetting('UseCure') end,
-        IsCharming = function() return Config:GetSetting('CharmOn') and mq.TLO.Pet.ID() == 0 end,
+        CanMez    = function() return true end,
+        CanCharm  = function() return true end,
+        IsMezzing = function() return Config:GetSetting('MezOn') end,
+        IsCuring  = function() return Config:GetSetting('UseCure') end,
     },
     ['Cures']         = {
         CureNow = function(self, type, targetId)
@@ -835,6 +834,11 @@ local _ClassConfig = {
         { type = "Song", name = "MezSong", },
         { type = "Song", name = "MezAESong", },
     },
+    ['Charm']         = {
+        ['Abilities'] = {
+            { name = "CharmSong", type = "Song", },
+        },
+    },
     ['RotationOrder'] = {
         {
             name = 'Enduring Breath',
@@ -874,7 +878,7 @@ local _ClassConfig = {
             load_cond = function() return Config:GetSetting("DoSTSlow") or Config:GetSetting("DoAESlow") or Config:GetSetting("DoDispel") end,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.OkayToNotMez(3)
+                return combat_state == "Combat" and Casting.OkayToDebuff() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -885,7 +889,9 @@ local _ClassConfig = {
             doFullRotation = true,
             targetId = function(self) return { mq.TLO.Me.ID(), } end,
             cond = function(self, combat_state)
-                return not (combat_state == "Downtime" and mq.TLO.Me.Invis()) and not Globals.InMedState and Core.OkayToNotMez(3)
+                if Globals.InMedState then return false end
+                if combat_state == "Downtime" and mq.TLO.Me.Invis() then return false end
+                return Core.CombatActionsCheck()
             end,
         },
         {
@@ -895,7 +901,7 @@ local _ClassConfig = {
             midSong = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Casting.BurnCheck() and Core.OkayToNotMez()
+                return combat_state == "Combat" and Casting.BurnCheck() and Core.CombatActionsCheck()
             end,
         },
         {
@@ -905,7 +911,7 @@ local _ClassConfig = {
             midSong = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Core.OkayToNotMez()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
             end,
         },
         {
@@ -915,7 +921,19 @@ local _ClassConfig = {
             doFullRotation = true,
             targetId = function(self) return Targeting.CheckForAutoTargetID() end,
             cond = function(self, combat_state)
-                return combat_state == "Combat" and Core.OkayToNotMez()
+                return combat_state == "Combat" and Core.CombatActionsCheck()
+            end,
+        },
+        {
+            name = 'InstantRunBuff',
+            state = 1,
+            steps = 1,
+            targetId = function(self) return Combat.GetCachedCombatState() == "Combat" and Targeting.CheckForAutoTargetID() or Casting.GetBuffableGroupIDs() end,
+            load_cond = function(self) return Config:GetSetting('UseRunBuff') and Casting.CanUseAA("Selo's Sonata") end,
+            cond = function(self, combat_state)
+                local downtime = combat_state == "Downtime" and not mq.TLO.Me.Invis()
+                local combat = combat_state == "Combat" and Core.CombatActionsCheck()
+                return downtime or combat
             end,
         },
     },
@@ -1075,17 +1093,6 @@ local _ClassConfig = {
                 type = "Ability",
                 midSong = true,
                 load_cond = function(self) return Casting.AARank("Intimidation") > 1 end,
-            },
-            {
-                name = "Selo's Sonata",
-                type = "AA",
-                midSong = true,
-                targetId = function(self) return { mq.TLO.Me.ID(), } end,
-                load_cond = function(self) return Config:GetSetting('UseRunBuff') and Casting.CanUseAA("Selo's Sonata") end,
-                cond = function(self, aaName)
-                    --refresh slightly before expiry for better uptime
-                    return (mq.TLO.Me.Buff(mq.TLO.AltAbility(aaName).Spell.Trigger(1)).Duration.TotalSeconds() or 0) < 30
-                end,
             },
         },
         ['CombatSongs'] = {
@@ -1382,17 +1389,6 @@ local _ClassConfig = {
         },
         ['Downtime'] = {
             {
-                name = "Selo's Sonata",
-                type = "AA",
-                midSong = true,
-                targetId = function(self) return { mq.TLO.Me.ID(), } end,
-                load_cond = function(self) return Config:GetSetting('UseRunBuff') and Casting.CanUseAA("Selo's Sonata") end,
-                cond = function(self, aaName)
-                    --refresh slightly before expiry for better uptime
-                    return (mq.TLO.Me.Buff(mq.TLO.AltAbility(aaName).Spell.Trigger(1)).Duration.TotalSeconds() or 0) < 30
-                end,
-            },
-            {
                 name = "RunBuffSong",
                 type = "Song",
                 targetId = function(self) return { mq.TLO.Me.ID(), } end,
@@ -1443,8 +1439,8 @@ local _ClassConfig = {
                 midSong = true,
                 load_cond = function(self) return Config:GetSetting('UseFading') and Casting.CanUseAA('Fading Memories') end,
                 cond = function(self, aaName)
+                    if Config:GetSetting('CharmOn') and mq.TLO.Me.Pet.ID() > 0 then return false end
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and self.Helpers.UnwantedAggroCheck(self)
-                    --I wanted to use XTAggroCount here but it doesn't include your current target in the number it returns and I don't see a good workaround. For Loop it is.
                 end,
             },
             {
@@ -1471,6 +1467,20 @@ local _ClassConfig = {
                 load_cond = function(self) return Config:GetSetting('DoCoating') end,
                 cond = function(self, itemName, target)
                     return mq.TLO.Me.PctHPs() <= Config:GetSetting('EmergencyStart') and Casting.SelfBuffItemCheck(itemName)
+                end,
+            },
+        },
+        ['InstantRunBuff'] = {
+            {
+                name = "Selo's Sonata",
+                type = "AA",
+                midSong = true,
+                cond = function(self, aaName, target)
+                    -- Selo AA triggers Accelerando or Accelerato depending on rank.
+                    local aaBuff = mq.TLO.Me.AltAbility(aaName).Spell.Trigger(1)() or ""
+                    local combatState = Combat.GetCachedCombatState()
+                    -- if in combat, check self, out of combat, also check others
+                    return (combatState == "Combat" and (mq.TLO.Me.Buff(aaBuff).Duration.TotalSeconds() or 0) < 15) or (combatState == "Downtime" and Casting.GroupBuffAACheck(aaName, target))
                 end,
             },
         },

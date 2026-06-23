@@ -402,33 +402,63 @@ function Core.CanCharm()
     return Modules:ExecModule("Class", "CanCharm")
 end
 
+--- Returns true if spell is the resolved spell of the charm ability selected in the Charm panel.
+---@param spell MQSpell The resolved spell a SpellList entry's cond is given.
+---@return boolean
+function Core.IsSelectedCharmSpell(spell)
+    return Modules:ExecModule("Charm", "IsSelectedCharmSpell", spell) == true
+end
+
 --- Returns true if a shield is equipped in the offhand slot.
 ---@return boolean True if the offhand item type is "Shield".
 function Core.ShieldEquipped()
     return mq.TLO.InvSlot("Offhand").Item.Type() and mq.TLO.InvSlot("Offhand").Item.Type() == "Shield"
 end
 
---- Returns true if the character can safely skip healing for this frame —
---- i.e., not in heal mode, no queued cure, and no injured group members.
+--- Safe to skip healing this frame.
+---@param priority integer? HealPriority setting: 1 Ignore, 2 Big Heal Point, 3 Main Heal Point (nil/absent treats as Ignore)
 ---@return boolean True if it is safe to perform non-heal actions.
-function Core.OkayToNotHeal()
+function Core.OkayToNotHeal(priority)
     if not Core.IsHealing() then return true end
 
     if Core.IsCuring() and Modules:ExecModule("Class", "CureIsQueued") then
         Logger.log_verbose("OkayToNotHeal: We have a queued cure to process! Skipping.")
         return false
     end
-    return (mq.TLO.Group.Injured(Config:GetSetting('BigHealPoint'))() or 0) == 0
+
+    if (priority or 1) == 1 then return true end
+    return not Modules:ExecModule("Class", "NeedToHeal", priority)
 end
 
---- Returns true if the character can safely skip mezzing this frame for a rotation restricted at the given
---- Mez Priority level. True when not in mez mode, Mez Priority is below that level, or no mob still needs locking.
----@param restrictAtLevel number? Mez Priority at which this rotation should yield: 2 (Higher) for Burn/DPS, 3 (Highest) for Debuffs. Defaults to 2.
+--- Safe to skip mezzing this frame.
+---@param priority boolean? PriorityMez setting; false disables the mez yield entirely
 ---@return boolean True if it is safe to perform non-mez actions (e.g. DPS).
-function Core.OkayToNotMez(restrictAtLevel)
+function Core.OkayToNotMez(priority)
+    if priority == false then return true end
     if not Core.IsMezzing() then return true end
-    if Config:GetSetting('MezPriority') < (restrictAtLevel or 2) then return true end
     return not Modules:ExecModule("Mez", "NeedToMez")
+end
+
+--- Safe to skip charming this frame.
+---@return boolean True if it is safe to perform non-charm actions.
+function Core.OkayToNotCharm()
+    return not Core.IsCharming() or not Modules:ExecModule("Charm", "NeedToCharm")
+end
+
+--- True when we should pause the rotation to act on a loose charm pet.
+---@return boolean True when a loose charm needs our assist.
+function Core.CharmAssistNeeded()
+    return Modules:ExecModule("Charm", "CharmAssistNeeded") == true
+end
+
+--- Ensure that high-priority actions aren't ignored in favor of what we are currently checking.
+---@return boolean True if it is okay to run normal offensive actions.
+function Core.CombatActionsCheck()
+    if not Core.OkayToNotCharm() then return false end
+    if Core.CharmAssistNeeded() then return false end
+    if not Core.OkayToNotHeal(Config:GetSetting('HealPriority', true)) then return false end
+    if not Core.OkayToNotMez(Config:GetSetting('PriorityMez')) then return false end
+    return true
 end
 
 --- Returns the resolved (ranked) spell/item/AA for action from the class module.
@@ -526,7 +556,6 @@ end
 
 --- Rebuilds Globals.CurrentPetBuffs from active pet buff slots if a pet exists.
 function Core.GetPetBuffTable()
-    Logger.log_debug("Pet Buff Start")
     Globals.CurrentPetBuffs = {}
 
     if mq.TLO.Me.Pet.ID() > 0 then
@@ -537,12 +566,10 @@ function Core.GetPetBuffTable()
             end
         end
     end
-    Logger.log_debug("Pet Buff Finish")
 end
 
 --- Rebuilds Globals.CurrentPetBlocked from up to 60 blocked pet buff slots.
 function Core.GetPetBlockedTable()
-    Logger.log_debug("Pet Block Start")
     Globals.CurrentPetBlocked = {}
 
     if mq.TLO.Me.Pet.ID() > 0 then
@@ -552,7 +579,6 @@ function Core.GetPetBlockedTable()
             table.insert(Globals.CurrentPetBlocked, blocked.ID())
         end
     end
-    Logger.log_debug("Pet Block Finish")
 end
 
 return Core

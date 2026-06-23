@@ -19,6 +19,8 @@ mq.event("CantSee", "You cannot see your target.", function()
     Logger.log_debug("CantSee: Event Detected")
     if Globals.BackOffFlag then return end
     if Globals.PauseMain then return end
+    -- Skip if a zone change isn't reconciled yet; reused spawn IDs would nav to the wrong target.
+    if mq.TLO.Zone.ID() ~= Globals.CurZoneId or mq.TLO.Me.Instance() ~= Globals.CurInstanceId then return end
     local target = mq.TLO.Target
     local pullPulling = Modules:ExecModule("Pull", "IsPullState", "PULL_PULLING")
     local pullReturn = Modules:ExecModule("Pull", "IsPullState", "PULL_RETURN_TO_CAMP")
@@ -42,7 +44,11 @@ mq.event("CantSee", "You cannot see your target.", function()
             local haterCount = Targeting.GetXTHaterCount()
             if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() or haterCount > 0 then
                 local helpers = Core.GetHelpers()
-                if helpers and helpers.combatNav then
+                if helpers and helpers.rangedNav then
+                    Logger.log_debug("CantSee: \ayWe are in COMBAT and Cannot see our target - using ranged positioning!")
+                    Core.SafeCallFunc("Ranger Ranged Nav", helpers.rangedNav, "cantsee")
+                elseif helpers and helpers.combatNav then
+                    -- DEPRECATED 6/26 (sunset ~8/26): legacy boolean combatNav; configs should define rangedNav(reason).
                     Logger.log_debug("CantSee: \ayWe are in COMBAT and Cannot see our target - using custom combatNav!")
                     Core.SafeCallFunc("Ranger Custom Nav", helpers.combatNav, true)
                 else
@@ -89,6 +95,8 @@ end)
 
 mq.event("TooClose", "Your target is too close to use a ranged weapon!", function()
     Logger.log_debug("TooClose: Event Detected")
+    -- Skip if a zone change isn't reconciled yet; reused spawn IDs would nav to the wrong target.
+    if mq.TLO.Zone.ID() ~= Globals.CurZoneId or mq.TLO.Me.Instance() ~= Globals.CurInstanceId then return end
     -- Check if we're in the middle of a pull and use a backup.
     if Config:GetSetting('DoPull') and Modules:ExecModule("Pull", "IsPullState", "PULL_PULLING") then
         Logger.log_debug("TooClose: Pull Mode Detected.")
@@ -120,7 +128,10 @@ mq.event("TooClose", "Your target is too close to use a ranged weapon!", functio
             if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
                 Logger.log_debug("TooCloseHandler: Pull State not detected, using Combat Nav.")
                 local helpers = Core.GetHelpers()
-                if helpers and helpers.combatNav then
+                if helpers and helpers.rangedNav then
+                    Core.SafeCallFunc("Ranger Ranged Nav", helpers.rangedNav, "tooclose")
+                elseif helpers and helpers.combatNav then
+                    -- DEPRECATED 6/26 (sunset ~8/26): legacy boolean combatNav; configs should define rangedNav(reason).
                     Core.SafeCallFunc("Ranger Custom Nav", helpers.combatNav, false)
                 else
                     Logger.log_debug("TooClose event detected, but we don't have class-specific combat nav for ranged combat!")
@@ -140,11 +151,12 @@ end)
 
 -- [ TOO FAR HANDLERS ] --
 
----@param cantHitFromHere boolean? True for "You can't hit them from here." (reposition regardless of distance).
-local function tooFarHandler(cantHitFromHere)
-    Logger.log_debug("TooFar: Event Detected (cantHitFromHere=%s)", Strings.BoolToColorString(cantHitFromHere == true))
+local function tooFarHandler(reason)
+    Logger.log_debug("TooFar: Event Detected")
     if Globals.BackOffFlag then return end
     if Globals.PauseMain then return end
+    -- Skip if a zone change isn't reconciled yet; reused spawn IDs would nav to the wrong target.
+    if mq.TLO.Zone.ID() ~= Globals.CurZoneId or mq.TLO.Me.Instance() ~= Globals.CurInstanceId then return end
 
     local target = mq.TLO.Target
     local pullPulling = Modules:ExecModule("Pull", "IsPullState", "PULL_PULLING")
@@ -170,9 +182,14 @@ local function tooFarHandler(cantHitFromHere)
         if Config:GetSetting('HandleTooFar') then
             local helpers = Core.GetHelpers()
             local haterCount = Targeting.GetXTHaterCount()
-            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and haterCount > 0 then
-                if helpers and helpers.combatNav and not Config:GetSetting('DoMelee') then
-                    Core.SafeCallFunc("Custom Nav", helpers.combatNav, false, cantHitFromHere == true)
+            local cantHitFromHere = reason == "canthit"
+            local rangedCantHit = cantHitFromHere and not Config:GetSetting('DoMelee')
+            if Config:GetSetting('DoAutoEngage') and not mq.TLO.Me.Moving() and (haterCount > 0 or rangedCantHit) then
+                if helpers and helpers.rangedNav then
+                    Core.SafeCallFunc("Ranger Ranged Nav", helpers.rangedNav, reason or "toofar")
+                elseif helpers and helpers.combatNav then
+                    -- DEPRECATED 6/26 (sunset ~8/26): legacy boolean combatNav; configs should define rangedNav(reason).
+                    Core.SafeCallFunc("Custom Nav", helpers.combatNav, false, cantHitFromHere)
                 elseif Config:GetSetting('DoMelee') then
                     Logger.log_debug("TooFar: \ayWe are in COMBAT and too far from our target!")
                     if Config:GetSetting('DoAutoEngage') and Combat.OkToEngage(target.ID() or 0) then
@@ -207,15 +224,15 @@ local function tooFarHandler(cantHitFromHere)
 end
 
 mq.event("TooFar1", "#*#Your target is too far away, get closer!", function()
-    tooFarHandler()
+    tooFarHandler("toofar")
     mq.flushevents("TooFar1")
 end)
 mq.event("TooFar2", "#*#You can't hit them from here.", function()
-    tooFarHandler(true)
+    tooFarHandler("canthit")
     mq.flushevents("TooFar2")
 end)
 mq.event("TooFar3", "#*#You are too far away#*#", function()
-    tooFarHandler()
+    tooFarHandler("toofar")
     mq.flushevents("TooFar3")
 end)
 
@@ -471,26 +488,34 @@ end)
 
 mq.event('ImmuneCharm', "Your target cannot be charmed#*#", function()
     Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_IMMUNE)
-    local target = mq.TLO.Target
-    Modules:ExecModule("Charm", "AddImmuneTarget", target.ID(),
-        { id = target.ID(), name = target.CleanName(), lvl = target.Level(), body = target.Body(), reason = "IMMUNE", })
+    -- credit the mob we actually cast charm on; the live Target may already be restored to something else
+    local immuneId = Modules:ExecModule("Charm", "GetCharmAttemptId")
+    if not immuneId or immuneId == 0 then immuneId = mq.TLO.Target.ID() end
+    local spawn = mq.TLO.Spawn(immuneId)
+    if not spawn() then return end
+    Modules:ExecModule("Charm", "AddImmuneTarget", immuneId,
+        { id = immuneId, name = spawn.CleanName(), lvl = spawn.Level(), body = spawn.Body(), reason = "IMMUNE", })
 end)
 
 mq.event('ImmuneCharm2', "This NPC cannot be charmed#*#", function()
     Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_IMMUNE)
-    local target = mq.TLO.Target
-    Modules:ExecModule("Charm", "AddImmuneTarget", target.ID(),
-        { id = target.ID(), name = target.CleanName(), lvl = target.Level(), body = target.Body(), reason = "IMMUNE", })
+    local immuneId = Modules:ExecModule("Charm", "GetCharmAttemptId")
+    if not immuneId or immuneId == 0 then immuneId = mq.TLO.Target.ID() end
+    local spawn = mq.TLO.Spawn(immuneId)
+    if not spawn() then return end
+    Modules:ExecModule("Charm", "AddImmuneTarget", immuneId,
+        { id = immuneId, name = spawn.CleanName(), lvl = spawn.Level(), body = spawn.Body(), reason = "IMMUNE", })
 end)
 
 mq.event('LvlHighCharm', "Your target is too high of a level for your charm spell.#*#", function()
     Casting.SetLastCastResult(Globals.Constants.CastResults.CAST_IMMUNE)
     Logger.log_debug("\awNOTICE:\ax Target is to \aoHigh Level\ax to Charm with this spell!")
-    local target = mq.TLO.Target
-
-    Modules:ExecModule("Charm", "CharmLvlToHigh", target.Level())
-    Modules:ExecModule("Charm", "AddImmuneTarget", target.ID(),
-        { id = target.ID(), name = target.CleanName(), lvl = target.Level(), body = target.Body(), reason = "HIGH_LVL", })
+    local immuneId = Modules:ExecModule("Charm", "GetCharmAttemptId")
+    if not immuneId or immuneId == 0 then immuneId = mq.TLO.Target.ID() end
+    local spawn = mq.TLO.Spawn(immuneId)
+    if not spawn() then return end
+    Modules:ExecModule("Charm", "AddImmuneTarget", immuneId,
+        { id = immuneId, name = spawn.CleanName(), lvl = spawn.Level(), body = spawn.Body(), reason = "HIGH_LVL", })
 end)
 -- [ END CAST RESULT HANDLERS ] --
 
@@ -505,7 +530,7 @@ end)
 -- [ SUMMONED HANDLERS ] --
 
 mq.event('Summoned', "You have been summoned!", function(_)
-    if Config:GetSetting('DoAutoEngage') and not Config:GetSetting('DoMelee') and not Core.IAmMA() and Config:GetSetting('ReturnToCamp') then
+    if Config:GetSetting('DoAutoEngage') and not Config:GetSetting('DoMelee') and not Core.IsTanking() and Config:GetSetting('ReturnToCamp') then
         Comms.PrintGroupMessage("%s was just summoned -- returning to camp!", Globals.CurLoadedChar)
         Modules:ExecModule("Movement", "DoAutoCampCheck", true)
     end
